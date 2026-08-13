@@ -46,6 +46,8 @@ class StudySessionState {
       isComplete: isComplete ?? this.isComplete,
     );
   }
+
+  int masteredCount() => cardResults.values.where((v) => v == 'known').length;
 }
 
 class StudySessionNotifier extends StateNotifier<StudySessionState> {
@@ -92,9 +94,6 @@ class StudySessionNotifier extends StateNotifier<StudySessionState> {
   void restart() {
     state = const StudySessionState();
   }
-
-  int masteredCount() =>
-      state.cardResults.values.where((v) => v == 'known').length;
 }
 
 final studySessionProvider =

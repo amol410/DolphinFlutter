@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ApiConstants {
   ApiConstants._();
 
-  static const String defaultBaseUrl = 'http://10.0.2.2:5000/api';
+  static const String defaultBaseUrl = 'https://dolphincoder.com/api';
   static const String productionBaseUrl = 'https://api.dolphincoder.com/api';
 
   // Auth
@@ -21,7 +21,7 @@ class ApiConstants {
   static const String flashcards = '/flashcards';
 
   static Future<String> getBaseUrl() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('api_base_url') ?? defaultBaseUrl;
+    // Ignore any cached local IPs from previous builds to prevent connection timeouts
+    return defaultBaseUrl;
   }
 }
