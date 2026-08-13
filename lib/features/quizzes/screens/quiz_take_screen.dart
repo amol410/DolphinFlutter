@@ -88,7 +88,7 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
     ref.read(quizTakeProvider.notifier).setSubmitting(true);
     try {
       final answers = qState.selectedAnswers.entries
-          .map((e) => {'questionId': e.key, 'selectedIndex': e.value})
+          .map((e) => {'questionId': e.key, 'chosenIndex': e.value})
           .toList();
       final timeTaken = ((DateTime.now().millisecondsSinceEpoch - _startTime) / 1000).round();
       final result = await ref.read(quizRepositoryProvider).submitAttempt(

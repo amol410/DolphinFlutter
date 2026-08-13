@@ -48,9 +48,28 @@ class QuizRepository {
     try {
       final response = await dio.post(
         '${ApiConstants.quizzes}/$quizId/attempt',
-        data: {'answers': answers, 'timeTaken': timeTaken},
+        data: {'answers': answers, 'timeTakenSecs': timeTaken},
       );
-      return AttemptModel.fromJson(response.data as Map<String, dynamic>);
+      
+      final data = response.data;
+      if (data['result'] != null) {
+        final attemptData = data['result']['attempt'] as Map<String, dynamic>;
+        final questions = data['result']['questions'] as List? ?? [];
+        
+        // Map the backend questions array to the format expected by AttemptAnswer.fromJson
+        final mappedAnswers = questions.map((q) => {
+          'questionId': q['_id'],
+          'selectedIndex': q['chosenIndex'],
+          'correct': q['isCorrect'],
+          'correctIndex': q['correctIndex'],
+          'explanation': q['explanation'],
+        }).toList();
+        
+        attemptData['answers'] = mappedAnswers;
+        return AttemptModel.fromJson(attemptData);
+      }
+      
+      return AttemptModel.fromJson(data as Map<String, dynamic>);
     } catch (e) {
       throw DioClient.handleError(e);
     }
