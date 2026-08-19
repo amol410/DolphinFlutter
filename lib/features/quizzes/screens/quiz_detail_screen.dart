@@ -88,23 +88,28 @@ class QuizDetailScreen extends ConsumerWidget {
               const SizedBox(height: 16),
 
               // Info grid 2x2
-              GridView.count(
-                crossAxisCount: 2,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                childAspectRatio: 1.8,
+              Column(
                 children: [
-                  _InfoCard(icon: '📝', label: 'Questions',
-                      value: '${quiz.questions.length}', color: AppColors.primary),
-                  _InfoCard(icon: '⏱', label: 'Time Limit',
-                      value: quiz.timeLimit > 0 ? '${quiz.timeLimit} min' : 'No limit',
-                      color: AppColors.warning),
-                  _InfoCard(icon: '🎯', label: 'Pass Score',
-                      value: '${quiz.passingScore}%', color: AppColors.success),
-                  _InfoCard(icon: '🔀', label: 'Shuffle',
-                      value: quiz.shuffle ? 'Yes' : 'No', color: AppColors.accent),
+                  Row(
+                    children: [
+                      Expanded(child: _InfoCard(icon: '📝', label: 'Questions',
+                          value: '${quiz.questions.length}', color: AppColors.primary)),
+                      const SizedBox(width: 12),
+                      Expanded(child: _InfoCard(icon: '⏱', label: 'Time Limit',
+                          value: quiz.timeLimit > 0 ? '${quiz.timeLimit} min' : 'No limit',
+                          color: AppColors.warning)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(child: _InfoCard(icon: '🎯', label: 'Pass Score',
+                          value: '${quiz.passingScore}%', color: AppColors.success)),
+                      const SizedBox(width: 12),
+                      Expanded(child: _InfoCard(icon: '🔀', label: 'Shuffle',
+                          value: quiz.shuffle ? 'Yes' : 'No', color: AppColors.accent)),
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -125,7 +130,7 @@ class QuizDetailScreen extends ConsumerWidget {
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
-                        children: attempts.take(3).toList().asMap().entries.map((e) {
+                        children: attempts.take(2).toList().asMap().entries.map((e) {
                           final att = e.value;
                           final passed = att.passed;
                           return Container(
@@ -140,7 +145,7 @@ class QuizDetailScreen extends ConsumerWidget {
                               ),
                             ),
                             child: Text(
-                              '#${e.key + 1}  ${att.percentage.toStringAsFixed(0)}%  ${passed ? '✓' : '✗'}',
+                              'Attempt ${e.key + 1} : ${att.percentage.toStringAsFixed(0)}% ${passed ? '✓' : '✗'}',
                               style: GoogleFonts.inter(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,

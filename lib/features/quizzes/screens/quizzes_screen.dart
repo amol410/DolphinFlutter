@@ -215,6 +215,7 @@ class QuizCard extends StatelessWidget {
               Expanded(
                 child: Wrap(
                   spacing: 6,
+                  runSpacing: 6,
                   children: [
                     if (quiz.subjectName != null) SubjectBadge(label: quiz.subjectName!),
                     if (quiz.topic != null && quiz.topic!.isNotEmpty)

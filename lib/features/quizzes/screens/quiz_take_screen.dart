@@ -145,6 +145,7 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.surface,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (sheetContext) => _QuestionNavigatorSheet(
@@ -154,11 +155,7 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
           ref.read(quizTakeProvider.notifier).goTo(i);
         },
         onSubmit: () {
-          // Dismiss the bottom sheet first, then submit.
-          // Using sheetContext ensures we pop the correct route.
           Navigator.pop(sheetContext);
-          // Small delay to let the bottom sheet dismiss animation complete
-          // before showing the submit confirmation dialog.
           Future.delayed(const Duration(milliseconds: 300), () {
             if (mounted) _submit();
           });
@@ -467,13 +464,15 @@ class _QuestionNavigatorSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final qState = ref.watch(quizTakeProvider);
+    final screenHeight = MediaQuery.of(context).size.height;
 
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // ── Fixed header ──
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 8, 0),
+          child: Row(
             children: [
               Text('Question Navigator',
                 style: GoogleFonts.plusJakartaSans(
@@ -485,59 +484,76 @@ class _QuestionNavigatorSheet extends ConsumerWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: quiz.questions.asMap().entries.map((e) {
-              final i = e.key;
-              final q = e.value;
-              final isCurrent = qState.currentIndex == i;
-              final isAnswered = qState.selectedAnswers.containsKey(q.id);
-              final isMarked = qState.markedForReview.contains(q.id);
+        ),
+        const SizedBox(height: 8),
 
-              Color bgColor = AppColors.surface2;
-              if (isCurrent) bgColor = AppColors.primary;
-              else if (isMarked) bgColor = AppColors.warning;
-              else if (isAnswered) bgColor = AppColors.success;
+        // ── Scrollable question grid + legend ──
+        ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: screenHeight * 0.45),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: quiz.questions.asMap().entries.map((e) {
+                    final i = e.key;
+                    final q = e.value;
+                    final isCurrent = qState.currentIndex == i;
+                    final isAnswered = qState.selectedAnswers.containsKey(q.id);
+                    final isMarked = qState.markedForReview.contains(q.id);
 
-              return GestureDetector(
-                onTap: () => onSelect(i),
-                child: Container(
-                  width: 40, height: 40,
-                  decoration: BoxDecoration(
-                    color: bgColor,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Center(
-                    child: Text('${i + 1}',
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      )),
-                  ),
+                    Color bgColor = AppColors.surface2;
+                    if (isCurrent) bgColor = AppColors.primary;
+                    else if (isMarked) bgColor = AppColors.warning;
+                    else if (isAnswered) bgColor = AppColors.success;
+
+                    return GestureDetector(
+                      onTap: () => onSelect(i),
+                      child: Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(
+                          color: bgColor,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Center(
+                          child: Text('${i + 1}',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            )),
+                        ),
+                      ),
+                    );
+                  }).toList(),
                 ),
-              );
-            }).toList(),
+                const SizedBox(height: 16),
+                // Legend
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _Legend(color: AppColors.surface2, label: 'Not answered'),
+                    const SizedBox(width: 12),
+                    _Legend(color: AppColors.success, label: 'Answered'),
+                    const SizedBox(width: 12),
+                    _Legend(color: AppColors.warning, label: 'Review'),
+                  ],
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 20),
-          // Legend
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _Legend(color: AppColors.surface2, label: 'Not answered'),
-              const SizedBox(width: 12),
-              _Legend(color: AppColors.success, label: 'Answered'),
-              const SizedBox(width: 12),
-              _Legend(color: AppColors.warning, label: 'Review'),
-            ],
-          ),
-          const SizedBox(height: 20),
-          GradientButton(text: 'Submit Quiz', height: 48, onPressed: onSubmit),
-          const SizedBox(height: 8),
-        ],
-      ),
+        ),
+
+        // ── Fixed Submit button ──
+        Padding(
+          padding: EdgeInsets.fromLTRB(20, 8, 20,
+              20 + MediaQuery.of(context).viewInsets.bottom),
+          child: GradientButton(text: 'Submit Quiz', height: 48, onPressed: onSubmit),
+        ),
+      ],
     );
   }
 }

@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 import '../constants/api_constants.dart';
 import '../constants/app_constants.dart';
 import 'api_exception.dart';
@@ -37,6 +39,19 @@ class DioClient {
         handler.next(error);
       },
     ));
+
+    // HTTP logger — only active in debug/profile builds.
+    // In release mode this is skipped to prevent JWT tokens from
+    // being logged to the console.
+    if (!kReleaseMode) {
+      _dio!.interceptors.add(PrettyDioLogger(
+        requestHeader: false,
+        requestBody: true,
+        responseBody: true,
+        error: true,
+        compact: true,
+      ));
+    }
 
     return _dio!;
   }

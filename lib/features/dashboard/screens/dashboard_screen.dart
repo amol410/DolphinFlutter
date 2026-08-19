@@ -107,7 +107,7 @@ class DashboardScreen extends ConsumerWidget {
 
                   // ── Stats Row ──
                   SizedBox(
-                    height: 90,
+                    height: 100,
                     child: ListView(
                       scrollDirection: Axis.horizontal,
                       children: [
@@ -280,24 +280,26 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 80,
+      width: 88,
       margin: const EdgeInsets.only(right: 10),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(icon, style: const TextStyle(fontSize: 20)),
-          const SizedBox(height: 4),
+          Text(icon, style: const TextStyle(fontSize: 18)),
+          const SizedBox(height: 3),
           Text('$count',
             style: GoogleFonts.plusJakartaSans(
-              fontSize: 16, fontWeight: FontWeight.bold, color: color)),
+              fontSize: 15, fontWeight: FontWeight.bold, color: color)),
           Text(label,
-            style: GoogleFonts.inter(fontSize: 10, color: AppColors.textMuted)),
+            style: GoogleFonts.inter(fontSize: 10, color: AppColors.textMuted),
+            overflow: TextOverflow.ellipsis),
         ],
       ),
     );

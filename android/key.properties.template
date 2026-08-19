@@ -1,0 +1,16 @@
+# Android Keystore signing configuration
+# DO NOT COMMIT THIS FILE TO GIT — add key.properties to .gitignore
+#
+# STEP 1: Generate your keystore (run this once in terminal):
+#
+#   keytool -genkey -v \
+#     -keystore ~/dolphincoder-release.jks \
+#     -keyalg RSA -keysize 2048 -validity 10000 \
+#     -alias dolphincoder
+#
+# STEP 2: Fill in the values below with what you chose above:
+#
+storePassword=YOUR_STORE_PASSWORD
+keyPassword=YOUR_KEY_PASSWORD
+keyAlias=dolphincoder
+storeFile=/Users/cms/dolphincoder-release.jks
