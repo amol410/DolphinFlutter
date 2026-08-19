@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:percent_indicator/percent_indicator.dart';
@@ -6,22 +7,69 @@ import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/gradient_button.dart';
 import '../data/models/quiz_model.dart';
+import '../providers/quiz_provider.dart';
 
-class QuizResultScreen extends StatelessWidget {
+class QuizResultScreen extends ConsumerWidget {
   final String quizId;
   final Map<String, dynamic> result;
 
   const QuizResultScreen({super.key, required this.quizId, required this.result});
 
   @override
-  Widget build(BuildContext context) {
-    final score = result['score'] as int? ?? 0;
-    final maxScore = result['maxScore'] as int? ?? 0;
-    final percentage = (result['percentage'] as num?)?.toDouble() ?? 0.0;
-    final passed = result['passed'] as bool? ?? false;
-    final timeTaken = result['timeTaken'] as int? ?? 0;
-    final answers = result['answers'] as List? ?? [];
-    final questions = result['questions'] as List? ?? [];
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Read from provider first (set during submission), then fall back
+    // to route extra. The provider is set before navigation in _submit().
+    final cached = ref.watch(quizResultProvider(quizId));
+    final hasCached = cached != null && cached.isNotEmpty;
+    final hasRoute = result.isNotEmpty;
+    final data = hasCached ? cached! : result;
+
+    // If neither source has data, show an error state
+    if (!hasCached && !hasRoute) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          title: Text('Quiz Results',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 20, fontWeight: FontWeight.w600, color: Colors.white)),
+          backgroundColor: Colors.transparent,
+          automaticallyImplyLeading: false,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, color: AppColors.textMuted, size: 48),
+              const SizedBox(height: 16),
+              Text('No result data available.',
+                style: GoogleFonts.inter(fontSize: 16, color: AppColors.textSecondary)),
+              const SizedBox(height: 20),
+              OutlinedButton(
+                onPressed: () => context.go('/quizzes'),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AppColors.textMuted),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                child: Text('Back to Quizzes',
+                  style: GoogleFonts.inter(
+                    fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final score = data['score'] as int? ?? 0;
+    final maxScore = data['maxScore'] as int? ?? 0;
+    final percentage = (data['percentage'] as num?)?.toDouble() ?? 0.0;
+    final passed = data['passed'] as bool? ?? false;
+    final timeTaken = data['timeTaken'] as int? ?? 0;
+    final answers = data['answers'] as List? ?? [];
+    final questions = data['questions'] as List? ?? [];
 
     final ringColor = passed ? AppColors.success : AppColors.error;
     int correct = 0, wrong = 0, skipped = 0;

@@ -112,8 +112,8 @@ final myAttemptsProvider =
 // --- Quiz Take Session ---
 class QuizTakeState {
   final int currentIndex;
-  final Map<int, int> selectedAnswers; // questionId → selectedIndex
-  final Set<int> markedForReview;
+  final Map<String, int> selectedAnswers; // questionId → selectedIndex
+  final Set<String> markedForReview;
   final int secondsRemaining;
   final bool isSubmitting;
 
@@ -127,8 +127,8 @@ class QuizTakeState {
 
   QuizTakeState copyWith({
     int? currentIndex,
-    Map<int, int>? selectedAnswers,
-    Set<int>? markedForReview,
+    Map<String, int>? selectedAnswers,
+    Set<String>? markedForReview,
     int? secondsRemaining,
     bool? isSubmitting,
   }) {
@@ -151,14 +151,14 @@ class QuizTakeNotifier extends StateNotifier<QuizTakeState> {
     );
   }
 
-  void selectAnswer(int questionId, int selectedIndex) {
-    final updated = Map<int, int>.from(state.selectedAnswers);
+  void selectAnswer(String questionId, int selectedIndex) {
+    final updated = Map<String, int>.from(state.selectedAnswers);
     updated[questionId] = selectedIndex;
     state = state.copyWith(selectedAnswers: updated);
   }
 
-  void toggleReview(int questionId) {
-    final updated = Set<int>.from(state.markedForReview);
+  void toggleReview(String questionId) {
+    final updated = Set<String>.from(state.markedForReview);
     if (updated.contains(questionId)) {
       updated.remove(questionId);
     } else {
@@ -194,3 +194,9 @@ final quizTakeProvider =
     StateNotifierProvider.autoDispose<QuizTakeNotifier, QuizTakeState>(
   (ref) => QuizTakeNotifier(),
 );
+
+/// Holds the last quiz submission result so the result screen doesn't
+/// need to rely on go_router's [extra] parameter (which can fail with
+/// complex objects inside a ShellRoute child transition).
+final quizResultProvider =
+    StateProvider.family<Map<String, dynamic>?, String>((ref, quizId) => null);

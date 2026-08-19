@@ -51,7 +51,7 @@ class QuizModel {
 }
 
 class QuizQuestion {
-  final int id;
+  final String id;
   final String text;
   final String type;
   final List<String> options;
@@ -69,7 +69,7 @@ class QuizQuestion {
 
   factory QuizQuestion.fromJson(Map<String, dynamic> json) {
     return QuizQuestion(
-      id: json['_id'] ?? 0,
+      id: json['_id']?.toString() ?? '',
       text: json['text'] ?? '',
       type: json['type'] ?? 'multiple-choice',
       options: List<String>.from(json['options'] ?? []),
@@ -108,13 +108,13 @@ class AttemptModel {
       answers: (json['answers'] as List? ?? [])
           .map((a) => AttemptAnswer.fromJson(a as Map<String, dynamic>))
           .toList(),
-      timeTaken: json['timeTaken'] ?? 0,
+      timeTaken: (json['timeTakenSecs'] ?? json['timeTaken'] ?? 0).toInt(),
     );
   }
 }
 
 class AttemptAnswer {
-  final int questionId;
+  final String questionId;
   final int selectedIndex;
   final bool correct;
   final int correctIndex;
@@ -130,7 +130,7 @@ class AttemptAnswer {
 
   factory AttemptAnswer.fromJson(Map<String, dynamic> json) {
     return AttemptAnswer(
-      questionId: json['questionId'] ?? 0,
+      questionId: json['questionId']?.toString() ?? '',
       selectedIndex: json['selectedIndex'] ?? -1,
       correct: json['correct'] ?? false,
       correctIndex: json['correctIndex'] ?? 0,

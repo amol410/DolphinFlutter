@@ -59,13 +59,21 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
   Future<void> _submit({bool autoSubmit = false}) async {
     final quiz = _quiz;
     if (quiz == null) return;
+    // Prevent double-submission
+    if (ref.read(quizTakeProvider).isSubmitting) return;
+
     final qState = ref.read(quizTakeProvider);
     final unanswered = quiz.questions.length - qState.selectedAnswers.length;
 
     if (!autoSubmit && unanswered > 0) {
       final confirm = await showDialog<bool>(
         context: context,
-        builder: (_) => AlertDialog(
+        barrierDismissible: false,
+        // Use dialogContext (the dialog's own BuildContext) for Navigator.pop.
+        // Using the screen's `context` inside a ShellRoute pops the ROUTE,
+        // not the dialog — which is why the detail screen appeared with the
+        // dialog still overlaid. dialogContext is scoped to the overlay entry.
+        builder: (dialogContext) => AlertDialog(
           backgroundColor: AppColors.surface,
           title: Text('Submit Quiz?',
             style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600)),
@@ -74,16 +82,20 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
             style: GoogleFonts.inter(color: AppColors.textSecondary)),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context, false),
+              onPressed: () => Navigator.of(dialogContext).pop(false),
               child: const Text('Cancel')),
             TextButton(
-              onPressed: () => Navigator.pop(context, true),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
               child: Text('Submit', style: GoogleFonts.inter(color: AppColors.error))),
           ],
         ),
       );
       if (confirm != true) return;
     }
+
+    // Stop the timer immediately to prevent double-submit from auto-fire
+    _timer?.cancel();
+    _timer = null;
 
     ref.read(quizTakeProvider.notifier).setSubmitting(true);
     try {
@@ -94,25 +106,36 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
       final result = await ref.read(quizRepositoryProvider).submitAttempt(
         widget.quizId, answers, timeTaken,
       );
-      if (mounted) {
-        context.go('/quizzes/${widget.quizId}/result', extra: {
-          'score': result.score,
-          'maxScore': result.maxScore,
-          'percentage': result.percentage,
-          'passed': result.passed,
-          'answers': result.answers,
-          'timeTaken': timeTaken,
-          'questions': quiz.questions,
-        });
-      }
+      if (!mounted) return;
+
+      // Build the result data map
+      final resultData = <String, dynamic>{
+        'score': result.score,
+        'maxScore': result.maxScore,
+        'percentage': result.percentage,
+        'passed': result.passed,
+        'answers': result.answers,
+        'timeTaken': timeTaken,
+        'questions': quiz.questions,
+      };
+
+      // Store result in provider BEFORE navigating so the result screen
+      // can always read it even if go_router drops the extra object.
+      ref.read(quizResultProvider(widget.quizId).notifier).state = resultData;
+
+      // Use pushReplacement so go_router keeps the ShellRoute alive and
+      // correctly passes the extra Map to the result route builder.
+      context.pushReplacement(
+        '/quizzes/${widget.quizId}/result',
+        extra: resultData,
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Submission failed: ${e.toString()}'),
-              backgroundColor: AppColors.error),
-        );
-        ref.read(quizTakeProvider.notifier).setSubmitting(false);
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Submission failed: ${e.toString()}'),
+            backgroundColor: AppColors.error),
+      );
+      ref.read(quizTakeProvider.notifier).setSubmitting(false);
     }
   }
 
@@ -124,13 +147,22 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _QuestionNavigatorSheet(
+      builder: (sheetContext) => _QuestionNavigatorSheet(
         quiz: quiz,
         onSelect: (i) {
-          Navigator.pop(context);
+          Navigator.pop(sheetContext);
           ref.read(quizTakeProvider.notifier).goTo(i);
         },
-        onSubmit: () { Navigator.pop(context); _submit(); },
+        onSubmit: () {
+          // Dismiss the bottom sheet first, then submit.
+          // Using sheetContext ensures we pop the correct route.
+          Navigator.pop(sheetContext);
+          // Small delay to let the bottom sheet dismiss animation complete
+          // before showing the submit confirmation dialog.
+          Future.delayed(const Duration(milliseconds: 300), () {
+            if (mounted) _submit();
+          });
+        },
       ),
     );
   }
