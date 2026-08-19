@@ -182,7 +182,7 @@ class QuizResultScreen extends ConsumerWidget {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: answers.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
                 itemBuilder: (_, i) {
                   final answer = answers[i];
                   final isCorrect = answer is AttemptAnswer ? answer.correct
@@ -208,73 +208,143 @@ class QuizResultScreen extends ConsumerWidget {
                           ? AppColors.success
                           : AppColors.error;
 
+                  // Status label + icon for the top-right badge
+                  final statusLabel = isSkipped ? 'Skipped'
+                      : isCorrect ? 'Correct' : 'Wrong';
+                  final statusColor = isSkipped ? AppColors.textMuted
+                      : isCorrect ? AppColors.success : AppColors.error;
+                  final statusIcon = isSkipped ? Icons.remove_circle_outline
+                      : isCorrect ? Icons.check_circle_outline : Icons.cancel_outlined;
+
                   return Container(
                     decoration: BoxDecoration(
                       color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border(left: BorderSide(color: borderColor, width: 3)),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border(left: BorderSide(color: borderColor, width: 4)),
                     ),
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Q${i + 1}: ${question?.text ?? 'Question ${i + 1}'}',
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 13, fontWeight: FontWeight.w500,
-                                  color: Colors.white),
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
+                        // Question number + status badge row
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(20),
                               ),
-                              const SizedBox(height: 6),
-                              if (!isSkipped && question != null &&
-                                  selectedIdx >= 0 && selectedIdx < question.options.length)
-                                Text(
-                                  'Your answer: ${question.options[selectedIdx]}',
+                              child: Text('Q${i + 1}',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12, fontWeight: FontWeight.w700,
+                                  color: AppColors.primary)),
+                            ),
+                            const Spacer(),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(statusIcon, color: statusColor, size: 15),
+                                const SizedBox(width: 4),
+                                Text(statusLabel,
                                   style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    color: isCorrect ? AppColors.success : AppColors.error,
-                                  ),
-                                ),
-                              if (isSkipped)
-                                Text('Skipped',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12, color: AppColors.textMuted)),
-                              if (!isCorrect && !isSkipped && question != null &&
-                                  correctIdx < question.options.length)
-                                Text(
-                                  'Correct: ${question.options[correctIdx]}',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12, color: AppColors.success),
-                                ),
+                                    fontSize: 13, fontWeight: FontWeight.w600,
+                                    color: statusColor)),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+
+                        // Full question text — no line clamp
+                        Text(
+                          question?.text ?? 'Question ${i + 1}',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 15, fontWeight: FontWeight.w600,
+                            color: Colors.white, height: 1.45),
+                        ),
+                        const SizedBox(height: 10),
+
+                        // Divider
+                        Divider(color: AppColors.border, height: 1),
+                        const SizedBox(height: 10),
+
+                        // Your answer (if answered)
+                        if (!isSkipped && question != null &&
+                            selectedIdx >= 0 && selectedIdx < question.options.length) ...[
+                          _AnswerRow(
+                            label: 'Your answer',
+                            text: question.options[selectedIdx],
+                            color: isCorrect ? AppColors.success : AppColors.error,
+                            icon: isCorrect ? Icons.check_circle : Icons.cancel,
+                          ),
+                          const SizedBox(height: 6),
+                        ],
+
+                        // Skipped label
+                        if (isSkipped) ...[
+                          Row(
+                            children: [
+                              Icon(Icons.remove_circle_outline,
+                                  color: AppColors.textMuted, size: 16),
+                              const SizedBox(width: 6),
+                              Text('Not answered (Skipped)',
+                                style: GoogleFonts.inter(
+                                  fontSize: 14, color: AppColors.textMuted,
+                                  fontStyle: FontStyle.italic)),
                             ],
                           ),
-                        ),
-                        if (explanation != null && explanation.isNotEmpty)
-                          Theme(
-                            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                            child: ExpansionTile(
-                              tilePadding: const EdgeInsets.symmetric(horizontal: 14),
-                              title: Text('Explanation',
-                                style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary,
-                                  fontWeight: FontWeight.w500,
-                                )),
+                          const SizedBox(height: 6),
+                        ],
+
+                        // Always show correct answer for wrong or skipped
+                        if ((!isCorrect || isSkipped) && question != null &&
+                            correctIdx < question.options.length) ...[
+                          _AnswerRow(
+                            label: 'Correct answer',
+                            text: question.options[correctIdx],
+                            color: AppColors.success,
+                            icon: Icons.check_circle,
+                          ),
+                          const SizedBox(height: 6),
+                        ],
+
+                        // Explanation — always visible, no accordion
+                        if (explanation != null && explanation.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppColors.background,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Padding(
-                                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-                                  child: Text(explanation,
-                                    style: GoogleFonts.inter(
-                                      fontSize: 12, color: AppColors.textSecondary)),
+                                Row(
+                                  children: [
+                                    Icon(Icons.lightbulb_outline,
+                                      color: AppColors.warning, size: 15),
+                                    const SizedBox(width: 6),
+                                    Text('Explanation',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13, fontWeight: FontWeight.w600,
+                                        color: AppColors.warning)),
+                                  ],
                                 ),
+                                const SizedBox(height: 8),
+                                Text(explanation,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 14,
+                                    color: AppColors.textSecondary,
+                                    height: 1.5)),
                               ],
                             ),
                           ),
+                        ],
                       ],
                     ),
                   );
@@ -282,6 +352,7 @@ class QuizResultScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 20),
             ],
+
 
             // Action buttons
             GradientButton(
@@ -346,6 +417,58 @@ class _StatMini extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A labelled answer row used in the review section.
+/// Shows [label] (e.g. "Your answer" / "Correct answer") with an icon
+/// and the option [text] in the appropriate [color].
+class _AnswerRow extends StatelessWidget {
+  final String label;
+  final String text;
+  final Color color;
+  final IconData icon;
+
+  const _AnswerRow({
+    required this.label,
+    required this.text,
+    required this.color,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: color, size: 16),
+        const SizedBox(width: 6),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              children: [
+                TextSpan(
+                  text: '$label: ',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+                TextSpan(
+                  text: text,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: color,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
