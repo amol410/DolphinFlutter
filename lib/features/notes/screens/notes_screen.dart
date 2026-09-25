@@ -224,8 +224,14 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                             }
                             return _NoteCard(
                               note: notesState.notes[i],
-                              onTap: () =>
-                                  context.go('/notes/${notesState.notes[i].id}'),
+                              onTap: () {
+                                final note = notesState.notes[i];
+                                if (note.isKaraoke) {
+                                  context.go('/notes/karaoke/${note.id}', extra: note);
+                                } else {
+                                  context.go('/notes/${note.id}');
+                                }
+                              },
                             );
                           },
                         ),
@@ -336,6 +342,33 @@ class _NoteCard extends StatelessWidget {
                     Divider(color: color.withOpacity(0.3), thickness: 1),
                     if (note.subjectName != null) ...[
                       SubjectBadge(label: note.subjectName!),
+                      const SizedBox(height: 4),
+                    ],
+                    if (note.isKaraoke) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF8B5CF6), Color(0xFF06B6D4)],
+                          ),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.music_note, size: 10, color: Colors.white),
+                            const SizedBox(width: 3),
+                            Text(
+                              'Karaoke',
+                              style: GoogleFonts.inter(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                       const SizedBox(height: 4),
                     ],
                     const Spacer(),

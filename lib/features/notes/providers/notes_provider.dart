@@ -64,12 +64,13 @@ class NotesListNotifier extends StateNotifier<NotesListState> {
         subject: _subject,
         topic: _topic,
         page: 1,
+        limit: 6,
       );
       state = state.copyWith(
         notes: result,
         isLoading: false,
         page: 1,
-        hasMore: result.length == 12,
+        hasMore: result.length == 6,
       );
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
@@ -82,13 +83,17 @@ class NotesListNotifier extends StateNotifier<NotesListState> {
     try {
       final next = state.page + 1;
       final result = await _repo.getNotes(
-        q: _query, subject: _subject, topic: _topic, page: next,
+        q: _query,
+        subject: _subject,
+        topic: _topic,
+        page: next,
+        limit: 6,
       );
       state = state.copyWith(
         notes: [...state.notes, ...result],
         isLoadingMore: false,
         page: next,
-        hasMore: result.length == 12,
+        hasMore: result.length == 6,
       );
     } catch (_) {
       state = state.copyWith(isLoadingMore: false);

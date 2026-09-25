@@ -13,6 +13,7 @@ import '../../notes/providers/notes_provider.dart';
 import '../../videos/providers/videos_provider.dart';
 import '../../quizzes/providers/quiz_provider.dart';
 import '../../flashcards/providers/flashcard_provider.dart';
+import '../providers/activity_provider.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -31,6 +32,7 @@ class DashboardScreen extends ConsumerWidget {
     final videosState = ref.watch(videosListProvider);
     final quizzesState = ref.watch(quizzesListProvider);
     final decksAsync = ref.watch(flashcardListProvider);
+    final todayCountsAsync = ref.watch(todayCountsProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -104,6 +106,98 @@ class DashboardScreen extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 8),
+
+                  // ── Today's Performance Card ──
+                  todayCountsAsync.maybeWhen(
+                    data: (counts) => Container(
+                      margin: const EdgeInsets.only(bottom: 20),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            const Color(0xFF6366F1).withOpacity(0.18),
+                            const Color(0xFFA855F7).withOpacity(0.08),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.primary.withOpacity(0.25)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.bolt, color: AppColors.warning, size: 20),
+                              const SizedBox(width: 6),
+                              Text(
+                                "Today's Performance",
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const Spacer(),
+                              InkWell(
+                                borderRadius: BorderRadius.circular(8),
+                                onTap: () => context.push('/activity'),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  child: Row(
+                                    children: [
+                                      Text(
+                                        'View History',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.primaryLight,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      const Icon(Icons.arrow_forward_ios, size: 10, color: AppColors.primaryLight),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              _TodayMetric(
+                                icon: '🧠',
+                                label: 'Quizzes',
+                                count: counts.quizCount,
+                                color: AppColors.accent,
+                              ),
+                              _TodayMetric(
+                                icon: '📝',
+                                label: 'Notes',
+                                count: counts.noteCount,
+                                color: AppColors.noteBlue,
+                              ),
+                              _TodayMetric(
+                                icon: '🎤',
+                                label: 'Karaoke',
+                                count: counts.karaokeCount,
+                                color: const Color(0xFF06B6D4),
+                              ),
+                              _TodayMetric(
+                                icon: '🃏',
+                                label: 'Cards',
+                                count: counts.flashcardCount,
+                                color: AppColors.success,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    orElse: () => const SizedBox.shrink(),
+                  ),
 
                   // ── Stats Row ──
                   SizedBox(
@@ -265,6 +359,45 @@ class DashboardScreen extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _TodayMetric extends StatelessWidget {
+  final String icon;
+  final String label;
+  final int count;
+  final Color color;
+
+  const _TodayMetric({
+    required this.icon,
+    required this.label,
+    required this.count,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(icon, style: const TextStyle(fontSize: 20)),
+        const SizedBox(height: 3),
+        Text(
+          '$count',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 11,
+            color: AppColors.textMuted,
+          ),
+        ),
+      ],
     );
   }
 }

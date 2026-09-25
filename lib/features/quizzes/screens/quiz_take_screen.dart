@@ -6,9 +6,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:percent_indicator/percent_indicator.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/gradient_button.dart';
-import '../../../shared/widgets/shimmer_loader.dart';
 import '../providers/quiz_provider.dart';
 import '../data/models/quiz_model.dart';
+import 'widgets/match_pairs_widget.dart';
 
 class QuizTakeScreen extends ConsumerStatefulWidget {
   final String quizId;
@@ -63,7 +63,20 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
     if (ref.read(quizTakeProvider).isSubmitting) return;
 
     final qState = ref.read(quizTakeProvider);
-    final unanswered = quiz.questions.length - qState.selectedAnswers.length;
+    int answeredCount = 0;
+    for (final q in quiz.questions) {
+      if (q.isMatchPairs) {
+        final matches = qState.matchAnswers[q.id];
+        if (matches != null && matches.any((m) => (m['right'] ?? '').isNotEmpty)) {
+          answeredCount++;
+        }
+      } else {
+        if (qState.selectedAnswers.containsKey(q.id)) {
+          answeredCount++;
+        }
+      }
+    }
+    final unanswered = quiz.questions.length - answeredCount;
 
     if (!autoSubmit && unanswered > 0) {
       final confirm = await showDialog<bool>(
@@ -99,9 +112,18 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
 
     ref.read(quizTakeProvider.notifier).setSubmitting(true);
     try {
-      final answers = qState.selectedAnswers.entries
-          .map((e) => {'questionId': e.key, 'chosenIndex': e.value})
-          .toList();
+      final answers = quiz.questions.map((q) {
+        if (q.isMatchPairs) {
+          return {
+            'questionId': q.id,
+            'matches': qState.matchAnswers[q.id] ?? [],
+          };
+        }
+        return {
+          'questionId': q.id,
+          'chosenIndex': qState.selectedAnswers[q.id] ?? -1,
+        };
+      }).toList();
       final timeTaken = ((DateTime.now().millisecondsSinceEpoch - _startTime) / 1000).round();
       final result = await ref.read(quizRepositoryProvider).submitAttempt(
         widget.quizId, answers, timeTaken,
@@ -296,64 +318,97 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Options
-                    ...question.options.asMap().entries.map((e) {
-                      final idx = e.key;
-                      final optText = e.value;
-                      final letter = ['A', 'B', 'C', 'D'][idx];
-                      final selected = qState.selectedAnswers[question.id] == idx;
-
-                      return GestureDetector(
-                        onTap: () => ref.read(quizTakeProvider.notifier)
-                            .selectAnswer(question.id, idx),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 150),
-                          margin: const EdgeInsets.only(bottom: 10),
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: selected
-                                ? AppColors.primary.withOpacity(0.12)
-                                : AppColors.surface,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: selected ? AppColors.primary : AppColors.border,
-                              width: selected ? 1.5 : 1,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 30, height: 30,
-                                decoration: BoxDecoration(
-                                  color: selected
-                                      ? AppColors.primary
-                                      : AppColors.surface2,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Center(
-                                  child: Text(letter,
-                                    style: GoogleFonts.inter(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: selected
-                                          ? Colors.white
-                                          : AppColors.textSecondary,
-                                    )),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(optText,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 14,
-                                    color: Colors.white,
-                                  )),
-                              ),
-                            ],
+                    if (question.code != null && question.code!.isNotEmpty) ...[
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface2,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: Text(
+                          question.code!,
+                          style: GoogleFonts.firaCode(
+                            fontSize: 13,
+                            color: const Color(0xFF38BDF8),
                           ),
                         ),
-                      );
-                    }),
+                      ),
+                    ],
+
+                    if (question.isMatchPairs) ...[
+                      MatchPairsWidget(
+                        key: ValueKey(question.id),
+                        question: question,
+                        currentMatches: qState.matchAnswers[question.id] ?? [],
+                        onMatchesChanged: (matches) {
+                          ref.read(quizTakeProvider.notifier)
+                              .setMatchAnswer(question.id, matches);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                    ] else ...[
+                      // Options
+                      ...question.options.asMap().entries.map((e) {
+                        final idx = e.key;
+                        final optText = e.value;
+                        final letter = ['A', 'B', 'C', 'D'][idx % 4];
+                        final selected = qState.selectedAnswers[question.id] == idx;
+
+                        return GestureDetector(
+                          onTap: () => ref.read(quizTakeProvider.notifier)
+                              .selectAnswer(question.id, idx),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? AppColors.primary.withOpacity(0.12)
+                                  : AppColors.surface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: selected ? AppColors.primary : AppColors.border,
+                                width: selected ? 1.5 : 1,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 30, height: 30,
+                                  decoration: BoxDecoration(
+                                    color: selected
+                                        ? AppColors.primary
+                                        : AppColors.surface2,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Center(
+                                    child: Text(letter,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: selected
+                                            ? Colors.white
+                                            : AppColors.textSecondary,
+                                      )),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(optText,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 14,
+                                      color: Colors.white,
+                                    )),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
 
                     // Mark for review
                     TextButton.icon(
@@ -502,7 +557,9 @@ class _QuestionNavigatorSheet extends ConsumerWidget {
                     final i = e.key;
                     final q = e.value;
                     final isCurrent = qState.currentIndex == i;
-                    final isAnswered = qState.selectedAnswers.containsKey(q.id);
+                    final isAnswered = q.isMatchPairs
+                        ? ((qState.matchAnswers[q.id]?.any((p) => (p['right'] ?? '').isNotEmpty)) ?? false)
+                        : qState.selectedAnswers.containsKey(q.id);
                     final isMarked = qState.markedForReview.contains(q.id);
 
                     Color bgColor = AppColors.surface2;

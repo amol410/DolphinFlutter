@@ -7,14 +7,18 @@ import '../../features/auth/screens/onboarding_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/auth/screens/register_screen.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
+import '../../features/dashboard/screens/activity_history_screen.dart';
 import '../../features/notes/screens/notes_screen.dart';
 import '../../features/notes/screens/note_detail_screen.dart';
+import '../../features/notes/screens/karaoke_note_reader_screen.dart';
+import '../../features/notes/data/models/note_model.dart';
 import '../../features/videos/screens/videos_screen.dart';
 import '../../features/videos/screens/video_detail_screen.dart';
 import '../../features/quizzes/screens/quizzes_screen.dart';
 import '../../features/quizzes/screens/quiz_detail_screen.dart';
 import '../../features/quizzes/screens/quiz_take_screen.dart';
 import '../../features/quizzes/screens/quiz_result_screen.dart';
+import '../../features/quizzes/screens/quiz_review_screen.dart';
 import '../../features/flashcards/screens/flashcards_screen.dart';
 import '../../features/flashcards/screens/study_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
@@ -56,6 +60,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (_, __) => const NotesScreen(),
             routes: [
               GoRoute(
+                path: 'karaoke/:id',
+                builder: (_, state) => KaraokeNoteReaderRouteScreen(
+                  noteId: state.pathParameters['id']!,
+                  initialNote: state.extra as NoteModel?,
+                ),
+              ),
+              GoRoute(
                 path: ':id',
                 builder: (_, state) =>
                     NoteDetailScreen(noteId: state.pathParameters['id']!),
@@ -81,6 +92,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     builder: (_, state) => QuizResultScreen(
                       quizId: state.pathParameters['id']!,
                       result: state.extra as Map<String, dynamic>? ?? {},
+                    ),
+                  ),
+                  GoRoute(
+                    path: 'review',
+                    builder: (_, state) => QuizReviewScreen(
+                      quizId: state.pathParameters['id']!,
                     ),
                   ),
                 ],
@@ -116,6 +133,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, state) =>
             VideoDetailScreen(videoId: state.pathParameters['id']!),
       ),
+      GoRoute(path: '/activity', builder: (_, __) => const ActivityHistoryScreen()),
       GoRoute(path: '/settings', builder: (_, __) => const SettingsScreen()),
     ],
   );

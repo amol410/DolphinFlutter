@@ -355,6 +355,20 @@ class QuizResultScreen extends ConsumerWidget {
 
 
             // Action buttons
+            ElevatedButton.icon(
+              onPressed: () => context.push('/quizzes/$quizId/review'),
+              icon: const Icon(Icons.fact_check_outlined, size: 18),
+              label: Text('Review Questions & Answers',
+                style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.surface,
+                foregroundColor: AppColors.primaryLight,
+                side: const BorderSide(color: AppColors.primary, width: 1.5),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+            const SizedBox(height: 12),
             GradientButton(
               text: 'Retake Quiz',
               icon: Icons.replay,

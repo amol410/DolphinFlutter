@@ -8,7 +8,7 @@ class QuizRepository {
     String? subject,
     String? topic,
     int page = 1,
-    int limit = 12,
+    int limit = 6,
   }) async {
     final dio = await DioClient.getInstance();
     try {
@@ -57,12 +57,26 @@ class QuizRepository {
         final questions = data['result']['questions'] as List? ?? [];
         
         // Map the backend questions array to the format expected by AttemptAnswer.fromJson
-        final mappedAnswers = questions.map((q) => {
-          'questionId': q['_id'],
-          'selectedIndex': q['chosenIndex'],
-          'correct': q['isCorrect'],
-          'correctIndex': q['correctIndex'],
-          'explanation': q['explanation'],
+        final mappedAnswers = questions.map((q) {
+          if (q['type'] == 'match-pairs' || q['type'] == 'match_pairs') {
+            return {
+              'questionId': q['_id'],
+              'matches': q['submittedMatches'],
+              'correctCount': q['correctCount'],
+              'totalPairs': q['totalPairs'],
+              'isCorrect': q['isCorrect'],
+              'pointsEarned': q['pointsEarned'],
+              'explanation': q['explanation'],
+            };
+          }
+          return {
+            'questionId': q['_id'],
+            'selectedIndex': q['chosenIndex'],
+            'correct': q['isCorrect'],
+            'correctIndex': q['correctIndex'],
+            'explanation': q['explanation'],
+            'pointsEarned': q['pointsEarned'],
+          };
         }).toList();
         
         attemptData['answers'] = mappedAnswers;
@@ -70,6 +84,20 @@ class QuizRepository {
       }
       
       return AttemptModel.fromJson(data as Map<String, dynamic>);
+    } catch (e) {
+      throw DioClient.handleError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> getQuizReview(String quizId) async {
+    final dio = await DioClient.getInstance();
+    try {
+      final response = await dio.get('${ApiConstants.quizzes}/$quizId/review');
+      final data = response.data;
+      if (data['result'] != null) {
+        return Map<String, dynamic>.from(data['result']);
+      }
+      return Map<String, dynamic>.from(data);
     } catch (e) {
       throw DioClient.handleError(e);
     }

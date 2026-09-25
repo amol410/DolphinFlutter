@@ -60,10 +60,10 @@ class QuizzesListNotifier extends StateNotifier<QuizzesListState> {
     }
     try {
       final result = await _repo.getQuizzes(
-        q: _query, subject: _subject, topic: _topic, page: 1,
+        q: _query, subject: _subject, topic: _topic, page: 1, limit: 6,
       );
       state = state.copyWith(
-        quizzes: result, isLoading: false, page: 1, hasMore: result.length == 12,
+        quizzes: result, isLoading: false, page: 1, hasMore: result.length == 6,
       );
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
@@ -76,13 +76,13 @@ class QuizzesListNotifier extends StateNotifier<QuizzesListState> {
     try {
       final next = state.page + 1;
       final result = await _repo.getQuizzes(
-        q: _query, subject: _subject, topic: _topic, page: next,
+        q: _query, subject: _subject, topic: _topic, page: next, limit: 6,
       );
       state = state.copyWith(
         quizzes: [...state.quizzes, ...result],
         isLoadingMore: false,
         page: next,
-        hasMore: result.length == 12,
+        hasMore: result.length == 6,
       );
     } catch (_) {
       state = state.copyWith(isLoadingMore: false);
@@ -109,10 +109,16 @@ final myAttemptsProvider =
   return ref.watch(quizRepositoryProvider).getMyAttempts(quizId);
 });
 
+final quizReviewProvider =
+    FutureProvider.family<Map<String, dynamic>, String>((ref, quizId) async {
+  return ref.watch(quizRepositoryProvider).getQuizReview(quizId);
+});
+
 // --- Quiz Take Session ---
 class QuizTakeState {
   final int currentIndex;
   final Map<String, int> selectedAnswers; // questionId → selectedIndex
+  final Map<String, List<Map<String, String>>> matchAnswers; // questionId → matches
   final Set<String> markedForReview;
   final int secondsRemaining;
   final bool isSubmitting;
@@ -120,6 +126,7 @@ class QuizTakeState {
   const QuizTakeState({
     this.currentIndex = 0,
     this.selectedAnswers = const {},
+    this.matchAnswers = const {},
     this.markedForReview = const {},
     this.secondsRemaining = 0,
     this.isSubmitting = false,
@@ -128,6 +135,7 @@ class QuizTakeState {
   QuizTakeState copyWith({
     int? currentIndex,
     Map<String, int>? selectedAnswers,
+    Map<String, List<Map<String, String>>>? matchAnswers,
     Set<String>? markedForReview,
     int? secondsRemaining,
     bool? isSubmitting,
@@ -135,6 +143,7 @@ class QuizTakeState {
     return QuizTakeState(
       currentIndex: currentIndex ?? this.currentIndex,
       selectedAnswers: selectedAnswers ?? this.selectedAnswers,
+      matchAnswers: matchAnswers ?? this.matchAnswers,
       markedForReview: markedForReview ?? this.markedForReview,
       secondsRemaining: secondsRemaining ?? this.secondsRemaining,
       isSubmitting: isSubmitting ?? this.isSubmitting,
@@ -155,6 +164,12 @@ class QuizTakeNotifier extends StateNotifier<QuizTakeState> {
     final updated = Map<String, int>.from(state.selectedAnswers);
     updated[questionId] = selectedIndex;
     state = state.copyWith(selectedAnswers: updated);
+  }
+
+  void setMatchAnswer(String questionId, List<Map<String, String>> matches) {
+    final updated = Map<String, List<Map<String, String>>>.from(state.matchAnswers);
+    updated[questionId] = matches;
+    state = state.copyWith(matchAnswers: updated);
   }
 
   void toggleReview(String questionId) {

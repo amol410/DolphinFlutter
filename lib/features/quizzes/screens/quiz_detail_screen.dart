@@ -123,33 +123,55 @@ class QuizDetailScreen extends ConsumerWidget {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Previous Attempts',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
-                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Previous Attempts',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
+                          TextButton.icon(
+                            onPressed: () => context.push('/quizzes/$quizId/review'),
+                            icon: const Icon(Icons.analytics_outlined, size: 14, color: AppColors.primaryLight),
+                            label: Text('Review Answers',
+                              style: GoogleFonts.inter(fontSize: 12, color: AppColors.primaryLight)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
-                        children: attempts.take(2).toList().asMap().entries.map((e) {
+                        children: attempts.take(3).toList().asMap().entries.map((e) {
                           final att = e.value;
                           final passed = att.passed;
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: (passed ? AppColors.success : AppColors.error)
-                                  .withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: () => context.push('/quizzes/$quizId/review'),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
                                 color: (passed ? AppColors.success : AppColors.error)
-                                    .withOpacity(0.3),
+                                    .withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: (passed ? AppColors.success : AppColors.error)
+                                      .withOpacity(0.3),
+                                ),
                               ),
-                            ),
-                            child: Text(
-                              'Attempt ${e.key + 1} : ${att.percentage.toStringAsFixed(0)}% ${passed ? '✓' : '✗'}',
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: passed ? AppColors.success : AppColors.error,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'Attempt ${e.key + 1} : ${att.percentage.toStringAsFixed(0)}% ${passed ? '✓' : '✗'}',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: passed ? AppColors.success : AppColors.error,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.arrow_forward_ios, size: 10, color: Colors.white60),
+                                ],
                               ),
                             ),
                           );

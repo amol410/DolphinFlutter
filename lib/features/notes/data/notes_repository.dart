@@ -8,7 +8,7 @@ class NotesRepository {
     String? subject,
     String? topic,
     int page = 1,
-    int limit = 12,
+    int limit = 6,
   }) async {
     final dio = await DioClient.getInstance();
     try {
