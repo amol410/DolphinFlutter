@@ -698,6 +698,42 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
                               ),
                               const SizedBox(height: 10),
 
+                              // Static English translation for understanding purpose only (no audio, no popup)
+                              if (sentence.translation.isNotEmpty) ...[
+                                Container(
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.04),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.white.withOpacity(0.08)),
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Meaning: ',
+                                        style: TextStyle(
+                                          color: Colors.cyan.shade300,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      Expanded(
+                                        child: Text(
+                                          sentence.translation,
+                                          style: TextStyle(
+                                            color: Colors.grey.shade300,
+                                            fontSize: 12,
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+
                               // Real-time Spoken Transcript or Feedback
                               if (_spokenText.isNotEmpty || _isListening)
                                 Container(
