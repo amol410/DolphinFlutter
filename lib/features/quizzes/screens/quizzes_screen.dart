@@ -114,6 +114,59 @@ class _QuizzesScreenState extends ConsumerState<QuizzesScreen> {
                     ),
                   ),
                 ),
+                // Topic chips (when a subject is selected)
+                if (_selectedSubjectId.isNotEmpty)
+                  subjectsAsync.maybeWhen(
+                    data: (subjects) {
+                      final subject = subjects.firstWhere(
+                        (s) => s['_id']?.toString() == _selectedSubjectId,
+                        orElse: () => {},
+                      );
+                      final rawTopics = subject['topics'] as List? ?? [];
+                      final topics = rawTopics
+                          .map((t) => t is Map ? (t['name']?.toString() ?? '') : t.toString())
+                          .where((name) => name.trim().isNotEmpty)
+                          .toList();
+
+                      if (topics.isEmpty) return const SizedBox.shrink();
+
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: SizedBox(
+                          height: 32,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: topics.length + 1,
+                            separatorBuilder: (_, __) => const SizedBox(width: 8),
+                            itemBuilder: (_, i) {
+                              if (i == 0) {
+                                return _Chip(
+                                  label: 'All Topics',
+                                  selected: _selectedTopic.isEmpty,
+                                  isAccent: true,
+                                  onTap: () {
+                                    setState(() => _selectedTopic = '');
+                                    ref.read(quizzesListProvider.notifier).filterTopic('');
+                                  },
+                                );
+                              }
+                              final topic = topics[i - 1];
+                              return _Chip(
+                                label: topic,
+                                selected: _selectedTopic == topic,
+                                isAccent: true,
+                                onTap: () {
+                                  setState(() => _selectedTopic = topic);
+                                  ref.read(quizzesListProvider.notifier).filterTopic(topic);
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                    orElse: () => const SizedBox.shrink(),
+                  ),
               ],
             ),
           ),
@@ -155,7 +208,14 @@ class _Chip extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  const _Chip({required this.label, required this.selected, required this.onTap});
+  final bool isAccent;
+
+  const _Chip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.isAccent = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -165,15 +225,22 @@ class _Chip extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(
-          color: selected ? AppColors.primary : AppColors.surface2,
+          color: selected
+              ? (isAccent ? const Color(0xFF06B6D4) : AppColors.primary)
+              : AppColors.surface2,
           borderRadius: BorderRadius.circular(20),
+          border: isAccent && selected
+              ? Border.all(color: const Color(0xFF67E8F9), width: 1)
+              : null,
         ),
-        child: Text(label,
+        child: Text(
+          label,
           style: GoogleFonts.inter(
-            fontSize: 13,
+            fontSize: isAccent ? 12 : 13,
             fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
             color: selected ? Colors.white : AppColors.textSecondary,
-          )),
+          ),
+        ),
       ),
     );
   }

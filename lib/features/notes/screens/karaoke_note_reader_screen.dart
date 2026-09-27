@@ -113,16 +113,22 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
       await _speech.initialize(
         onError: (val) {
           debugPrint('Speech error: ${val.errorMsg}');
-          if (mounted) {
-            setState(() {
-              _isListening = false;
-            });
-          }
         },
         onStatus: (val) {
+          debugPrint('Speech status: $val');
           if (val == 'done' || val == 'notListening') {
-            if (mounted && _isListening && _spokenText.isNotEmpty) {
-              _handleAutoSubmit();
+            // Note: On Android, the native engine can emit 'notListening' during normal speech pauses.
+            // Do NOT immediately evaluate here! Wait for the full 3-second silence timer to count down.
+            if (mounted && _isListening) {
+              if (_spokenText.isNotEmpty) {
+                if (_silenceTimer == null || !_silenceTimer!.isActive) {
+                  _resetSilenceTimer(_activeSprechenIndex ?? 0);
+                }
+              } else {
+                setState(() {
+                  _isListening = false;
+                });
+              }
             }
           }
         },
@@ -230,6 +236,13 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
 
     _speech.listen(
       localeId: 'de_DE',
+      listenFor: const Duration(seconds: 90),
+      pauseFor: const Duration(seconds: 6),
+      listenOptions: stt.SpeechListenOptions(
+        listenMode: stt.ListenMode.dictation,
+        cancelOnError: false,
+        partialResults: true,
+      ),
       onResult: (result) {
         final text = result.recognizedWords.trim();
         if (mounted) {
@@ -248,7 +261,9 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
   void _resetSilenceTimer(int sIdx) {
     _silenceTimer?.cancel();
     _silenceTimer = Timer(const Duration(milliseconds: 3000), () {
-      _handleAutoSubmit();
+      if (mounted && _isListening && _spokenText.isNotEmpty) {
+        _handleAutoSubmit();
+      }
     });
   }
 
@@ -756,6 +771,33 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
                                           fontStyle: FontStyle.italic,
                                         ),
                                       ),
+                                      if (_isListening)
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 5),
+                                          child: Row(
+                                            children: [
+                                              Container(
+                                                width: 6,
+                                                height: 6,
+                                                decoration: const BoxDecoration(
+                                                  color: Colors.greenAccent,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                _spokenText.isNotEmpty
+                                                    ? 'Submits in 3s of silence, or tap Done'
+                                                    : 'German speech recognition active',
+                                                style: TextStyle(
+                                                  color: Colors.greenAccent.shade200,
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
                                       if (_speechAccuracy > 0)
                                         Padding(
                                           padding: const EdgeInsets.only(top: 4),
