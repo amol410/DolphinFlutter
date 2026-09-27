@@ -43,13 +43,21 @@ class _VideosScreenState extends ConsumerState<VideosScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(videosListProvider);
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surfaceColor = isDark ? AppColors.pitchBlackSurface : AppColors.lightSurface;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Text('Videos',
+        title: Text(
+          'Videos',
           style: GoogleFonts.plusJakartaSans(
-            fontSize: 20, fontWeight: FontWeight.w600, color: Colors.white)),
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: onSurface,
+          ),
+        ),
         backgroundColor: Colors.transparent,
       ),
       body: Column(
@@ -65,13 +73,13 @@ class _VideosScreenState extends ConsumerState<VideosScreen> {
                   }
                 });
               },
-              style: GoogleFonts.inter(color: Colors.white),
+              style: GoogleFonts.inter(color: onSurface),
               decoration: InputDecoration(
                 hintText: 'Search videos...',
-                prefixIcon: const Icon(Icons.search, color: AppColors.textMuted, size: 20),
+                prefixIcon: Icon(Icons.search, color: AppColors.textMuted, size: 20),
                 suffixIcon: _searchController.text.isNotEmpty
                     ? IconButton(
-                        icon: const Icon(Icons.close, size: 18, color: AppColors.textMuted),
+                        icon: Icon(Icons.close, size: 18, color: AppColors.textMuted),
                         onPressed: () {
                           _searchController.clear();
                           ref.read(videosListProvider.notifier).search('');
@@ -92,7 +100,7 @@ class _VideosScreenState extends ConsumerState<VideosScreen> {
                       )
                     : RefreshIndicator(
                         color: AppColors.primary,
-                        backgroundColor: AppColors.surface,
+                        backgroundColor: surfaceColor,
                         onRefresh: () =>
                             ref.read(videosListProvider.notifier).fetch(refresh: true),
                         child: GridView.builder(
@@ -104,8 +112,7 @@ class _VideosScreenState extends ConsumerState<VideosScreen> {
                             mainAxisSpacing: 12,
                             childAspectRatio: 0.85,
                           ),
-                          itemCount: state.videos.length +
-                              (state.isLoadingMore ? 2 : 0),
+                          itemCount: state.videos.length + (state.isLoadingMore ? 2 : 0),
                           itemBuilder: (_, i) {
                             if (i >= state.videos.length) {
                               return const ShimmerCard(height: 160);
@@ -133,13 +140,26 @@ class _VideoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surfaceColor = isDark ? AppColors.pitchBlackSurface : AppColors.lightSurface;
+    final surface2Color = isDark ? AppColors.pitchBlackSurface2 : AppColors.lightSurface2;
+    final borderColor = isDark ? AppColors.pitchBlackBorder : AppColors.lightBorder;
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: surfaceColor,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(color: borderColor),
+          boxShadow: [
+            BoxShadow(
+              color: isDark ? Colors.black26 : const Color(0x060F172A),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            )
+          ],
         ),
         clipBehavior: Clip.antiAlias,
         child: Column(
@@ -153,11 +173,10 @@ class _VideoCard extends StatelessWidget {
                   CachedNetworkImage(
                     imageUrl: video.thumbnailUrl,
                     fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(color: AppColors.surface2),
+                    placeholder: (_, __) => Container(color: surface2Color),
                     errorWidget: (_, __, ___) => Container(
-                      color: AppColors.surface2,
-                      child: const Icon(Icons.video_library,
-                          color: AppColors.textMuted, size: 32),
+                      color: surface2Color,
+                      child: Icon(Icons.video_library, color: AppColors.textMuted, size: 32),
                     ),
                   ),
                   // Bottom gradient
@@ -173,7 +192,7 @@ class _VideoCard extends StatelessWidget {
                     ),
                   ),
                   // Play button
-                  const Center(
+                  Center(
                     child: Icon(
                       Icons.play_circle_filled,
                       color: Colors.white,
@@ -194,7 +213,7 @@ class _VideoCard extends StatelessWidget {
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: Colors.white,
+                      color: onSurface,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -202,12 +221,12 @@ class _VideoCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(Icons.remove_red_eye_outlined,
-                          size: 11, color: AppColors.textMuted),
+                      Icon(Icons.remove_red_eye_outlined, size: 11, color: AppColors.textMuted),
                       const SizedBox(width: 3),
-                      Text('${video.viewCount}',
-                        style: GoogleFonts.inter(
-                          fontSize: 10, color: AppColors.textMuted)),
+                      Text(
+                        '${video.viewCount}',
+                        style: GoogleFonts.inter(fontSize: 10, color: AppColors.textMuted),
+                      ),
                     ],
                   ),
                 ],

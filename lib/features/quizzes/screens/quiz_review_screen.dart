@@ -6,7 +6,6 @@ import 'package:percent_indicator/percent_indicator.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
 import '../providers/quiz_provider.dart';
-import '../data/models/quiz_model.dart';
 
 class QuizReviewScreen extends ConsumerWidget {
   final String quizId;
@@ -22,46 +21,43 @@ class QuizReviewScreen extends ConsumerWidget {
     return '${s}s';
   }
 
-  String _formatDate(dynamic dateVal) {
-    if (dateVal == null) return '';
-    try {
-      final dt = DateTime.parse(dateVal.toString());
-      return '${dt.day}/${dt.month}/${dt.year}';
-    } catch (_) {
-      return '';
-    }
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final reviewAsync = ref.watch(quizReviewProvider(quizId));
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final surfaceColor = isDark ? AppColors.pitchBlackSurface : AppColors.lightSurface;
+    final surface2Color = isDark ? AppColors.pitchBlackSurface2 : AppColors.lightSurface2;
+    final borderColor = isDark ? AppColors.pitchBlackBorder : AppColors.lightBorder;
+    final textSecondary = isDark ? AppColors.pitchBlackTextSecondary : AppColors.lightTextSecondary;
+    final textMuted = isDark ? AppColors.pitchBlackTextMuted : AppColors.lightTextMuted;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(
           'Quiz Review',
           style: GoogleFonts.plusJakartaSans(
             fontSize: 18,
             fontWeight: FontWeight.w600,
-            color: Colors.white,
+            color: onSurface,
           ),
         ),
         backgroundColor: Colors.transparent,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: Icon(Icons.arrow_back, color: onSurface),
           onPressed: () => Navigator.of(context).pop(),
         ),
         actions: [
           TextButton.icon(
             onPressed: () => context.pushReplacement('/quizzes/$quizId/take'),
-            icon: const Icon(Icons.refresh, size: 16, color: AppColors.primaryLight),
+            icon: Icon(Icons.refresh, size: 16, color: onSurface),
             label: Text(
               'Retake',
               style: GoogleFonts.inter(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: AppColors.primaryLight,
+                color: onSurface,
               ),
             ),
           ),
@@ -76,21 +72,21 @@ class QuizReviewScreen extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.help_outline_rounded, color: AppColors.textMuted, size: 48),
+                Icon(Icons.help_outline_rounded, color: AppColors.textMuted, size: 48),
                 const SizedBox(height: 16),
                 Text(
                   'No Saved Quiz Review',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    color: onSurface,
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'You haven\'t completed this quiz yet, or the attempt history is unavailable.',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary),
+                  style: GoogleFonts.inter(fontSize: 14, color: textSecondary),
                 ),
                 const SizedBox(height: 24),
                 ElevatedButton.icon(
@@ -98,8 +94,8 @@ class QuizReviewScreen extends ConsumerWidget {
                   icon: const Icon(Icons.play_arrow_rounded),
                   label: const Text('Take Quiz Now'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
+                    backgroundColor: isDark ? AppColors.secondary : AppColors.primary,
+                    foregroundColor: isDark ? AppColors.onSecondaryContainer : Colors.white,
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   ),
                 ),
@@ -120,13 +116,13 @@ class QuizReviewScreen extends ConsumerWidget {
           final quizTitle = quiz['title'] ?? 'Assessment Review';
 
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            padding: const EdgeInsets.all(16),
             children: [
-              // ── Score Summary Card ──
+              // ── Summary Score Card ──
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: AppColors.surface,
+                  color: surfaceColor,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: passed ? AppColors.success.withOpacity(0.3) : AppColors.error.withOpacity(0.3),
@@ -147,7 +143,7 @@ class QuizReviewScreen extends ConsumerWidget {
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                        color: onSurface,
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -163,7 +159,7 @@ class QuizReviewScreen extends ConsumerWidget {
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                              color: onSurface,
                             ),
                           ),
                           Text(
@@ -178,7 +174,7 @@ class QuizReviewScreen extends ConsumerWidget {
                         ],
                       ),
                       progressColor: passed ? AppColors.success : AppColors.error,
-                      backgroundColor: AppColors.surface2,
+                      backgroundColor: surface2Color,
                       circularStrokeCap: CircularStrokeCap.round,
                     ),
                     const SizedBox(height: 20),
@@ -190,18 +186,24 @@ class QuizReviewScreen extends ConsumerWidget {
                           value: '$score / $maxScore pts',
                           icon: Icons.emoji_events_outlined,
                           color: AppColors.warning,
+                          onSurface: onSurface,
+                          textMuted: textMuted,
                         ),
                         _ReviewStat(
                           label: 'Time Taken',
                           value: _formatTime(timeTakenSecs),
                           icon: Icons.timer_outlined,
                           color: AppColors.accent,
+                          onSurface: onSurface,
+                          textMuted: textMuted,
                         ),
                         _ReviewStat(
                           label: 'Status',
                           value: passed ? 'Passed' : 'Failed',
                           icon: passed ? Icons.check_circle_outline : Icons.cancel_outlined,
                           color: passed ? AppColors.success : AppColors.error,
+                          onSurface: onSurface,
+                          textMuted: textMuted,
                         ),
                       ],
                     ),
@@ -213,14 +215,14 @@ class QuizReviewScreen extends ConsumerWidget {
               // ── Questions Header ──
               Row(
                 children: [
-                  const Icon(Icons.fact_check_outlined, size: 20, color: AppColors.primaryLight),
+                  Icon(Icons.fact_check_outlined, size: 20, color: isDark ? AppColors.secondary : AppColors.primaryLight),
                   const SizedBox(width: 8),
                   Text(
                     'Questions Review (${questions.length})',
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      color: onSurface,
                     ),
                   ),
                 ],
@@ -246,12 +248,16 @@ class _ReviewStat extends StatelessWidget {
   final String value;
   final IconData icon;
   final Color color;
+  final Color onSurface;
+  final Color textMuted;
 
   const _ReviewStat({
     required this.label,
     required this.value,
     required this.icon,
     required this.color,
+    required this.onSurface,
+    required this.textMuted,
   });
 
   @override
@@ -265,14 +271,14 @@ class _ReviewStat extends StatelessWidget {
           style: GoogleFonts.plusJakartaSans(
             fontSize: 13,
             fontWeight: FontWeight.bold,
-            color: Colors.white,
+            color: onSurface,
           ),
         ),
         Text(
           label,
           style: GoogleFonts.inter(
             fontSize: 11,
-            color: AppColors.textMuted,
+            color: textMuted,
           ),
         ),
       ],
@@ -288,6 +294,13 @@ class _QuestionReviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final surfaceColor = isDark ? AppColors.pitchBlackSurface : AppColors.lightSurface;
+    final surface2Color = isDark ? AppColors.pitchBlackSurface2 : AppColors.lightSurface2;
+    final borderColor = isDark ? AppColors.pitchBlackBorder : AppColors.lightBorder;
+    final textMuted = isDark ? AppColors.pitchBlackTextMuted : AppColors.lightTextMuted;
+
     final text = data['text'] ?? data['question'] ?? '';
     final type = data['type'] ?? 'multiple-choice';
     final isMatchPairs = type == 'match-pairs' || type == 'match_pairs';
@@ -300,7 +313,7 @@ class _QuestionReviewCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: surfaceColor,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isCorrect ? AppColors.success.withOpacity(0.3) : AppColors.error.withOpacity(0.3),
@@ -343,7 +356,7 @@ class _QuestionReviewCard extends StatelessWidget {
                 style: GoogleFonts.inter(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: isCorrect ? AppColors.success : AppColors.textMuted,
+                  color: isCorrect ? AppColors.success : textMuted,
                 ),
               ),
             ],
@@ -356,7 +369,7 @@ class _QuestionReviewCard extends StatelessWidget {
             style: GoogleFonts.plusJakartaSans(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: Colors.white,
+              color: onSurface,
             ),
           ),
 
@@ -367,7 +380,7 @@ class _QuestionReviewCard extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.surface2,
+                color: isDark ? surface2Color : const Color(0xFF1E293B),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -380,9 +393,9 @@ class _QuestionReviewCard extends StatelessWidget {
 
           // Render options or match-pairs table
           if (isMatchPairs)
-            _buildMatchPairsReview(data)
+            _buildMatchPairsReview(data, onSurface, textMuted)
           else
-            _buildMcqReview(data),
+            _buildMcqReview(data, isDark, onSurface, surfaceColor, surface2Color, borderColor),
 
           // Explanation box
           if (explanation != null && explanation.trim().isNotEmpty) ...[
@@ -390,14 +403,14 @@ class _QuestionReviewCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.08),
+                color: (isDark ? AppColors.secondary : AppColors.primary).withOpacity(0.08),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+                border: Border.all(color: (isDark ? AppColors.secondary : AppColors.primary).withOpacity(0.25)),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.lightbulb_outline, size: 16, color: AppColors.primaryLight),
+                  Icon(Icons.lightbulb_outline, size: 16, color: isDark ? AppColors.secondary : AppColors.primaryLight),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
@@ -408,7 +421,7 @@ class _QuestionReviewCard extends StatelessWidget {
                           style: GoogleFonts.inter(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
-                            color: AppColors.primaryLight,
+                            color: isDark ? AppColors.secondary : AppColors.primary,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -416,7 +429,7 @@ class _QuestionReviewCard extends StatelessWidget {
                           explanation,
                           style: GoogleFonts.inter(
                             fontSize: 12,
-                            color: Colors.white70,
+                            color: onSurface.withOpacity(0.85),
                           ),
                         ),
                       ],
@@ -431,7 +444,14 @@ class _QuestionReviewCard extends StatelessWidget {
     );
   }
 
-  Widget _buildMcqReview(Map<String, dynamic> data) {
+  Widget _buildMcqReview(
+    Map<String, dynamic> data,
+    bool isDark,
+    Color onSurface,
+    Color surfaceColor,
+    Color surface2Color,
+    Color defaultBorderColor,
+  ) {
     final options = (data['options'] as List? ?? []).cast<String>();
     final correctIndex = data['correctIndex'] as int?;
     final chosenIndex = data['chosenIndex'] as int? ?? -1;
@@ -445,22 +465,22 @@ class _QuestionReviewCard extends StatelessWidget {
         final isUserPick = optIdx == chosenIndex;
         final isCorrectOpt = optIdx == correctIndex;
 
-        Color borderColor = AppColors.border;
-        Color bgColor = AppColors.surface2.withOpacity(0.4);
-        Color textColor = Colors.white70;
+        Color itemBorderColor = defaultBorderColor;
+        Color bgColor = surface2Color.withOpacity(0.5);
+        Color textColor = onSurface.withOpacity(0.8);
         IconData? icon;
         Color? iconColor;
 
         if (isCorrectOpt) {
-          borderColor = AppColors.success;
+          itemBorderColor = AppColors.success;
           bgColor = AppColors.success.withOpacity(0.12);
-          textColor = Colors.white;
+          textColor = isDark ? Colors.white : AppColors.lightTextPrimary;
           icon = Icons.check_circle;
           iconColor = AppColors.success;
         } else if (isUserPick) {
-          borderColor = AppColors.error;
+          itemBorderColor = AppColors.error;
           bgColor = AppColors.error.withOpacity(0.12);
-          textColor = Colors.white;
+          textColor = isDark ? Colors.white : AppColors.lightTextPrimary;
           icon = Icons.cancel;
           iconColor = AppColors.error;
         }
@@ -471,7 +491,7 @@ class _QuestionReviewCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: bgColor,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: borderColor, width: (isUserPick || isCorrectOpt) ? 1.5 : 1),
+            border: Border.all(color: itemBorderColor, width: (isUserPick || isCorrectOpt) ? 1.5 : 1),
           ),
           child: Row(
             children: [
@@ -483,7 +503,7 @@ class _QuestionReviewCard extends StatelessWidget {
                       ? AppColors.success
                       : isUserPick
                           ? AppColors.error
-                          : AppColors.surface,
+                          : surfaceColor,
                   shape: BoxShape.circle,
                 ),
                 child: Center(
@@ -492,7 +512,9 @@ class _QuestionReviewCard extends StatelessWidget {
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
-                      color: (isUserPick || isCorrectOpt) ? Colors.white : AppColors.textSecondary,
+                      color: (isUserPick || isCorrectOpt)
+                          ? Colors.white
+                          : (isDark ? AppColors.pitchBlackTextSecondary : AppColors.lightTextSecondary),
                     ),
                   ),
                 ),
@@ -519,7 +541,7 @@ class _QuestionReviewCard extends StatelessWidget {
     );
   }
 
-  Widget _buildMatchPairsReview(Map<String, dynamic> data) {
+  Widget _buildMatchPairsReview(Map<String, dynamic> data, Color onSurface, Color textMuted) {
     final pairs = (data['pairs'] as List? ?? []).cast<Map<String, dynamic>>();
     final submittedMatches = (data['submittedMatches'] as List? ?? []).cast<Map<String, dynamic>>();
 
@@ -534,7 +556,7 @@ class _QuestionReviewCard extends StatelessWidget {
               fontSize: 10,
               fontWeight: FontWeight.bold,
               letterSpacing: 0.8,
-              color: AppColors.textMuted,
+              color: textMuted,
             ),
           ),
         ),
@@ -542,7 +564,6 @@ class _QuestionReviewCard extends StatelessWidget {
           final left = qp['left']?.toString() ?? '';
           final correctRight = qp['right']?.toString() ?? '';
 
-          // Find student's match for this left item
           final studentMatch = submittedMatches.firstWhere(
             (sm) => (sm['left']?.toString() ?? '').trim().toLowerCase() == left.trim().toLowerCase(),
             orElse: () => {'right': '(unmatched)'},
@@ -577,7 +598,7 @@ class _QuestionReviewCard extends StatelessWidget {
                         style: GoogleFonts.inter(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                          color: onSurface,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -585,7 +606,7 @@ class _QuestionReviewCard extends StatelessWidget {
                         children: [
                           Text(
                             'Your answer: ',
-                            style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+                            style: GoogleFonts.inter(fontSize: 11, color: textMuted),
                           ),
                           Expanded(
                             child: Text(
@@ -606,7 +627,7 @@ class _QuestionReviewCard extends StatelessWidget {
                           children: [
                             Text(
                               'Correct answer: ',
-                              style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+                              style: GoogleFonts.inter(fontSize: 11, color: textMuted),
                             ),
                             Expanded(
                               child: Text(

@@ -33,15 +33,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _editApiUrl() async {
     final controller = TextEditingController(text: _apiBaseUrl);
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surfaceColor = isDark ? AppColors.pitchBlackSurface : AppColors.lightSurface;
+
     final result = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text('API Base URL',
-          style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600)),
+        backgroundColor: surfaceColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'API Base URL',
+          style: GoogleFonts.plusJakartaSans(color: onSurface, fontWeight: FontWeight.w600),
+        ),
         content: TextField(
           controller: controller,
-          style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+          style: GoogleFonts.inter(color: onSurface, fontSize: 13),
           decoration: const InputDecoration(
             hintText: 'https://api.dolphincoder.com/api',
           ),
@@ -49,11 +56,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel')),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: Text('Save',
-              style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w600))),
+            child: Text(
+              'Save',
+              style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w600),
+            ),
+          ),
         ],
       ),
     );
@@ -63,30 +74,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
       setState(() => _apiBaseUrl = result);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Restart app to apply new URL'),
-              backgroundColor: AppColors.surface2));
+          const SnackBar(content: Text('Restart app to apply new URL')),
+        );
       }
     }
   }
 
   Future<void> _clearCache() async {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surfaceColor = isDark ? AppColors.pitchBlackSurface : AppColors.lightSurface;
+    final textSecondary = isDark ? AppColors.pitchBlackTextSecondary : AppColors.lightTextSecondary;
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text('Clear Cache',
-          style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600)),
-        content: Text('This will clear cached images. Continue?',
-          style: GoogleFonts.inter(color: AppColors.textSecondary)),
+        backgroundColor: surfaceColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Clear Cache',
+          style: GoogleFonts.plusJakartaSans(color: onSurface, fontWeight: FontWeight.w600),
+        ),
+        content: Text(
+          'This will clear cached images. Continue?',
+          style: GoogleFonts.inter(color: textSecondary),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel')),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Clear',
-              style: GoogleFonts.inter(
-                color: AppColors.error, fontWeight: FontWeight.w600))),
+            child: Text(
+              'Clear',
+              style: GoogleFonts.inter(color: AppColors.error, fontWeight: FontWeight.w600),
+            ),
+          ),
         ],
       ),
     );
@@ -94,8 +118,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       PaintingBinding.instance.imageCache.clear();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Cache cleared'),
-              backgroundColor: AppColors.success));
+          const SnackBar(
+            content: Text('Cache cleared'),
+            backgroundColor: AppColors.success,
+          ),
+        );
       }
     }
   }
@@ -117,13 +144,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textSecondary = isDark ? AppColors.pitchBlackTextSecondary : AppColors.lightTextSecondary;
+    final dividerColor = isDark ? const Color(0x1FFFFFFF) : AppColors.lightBorder;
+
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Text('Settings',
+        title: Text(
+          'Settings',
           style: GoogleFonts.plusJakartaSans(
-            fontSize: 20, fontWeight: FontWeight.w600, color: Colors.white)),
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: onSurface,
+          ),
+        ),
         backgroundColor: Colors.transparent,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: onSurface),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -135,20 +176,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               children: [
                 SwitchListTile(
-                  title: Text('Push Notifications',
-                    style: GoogleFonts.inter(fontSize: 15, color: Colors.white)),
-                  subtitle: Text('Coming soon',
-                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+                  title: Text(
+                    'Push Notifications',
+                    style: GoogleFonts.inter(fontSize: 15, color: onSurface),
+                  ),
+                  subtitle: Text(
+                    'Coming soon',
+                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+                  ),
                   value: false,
                   onChanged: null,
                   activeColor: AppColors.primary,
                 ),
-                const Divider(color: AppColors.surface2, height: 1),
+                Divider(color: dividerColor, height: 1),
                 ListTile(
-                  title: Text('Language',
-                    style: GoogleFonts.inter(fontSize: 15, color: Colors.white)),
-                  trailing: Text('English',
-                    style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary)),
+                  title: Text(
+                    'Language',
+                    style: GoogleFonts.inter(fontSize: 15, color: onSurface),
+                  ),
+                  trailing: Text(
+                    'English',
+                    style: GoogleFonts.inter(fontSize: 14, color: textSecondary),
+                  ),
                 ),
               ],
             ),
@@ -160,13 +209,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           GlassCard(
             padding: EdgeInsets.zero,
             child: ListTile(
-              title: Text('API Base URL',
-                style: GoogleFonts.inter(fontSize: 15, color: Colors.white)),
-              subtitle: Text(_apiBaseUrl,
+              title: Text(
+                'API Base URL',
+                style: GoogleFonts.inter(fontSize: 15, color: onSurface),
+              ),
+              subtitle: Text(
+                _apiBaseUrl,
                 style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
-                overflow: TextOverflow.ellipsis),
-              trailing: const Icon(Icons.edit_outlined,
-                  color: AppColors.textSecondary, size: 18),
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: Icon(Icons.edit_outlined, color: AppColors.textMuted, size: 18),
               onTap: _editApiUrl,
             ),
           ),
@@ -177,14 +229,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           GlassCard(
             padding: EdgeInsets.zero,
             child: ListTile(
-              leading: const Icon(Icons.delete_sweep_outlined,
-                  color: AppColors.error),
-              title: Text('Clear Cache',
+              leading: const Icon(Icons.delete_sweep_outlined, color: AppColors.error),
+              title: Text(
+                'Clear Cache',
                 style: GoogleFonts.inter(
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
                   color: AppColors.error,
-                )),
+                ),
+              ),
               onTap: _clearCache,
             ),
           ),
@@ -197,34 +250,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               children: [
                 ListTile(
-                  title: Text('App Version',
-                    style: GoogleFonts.inter(fontSize: 15, color: Colors.white)),
-                  trailing: Text(AppConstants.appVersion,
-                    style: GoogleFonts.inter(
-                        fontSize: 14, color: AppColors.textSecondary)),
+                  title: Text(
+                    'App Version',
+                    style: GoogleFonts.inter(fontSize: 15, color: onSurface),
+                  ),
+                  trailing: Text(
+                    AppConstants.appVersion,
+                    style: GoogleFonts.inter(fontSize: 14, color: textSecondary),
+                  ),
                 ),
-                const Divider(color: AppColors.surface2, height: 1),
+                Divider(color: dividerColor, height: 1),
                 ListTile(
-                  leading: const Icon(Icons.star_outline,
-                      color: AppColors.warning),
-                  title: Text('Rate App',
-                    style: GoogleFonts.inter(fontSize: 15, color: Colors.white)),
-                  onTap: () => launchUrl(
-                      Uri.parse('https://play.google.com/store')),
+                  leading: const Icon(Icons.star_outline, color: AppColors.warning),
+                  title: Text(
+                    'Rate App',
+                    style: GoogleFonts.inter(fontSize: 15, color: onSurface),
+                  ),
+                  onTap: () => launchUrl(Uri.parse('https://play.google.com/store')),
                 ),
-                const Divider(color: AppColors.surface2, height: 1),
+                Divider(color: dividerColor, height: 1),
                 ListTile(
-                  title: Text('Privacy Policy',
-                    style: GoogleFonts.inter(fontSize: 15, color: Colors.white)),
-                  onTap: () => launchUrl(
-                      Uri.parse('https://dolphincoder.com/privacy')),
+                  title: Text(
+                    'Privacy Policy',
+                    style: GoogleFonts.inter(fontSize: 15, color: onSurface),
+                  ),
+                  onTap: () => launchUrl(Uri.parse('https://dolphincoder.com/privacy')),
                 ),
-                const Divider(color: AppColors.surface2, height: 1),
+                Divider(color: dividerColor, height: 1),
                 ListTile(
-                  title: Text('Terms of Service',
-                    style: GoogleFonts.inter(fontSize: 15, color: Colors.white)),
-                  onTap: () => launchUrl(
-                      Uri.parse('https://dolphincoder.com/terms')),
+                  title: Text(
+                    'Terms of Service',
+                    style: GoogleFonts.inter(fontSize: 15, color: onSurface),
+                  ),
+                  onTap: () => launchUrl(Uri.parse('https://dolphincoder.com/terms')),
                 ),
               ],
             ),

@@ -47,14 +47,15 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Profile updated!'),
-              backgroundColor: AppColors.success));
+          const SnackBar(content: Text('Profile updated!'), backgroundColor: AppColors.success),
+        );
         Navigator.of(context).pop();
       }
     } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: AppColors.error));
+          SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
+        );
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -64,21 +65,35 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider).user;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Text('Edit Profile',
+        title: Text(
+          'Edit Profile',
           style: GoogleFonts.plusJakartaSans(
-            fontSize: 20, fontWeight: FontWeight.w600, color: Colors.white)),
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: onSurface,
+          ),
+        ),
         backgroundColor: Colors.transparent,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: onSurface),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
         actions: [
           TextButton(
             onPressed: _loading ? null : _save,
-            child: Text('Save',
+            child: Text(
+              'Save',
               style: GoogleFonts.inter(
                 color: _loading ? AppColors.textMuted : AppColors.primary,
-                fontWeight: FontWeight.w600, fontSize: 15)),
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
+            ),
           ),
         ],
       ),
@@ -94,24 +109,41 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 child: Column(
                   children: [
                     Container(
-                      width: 104, height: 104,
+                      width: 104,
+                      height: 104,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: AppColors.primaryGradient,
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.primary.withOpacity(0.3),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
+                          )
+                        ],
                       ),
                       child: Center(
-                        child: Text(user?.initials ?? 'DC',
+                        child: Text(
+                          user?.initials ?? 'DC',
                           style: GoogleFonts.plusJakartaSans(
-                            fontSize: 36, fontWeight: FontWeight.bold, color: Colors.white)),
+                            fontSize: 36,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 8),
                     TextButton(
                       onPressed: () {},
-                      child: Text('Change Photo',
+                      child: Text(
+                        'Change Photo',
                         style: GoogleFonts.inter(
                           color: AppColors.primary,
-                          fontSize: 14, fontWeight: FontWeight.w500)),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ),
                   ],
                 ),

@@ -48,10 +48,11 @@ class _GradientButtonState extends State<GradientButton> {
             decoration: BoxDecoration(
               gradient: widget.gradient ?? AppColors.primaryGradient,
               borderRadius: BorderRadius.circular(12),
+              border: AppColors.isDark ? Border.all(color: const Color(0x33FFFFFF), width: 1) : null,
               boxShadow: enabled
                   ? [
                       BoxShadow(
-                        color: AppColors.primary.withOpacity(0.4),
+                        color: AppColors.isDark ? Colors.black.withOpacity(0.5) : AppColors.primary.withOpacity(0.4),
                         blurRadius: 16,
                         offset: const Offset(0, 4),
                       )

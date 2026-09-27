@@ -17,14 +17,21 @@ class NoteDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final noteAsync = ref.watch(noteDetailProvider(noteId));
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final surfaceColor = isDark ? AppColors.pitchBlackSurface : AppColors.lightSurface;
+    final surface2Color = isDark ? AppColors.pitchBlackSurface2 : AppColors.lightSurface2;
+    final borderColor = isDark ? AppColors.pitchBlackBorder : AppColors.lightBorder;
+    final textSecondary = isDark ? AppColors.pitchBlackTextSecondary : AppColors.lightTextSecondary;
+
     return noteAsync.when(
       loading: () => Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: AppBar(backgroundColor: Colors.transparent),
         body: const ShimmerListLoader(count: 3),
       ),
       error: (e, _) => Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: AppBar(backgroundColor: Colors.transparent),
         body: Center(
           child: Column(
@@ -32,8 +39,10 @@ class NoteDetailScreen extends ConsumerWidget {
             children: [
               const Icon(Icons.error_outline, color: AppColors.error, size: 48),
               const SizedBox(height: 12),
-              Text('Failed to load note',
-                style: GoogleFonts.inter(color: AppColors.textSecondary)),
+              Text(
+                'Failed to load note',
+                style: GoogleFonts.inter(color: textSecondary),
+              ),
               const SizedBox(height: 16),
               TextButton(
                 onPressed: () => ref.invalidate(noteDetailProvider(noteId)),
@@ -45,16 +54,17 @@ class NoteDetailScreen extends ConsumerWidget {
       ),
       data: (note) {
         final accentColor = AppColors.noteColorFromString(note.color);
+        final bg = Theme.of(context).scaffoldBackgroundColor;
         return Scaffold(
-          backgroundColor: AppColors.background,
+          backgroundColor: bg,
           body: CustomScrollView(
             slivers: [
               SliverAppBar(
                 pinned: true,
                 expandedHeight: 160,
-                backgroundColor: AppColors.background,
+                backgroundColor: bg,
                 leading: IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  icon: Icon(Icons.arrow_back, color: onSurface),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
                 flexibleSpace: FlexibleSpaceBar(
@@ -62,8 +72,8 @@ class NoteDetailScreen extends ConsumerWidget {
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          accentColor.withOpacity(0.4),
-                          AppColors.background,
+                          accentColor.withOpacity(isDark ? 0.4 : 0.2),
+                          bg,
                         ],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
@@ -75,13 +85,12 @@ class NoteDetailScreen extends ConsumerWidget {
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: Colors.white,
+                      color: onSurface,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  titlePadding:
-                      const EdgeInsets.only(left: 56, bottom: 16, right: 16),
+                  titlePadding: const EdgeInsets.only(left: 56, bottom: 16, right: 16),
                 ),
               ),
               SliverToBoxAdapter(
@@ -94,9 +103,16 @@ class NoteDetailScreen extends ConsumerWidget {
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: AppColors.surface,
+                          color: surfaceColor,
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppColors.border),
+                          border: Border.all(color: borderColor),
+                          boxShadow: [
+                            BoxShadow(
+                              color: isDark ? Colors.black26 : const Color(0x060F172A),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            )
+                          ],
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -106,7 +122,7 @@ class NoteDetailScreen extends ConsumerWidget {
                               style: GoogleFonts.plusJakartaSans(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.white,
+                                color: onSurface,
                               ),
                             ),
                             const SizedBox(height: 10),
@@ -128,15 +144,16 @@ class NoteDetailScreen extends ConsumerWidget {
                                           padding: const EdgeInsets.symmetric(
                                               horizontal: 8, vertical: 3),
                                           decoration: BoxDecoration(
-                                            color: AppColors.surface2,
-                                            borderRadius:
-                                                BorderRadius.circular(6),
+                                            color: surface2Color,
+                                            borderRadius: BorderRadius.circular(6),
                                           ),
-                                          child: Text('#$t',
+                                          child: Text(
+                                            '#$t',
                                             style: GoogleFonts.inter(
                                               fontSize: 11,
-                                              color: AppColors.textSecondary,
-                                            )),
+                                              color: textSecondary,
+                                            ),
+                                          ),
                                         ))
                                     .toList(),
                               ),
@@ -144,8 +161,7 @@ class NoteDetailScreen extends ConsumerWidget {
                             const SizedBox(height: 10),
                             Row(
                               children: [
-                                const Icon(Icons.access_time,
-                                    size: 12, color: AppColors.textMuted),
+                                Icon(Icons.access_time, size: 12, color: AppColors.textMuted),
                                 const SizedBox(width: 4),
                                 Text(
                                   _formatDate(note.createdAt),
@@ -156,17 +172,16 @@ class NoteDetailScreen extends ConsumerWidget {
                                 ),
                                 const SizedBox(width: 12),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 2),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: AppColors.primary.withOpacity(0.15),
+                                    color: (isDark ? AppColors.secondary : AppColors.primary).withOpacity(0.15),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Text(
                                     _contentTypeLabel(note.contentType),
                                     style: GoogleFonts.inter(
                                       fontSize: 11,
-                                      color: AppColors.primaryLight,
+                                      color: isDark ? AppColors.secondary : AppColors.primary,
                                     ),
                                   ),
                                 ),
@@ -272,10 +287,14 @@ class NoteDetailScreen extends ConsumerWidget {
 
   String _contentTypeLabel(String type) {
     switch (type) {
-      case 'richtext': return 'Rich Text';
-      case 'docx': return 'Word Document';
-      case 'html': return 'HTML Slide';
-      default: return type;
+      case 'richtext':
+        return 'Rich Text';
+      case 'docx':
+        return 'Word Document';
+      case 'html':
+        return 'HTML Slide';
+      default:
+        return type;
     }
   }
 }
@@ -286,6 +305,11 @@ class _RichTextContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final surface2Color = isDark ? AppColors.pitchBlackSurface2 : AppColors.lightSurface2;
+    final textSecondary = isDark ? AppColors.pitchBlackTextSecondary : AppColors.lightTextSecondary;
+
     return Container(
       padding: const EdgeInsets.all(4),
       child: Html(
@@ -293,45 +317,45 @@ class _RichTextContent extends StatelessWidget {
         style: {
           'body': Style(
             fontSize: FontSize(15),
-            color: AppColors.textPrimary,
+            color: onSurface,
             fontFamily: 'Inter',
           ),
           'h1': Style(
             fontSize: FontSize(22),
             fontWeight: FontWeight.bold,
-            color: Colors.white,
+            color: onSurface,
           ),
           'h2': Style(
             fontSize: FontSize(18),
             fontWeight: FontWeight.w600,
-            color: Colors.white,
+            color: onSurface,
           ),
           'h3': Style(
             fontSize: FontSize(16),
             fontWeight: FontWeight.w600,
-            color: Colors.white,
+            color: onSurface,
           ),
           'code': Style(
-            backgroundColor: AppColors.surface2,
+            backgroundColor: surface2Color,
             color: AppColors.success,
             fontFamily: 'monospace',
             padding: HtmlPaddings.symmetric(horizontal: 4, vertical: 2),
           ),
           'pre': Style(
-            backgroundColor: AppColors.surface2,
+            backgroundColor: surface2Color,
             padding: HtmlPaddings.all(12),
           ),
           'blockquote': Style(
-            color: AppColors.textSecondary,
+            color: textSecondary,
             fontStyle: FontStyle.italic,
-            border: const Border(
-              left: BorderSide(color: AppColors.primary, width: 3),
+            border: Border(
+              left: BorderSide(color: isDark ? AppColors.secondary : AppColors.primary, width: 3),
             ),
             padding: HtmlPaddings.only(left: 12),
           ),
-          'a': Style(color: AppColors.primary),
-          'p': Style(color: AppColors.textPrimary),
-          'li': Style(color: AppColors.textPrimary),
+          'a': Style(color: isDark ? AppColors.secondary : AppColors.primary),
+          'p': Style(color: onSurface),
+          'li': Style(color: onSurface),
         },
       ),
     );
@@ -348,7 +372,6 @@ class _HtmlSlideViewer extends StatefulWidget {
 
 class _HtmlSlideViewerState extends State<_HtmlSlideViewer> {
   late final WebViewController _controller;
-  bool _isFullscreen = false;
 
   @override
   void initState() {
@@ -373,7 +396,6 @@ class _HtmlSlideViewerState extends State<_HtmlSlideViewer> {
             right: 8,
             child: GestureDetector(
               onTap: () {
-                // Push fullscreen route
                 Navigator.of(context).push(MaterialPageRoute(
                   builder: (_) => _FullScreenWebView(htmlContent: widget.htmlContent),
                 ));

@@ -2,10 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../../../core/constants/api_constants.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../shared/widgets/glass_card.dart';
 import '../data/models/karaoke_model.dart';
 import '../data/models/note_model.dart';
 import '../providers/notes_provider.dart';
@@ -22,6 +22,13 @@ class KaraokeNoteReaderScreen extends ConsumerStatefulWidget {
 class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScreen> {
   late final AudioPlayer _audioPlayer;
   late final stt.SpeechToText _speech;
+  final ScrollController _scrollController = ScrollController();
+  final Map<int, GlobalKey> _sentenceKeys = {};
+  int _lastScrolledSentenceIdx = -1;
+
+  StreamSubscription? _playerStateSub;
+  StreamSubscription? _positionSub;
+  StreamSubscription? _durationSub;
 
   bool _isPlaying = false;
   Duration _currentPosition = Duration.zero;
@@ -29,6 +36,7 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
   double _playbackRate = 1.0;
   bool _isSprechenMode = false;
   bool _showTranslations = true;
+  double _syncOffset = 0.0;
 
   // Sprechen state
   int? _activeSprechenIndex;
@@ -43,6 +51,27 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
 
   KaraokeStory get _story => widget.note.karaokeData ?? const KaraokeStory(title: '');
   List<KaraokeSentence> get _sentences => _story.sentences;
+
+  void _scrollToActiveSentence(int idx) {
+    if (idx < 0 || idx >= _sentences.length) return;
+    if (_lastScrolledSentenceIdx == idx) return;
+    _lastScrolledSentenceIdx = idx;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final key = _sentenceKeys[idx];
+        if (key?.currentContext != null) {
+          Scrollable.ensureVisible(
+            key!.currentContext!,
+            alignment: 0.0,
+            duration: const Duration(milliseconds: 350),
+            curve: Curves.easeInOutCubic,
+          );
+        }
+      });
+    });
+  }
 
   @override
   void initState() {
@@ -74,7 +103,7 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
   }
 
   Future<void> _initAudio() async {
-    _audioPlayer.onPlayerStateChanged.listen((state) {
+    _playerStateSub = _audioPlayer.onPlayerStateChanged.listen((state) {
       if (mounted) {
         setState(() {
           _isPlaying = state == PlayerState.playing;
@@ -82,16 +111,16 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
       }
     });
 
-    _audioPlayer.onPositionChanged.listen((pos) {
+    _positionSub = _audioPlayer.onPositionChanged.listen((pos) {
       if (!mounted) return;
       setState(() {
         _currentPosition = pos;
       });
 
-      _handleTimeUpdate(pos.inMilliseconds / 1000.0);
+      _handleTimeUpdate((pos.inMilliseconds / 1000.0) + _syncOffset);
     });
 
-    _audioPlayer.onDurationChanged.listen((dur) {
+    _durationSub = _audioPlayer.onDurationChanged.listen((dur) {
       if (mounted) {
         setState(() {
           _totalDuration = dur;
@@ -111,86 +140,76 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
   Future<void> _initSpeech() async {
     try {
       await _speech.initialize(
-        onError: (val) {
-          debugPrint('Speech error: ${val.errorMsg}');
-        },
+        onError: (val) => debugPrint('Speech error: ${val.errorMsg}'),
         onStatus: (val) {
           debugPrint('Speech status: $val');
           if (val == 'done' || val == 'notListening') {
-            // Note: On Android, the native engine can emit 'notListening' during normal speech pauses.
-            // Do NOT immediately evaluate here! Wait for the full 3-second silence timer to count down.
-            if (mounted && _isListening) {
-              if (_spokenText.isNotEmpty) {
-                if (_silenceTimer == null || !_silenceTimer!.isActive) {
-                  _resetSilenceTimer(_activeSprechenIndex ?? 0);
+            if (_isListening && _spokenText.isNotEmpty) {
+              _silenceTimer?.cancel();
+              _silenceTimer = Timer(const Duration(milliseconds: 1500), () {
+                if (mounted && _isListening && _spokenText.isNotEmpty) {
+                  _handleAutoSubmit();
                 }
-              } else {
-                setState(() {
-                  _isListening = false;
-                });
-              }
+              });
             }
           }
         },
       );
     } catch (e) {
-      debugPrint('Speech init error: $e');
+      debugPrint('Speech init failed: $e');
     }
   }
 
   void _handleTimeUpdate(double currentTime) {
-    if (!_isSprechenMode || !_isPlaying) return;
-
     if (_sentences.isEmpty) return;
 
-    int currIdx = _sentences.indexWhere((s) => currentTime >= s.start && currentTime < s.end);
-
-    if (currIdx == -1) {
-      for (int i = _sentences.length - 1; i >= 0; i--) {
-        if (currentTime >= _sentences[i].start) {
-          currIdx = i;
-          break;
+    for (int i = 0; i < _sentences.length; i++) {
+      final s = _sentences[i];
+      if (currentTime >= s.start && currentTime <= (s.end + 0.3)) {
+        if (_isSprechenMode && _lastPausedIndex != i && !(_sentencePassed[i] ?? false)) {
+          if (currentTime >= s.end) {
+            _audioPlayer.pause();
+            _lastPausedIndex = i;
+            if (!mounted) return;
+            setState(() {
+              _activeSprechenIndex = i;
+              _speechPassed = null;
+              _spokenText = '';
+              _speechAccuracy = 0;
+            });
+            _startListening(i);
+            return;
+          }
         }
-      }
-    }
-
-    if (currIdx >= 0 && currIdx < _sentences.length) {
-      final sentence = _sentences[currIdx];
-      if (currentTime >= sentence.end) {
-        if (_lastPausedIndex != currIdx) {
-          _lastPausedIndex = currIdx;
-          _audioPlayer.pause();
-          setState(() {
-            _isPlaying = false;
-            _activeSprechenIndex = currIdx;
-            _speechAccuracy = 0;
-            _speechPassed = null;
-            _spokenText = '';
-          });
+        if (i != _lastScrolledSentenceIdx && _activeSprechenIndex == null) {
+          _scrollToActiveSentence(i);
         }
+        break;
       }
     }
   }
 
   void _togglePlayPause() async {
-    if (_isPlaying) {
-      await _audioPlayer.pause();
-    } else {
-      await _audioPlayer.resume();
+    try {
+      if (_isPlaying) {
+        await _audioPlayer.pause();
+      } else {
+        if (_isListening) {
+          _cleanupListening();
+        }
+        await _audioPlayer.resume();
+      }
+    } catch (e) {
+      debugPrint('Audio toggle play error: $e');
     }
   }
 
   void _seekTo(double seconds) async {
-    _cleanupListening();
-    final target = Duration(milliseconds: (seconds * 1000).round());
-    final targetIdx = _sentences.indexWhere((s) => seconds >= s.start && seconds <= s.end);
-    if (targetIdx >= 0) {
-      _lastPausedIndex = targetIdx - 1;
-      _activeSprechenIndex = null;
-    }
-    await _audioPlayer.seek(target);
-    if (!_isPlaying) {
-      await _audioPlayer.resume();
+    _lastScrolledSentenceIdx = -1;
+    try {
+      await _audioPlayer.seek(Duration(milliseconds: (seconds * 1000).round()));
+    } catch (e) {
+      debugPrint('Audio seek error: $e');
     }
   }
 
@@ -216,6 +235,8 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
 
   void _startListening(int sIdx) async {
     _cleanupListening();
+    _lastScrolledSentenceIdx = -1;
+    _scrollToActiveSentence(sIdx);
 
     final available = await _speech.initialize();
     if (!available) {
@@ -315,7 +336,7 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
     if (isMatch) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          backgroundColor: Colors.green,
+          backgroundColor: AppColors.success,
           content: Text('Ausgezeichnet! Great pronunciation! 🎉'),
         ),
       );
@@ -329,7 +350,7 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
       final left = (_sentenceChances[sIdx] ?? 0);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: Colors.orange.shade800,
+          backgroundColor: AppColors.warning,
           content: Text('Not quite ($accuracy%). $left chances remaining!'),
         ),
       );
@@ -364,13 +385,19 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
     _cleanupListening();
     final s = _sentences[sIdx];
     _lastPausedIndex = sIdx - 1;
+    _lastScrolledSentenceIdx = -1;
     setState(() {
       _activeSprechenIndex = null;
       _speechPassed = null;
       _spokenText = '';
     });
-    await _audioPlayer.seek(Duration(milliseconds: (s.start * 1000).round()));
-    await _audioPlayer.resume();
+    _scrollToActiveSentence(sIdx);
+    try {
+      await _audioPlayer.seek(Duration(milliseconds: (s.start * 1000).round()));
+      await _audioPlayer.resume();
+    } catch (e) {
+      debugPrint('Audio playSentence error: $e');
+    }
   }
 
   String _formatTime(Duration d) {
@@ -381,503 +408,503 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
 
   @override
   void dispose() {
+    _playerStateSub?.cancel();
+    _positionSub?.cancel();
+    _durationSub?.cancel();
     _cleanupListening();
+    _audioPlayer.stop();
     _audioPlayer.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentSeconds = _currentPosition.inMilliseconds / 1000.0;
+    final currentSeconds = (_currentPosition.inMilliseconds / 1000.0) + _syncOffset;
     final totalSeconds = _totalDuration.inMilliseconds / 1000.0;
+
+    // Find active sentence
+    int activeSentenceIdx = -1;
+    for (int i = 0; i < _sentences.length; i++) {
+      if (currentSeconds >= _sentences[i].start && currentSeconds <= _sentences[i].end) {
+        activeSentenceIdx = i;
+        break;
+      }
+    }
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: Text(
-          widget.note.title,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(
-              _showTranslations ? Icons.translate : Icons.g_translate,
-              color: _showTranslations ? AppColors.primary : Colors.grey,
-            ),
-            tooltip: 'Toggle English Translations',
-            onPressed: () {
-              setState(() {
-                _showTranslations = !_showTranslations;
-              });
-            },
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Player Controls Card
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withOpacity(0.08)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
-                  blurRadius: 16,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                // Timeline Slider & Timers
-                Row(
-                  children: [
-                    Text(
-                      _formatTime(_currentPosition),
-                      style: const TextStyle(color: Colors.grey, fontSize: 12),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Top Header Bar
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        GestureDetector(
+                          onTap: () => Navigator.of(context).pop(),
+                          child: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceContainerLowest,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.04),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Center(
+                              child: Icon(Icons.arrow_back_rounded, size: 20, color: AppColors.onSurface),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: AppColors.isDark ? AppColors.secondary : AppColors.primary,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Center(
+                            child: Icon(
+                              Icons.school_rounded,
+                              color: AppColors.isDark ? AppColors.onSecondaryContainer : Colors.white,
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            'Karaoke Player',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.onSurface,
+                              letterSpacing: -0.4,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
-                    Expanded(
-                      child: SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          activeTrackColor: AppColors.primary,
-                          inactiveTrackColor: Colors.white12,
-                          thumbColor: AppColors.primary,
-                          trackHeight: 3,
-                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.surfaceContainerHigh,
+                    ),
+                    child: Center(
+                      child: Icon(Icons.person_rounded, size: 20, color: AppColors.onSurface),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Top Auxiliary Utility Bar (Karaoke Reader + Translate Toggle)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.graphic_eq_rounded, size: 18, color: AppColors.secondary),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            'KARAOKE & SPRECHEN READER',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.onSurfaceVariant,
+                              letterSpacing: 0.8,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                        child: Slider(
-                          value: totalSeconds > 0
-                              ? currentSeconds.clamp(0.0, totalSeconds)
-                              : 0.0,
-                          max: totalSeconds > 0 ? totalSeconds : 1.0,
-                          onChanged: (val) {
-                            _seekTo(val);
-                          },
-                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _showTranslations = !_showTranslations;
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _showTranslations ? AppColors.secondaryFixed : AppColors.surfaceContainerHigh,
+                        borderRadius: BorderRadius.circular(9999),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.translate_rounded,
+                            size: 15,
+                            color: _showTranslations ? AppColors.onSecondaryFixed : AppColors.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _showTranslations ? 'EN On' : 'EN Off',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: _showTranslations ? AppColors.onSecondaryFixed : AppColors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    Text(
-                      _formatTime(_totalDuration),
-                      style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+
+            // Audio Control Deck
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceContainerLowest,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 20,
+                      offset: const Offset(0, 4),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                // Play / Mode / Speed buttons
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: Column(
                   children: [
-                    // Play / Pause Button
-                    InkWell(
-                      onTap: _togglePlayPause,
-                      borderRadius: BorderRadius.circular(30),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: AppColors.primaryGradient,
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.primary.withOpacity(0.4),
-                              blurRadius: 10,
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          _isPlaying ? Icons.pause : Icons.play_arrow,
-                          color: Colors.white,
-                          size: 24,
-                        ),
-                      ),
-                    ),
-
-                    // Mode Selector (Listening vs Sprechen)
+                    // Mode Selector Segmented Control
                     Container(
                       padding: const EdgeInsets.all(3),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white12),
+                        color: AppColors.surfaceContainer,
+                        borderRadius: BorderRadius.circular(9999),
                       ),
                       child: Row(
                         children: [
-                          _buildModeTab(
-                            title: 'Listening',
-                            icon: Icons.headphones,
-                            isSelected: !_isSprechenMode,
-                            onTap: () {
-                              setState(() {
-                                _isSprechenMode = false;
-                                _activeSprechenIndex = null;
-                              });
-                            },
+                          Expanded(
+                            child: _buildModeSegment(
+                              icon: Icons.headphones_rounded,
+                              label: 'Listening Mode',
+                              isActive: !_isSprechenMode,
+                              onTap: () {
+                                setState(() {
+                                  _isSprechenMode = false;
+                                  _activeSprechenIndex = null;
+                                });
+                              },
+                            ),
                           ),
-                          _buildModeTab(
-                            title: 'Sprechen',
-                            icon: Icons.mic,
-                            isSelected: _isSprechenMode,
-                            onTap: () {
-                              setState(() {
-                                _isSprechenMode = true;
-                              });
-                              _changeSpeed(0.75);
-                            },
+                          Expanded(
+                            child: _buildModeSegment(
+                              icon: Icons.record_voice_over_rounded,
+                              label: 'Sprechen Mode',
+                              isActive: _isSprechenMode,
+                              onTap: () {
+                                setState(() {
+                                  _isSprechenMode = true;
+                                });
+                                _changeSpeed(0.75);
+                              },
+                            ),
                           ),
                         ],
                       ),
                     ),
+                    const SizedBox(height: 10),
 
-                    // Speed Pill
-                    DropdownButton<double>(
-                      value: _playbackRate,
-                      dropdownColor: AppColors.surface,
-                      underline: const SizedBox(),
-                      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                      icon: const Icon(Icons.speed, color: AppColors.primary, size: 16),
-                      items: const [
-                        DropdownMenuItem(value: 0.75, child: Text('0.75x')),
-                        DropdownMenuItem(value: 1.0, child: Text('1.0x')),
-                        DropdownMenuItem(value: 1.25, child: Text('1.25x')),
-                      ],
-                      onChanged: (val) {
-                        if (val != null) _changeSpeed(val);
-                      },
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          // Sentences List
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              itemCount: _sentences.length,
-              itemBuilder: (context, idx) {
-                final sentence = _sentences[idx];
-                final isSentenceActive = currentSeconds >= sentence.start && currentSeconds <= sentence.end;
-                final isPassed = _sentencePassed[idx] == true;
-                final isSpeakingActive = _activeSprechenIndex == idx;
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 14),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: isSentenceActive
-                        ? AppColors.primary.withOpacity(0.12)
-                        : AppColors.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isSentenceActive
-                          ? AppColors.primary.withOpacity(0.5)
-                          : isPassed
-                              ? Colors.green.withOpacity(0.3)
-                              : Colors.white.withOpacity(0.06),
-                      width: isSentenceActive ? 1.5 : 1.0,
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Header: Sentence Index + Status
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 10,
-                                backgroundColor: isSentenceActive ? AppColors.primary : Colors.white12,
-                                child: Text(
-                                  '${idx + 1}',
-                                  style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                              if (isSentenceActive) ...[
-                                const SizedBox(width: 8),
-                                const Text(
-                                  'Currently Reading...',
-                                  style: TextStyle(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.w600),
-                                ),
-                              ],
-                            ],
-                          ),
-                          if (isPassed)
-                            const Row(
-                              children: [
-                                Icon(Icons.check_circle, color: Colors.green, size: 14),
-                                SizedBox(width: 4),
-                                Text(
-                                  'Ausgezeichnet',
-                                  style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.bold),
+                    // Playback Timeline & Core Controls
+                    Row(
+                      children: [
+                        // Master Play/Pause circular button reinstated
+                        GestureDetector(
+                          onTap: _togglePlayPause,
+                          child: Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: AppColors.isDark ? AppColors.secondary : AppColors.primary,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.18),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 3),
                                 ),
                               ],
                             ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-
-                      // Words Flow with Live Word-by-Word Highlighting
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: sentence.words.map((w) {
-                          final isWordActive = currentSeconds >= w.start && currentSeconds <= w.end;
-                          return GestureDetector(
-                            onTap: () => _seekTo(w.start),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 150),
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: isWordActive
-                                    ? AppColors.primary
-                                    : Colors.white.withOpacity(0.04),
-                                borderRadius: BorderRadius.circular(6),
-                                boxShadow: isWordActive
-                                    ? [
-                                        BoxShadow(
-                                          color: AppColors.primary.withOpacity(0.5),
-                                          blurRadius: 8,
-                                        ),
-                                      ]
-                                    : null,
-                              ),
-                              child: Text(
-                                w.word,
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: isWordActive ? FontWeight.bold : FontWeight.w500,
-                                  color: isWordActive ? Colors.white : Colors.white70,
-                                ),
+                            child: Center(
+                              child: Icon(
+                                _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                color: AppColors.isDark ? AppColors.onSecondaryContainer : Colors.white,
+                                size: 26,
                               ),
                             ),
-                          );
-                        }).toList(),
-                      ),
-
-                      // English Translation
-                      if (_showTranslations && sentence.translation.isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        Text(
-                          sentence.translation,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontStyle: FontStyle.italic,
-                            color: Colors.grey.shade400,
                           ),
                         ),
-                      ],
-
-                      // Speaking Practice Box (when paused on this sentence)
-                      if (isSpeakingActive) ...[
-                        const SizedBox(height: 14),
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: Colors.purple.shade900.withOpacity(0.25),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: Colors.purple.shade400.withOpacity(0.4)),
-                          ),
+                        const SizedBox(width: 12),
+                        // Track & Timeline
+                        Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  const Row(
-                                    children: [
-                                      Icon(Icons.mic, color: Colors.pinkAccent, size: 16),
-                                      SizedBox(width: 6),
-                                      Text(
-                                        'SPRECHEN PRACTICE',
-                                        style: TextStyle(
-                                          color: Colors.pinkAccent,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                                  Expanded(
+                                    child: Text(
+                                      widget.note.title,
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.onSurface,
                                       ),
-                                    ],
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
+                                  const SizedBox(width: 8),
                                   Text(
-                                    'Chances: ${(_sentenceChances[idx] ?? 3)}/3',
-                                    style: const TextStyle(color: Colors.white70, fontSize: 11),
+                                    '${_formatTime(_currentPosition)} / ${_formatTime(_totalDuration)}',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.onSurfaceVariant,
+                                    ),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 10),
-
-                              // Static English translation for understanding purpose only (no audio, no popup)
-                              if (sentence.translation.isNotEmpty) ...[
-                                Container(
-                                  margin: const EdgeInsets.only(bottom: 12),
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.04),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: Colors.white.withOpacity(0.08)),
-                                  ),
-                                  child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Meaning: ',
-                                        style: TextStyle(
-                                          color: Colors.cyan.shade300,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      Expanded(
-                                        child: Text(
-                                          sentence.translation,
-                                          style: TextStyle(
-                                            color: Colors.grey.shade300,
-                                            fontSize: 12,
-                                            fontStyle: FontStyle.italic,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                              const SizedBox(height: 2),
+                              SliderTheme(
+                                data: SliderTheme.of(context).copyWith(
+                                  activeTrackColor: AppColors.secondary,
+                                  inactiveTrackColor: AppColors.surfaceContainer,
+                                  thumbColor: AppColors.secondary,
+                                  trackHeight: 4,
+                                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                                  overlayShape: SliderComponentShape.noOverlay,
                                 ),
-                              ],
-
-                              // Real-time Spoken Transcript or Feedback
-                              if (_spokenText.isNotEmpty || _isListening)
-                                Container(
-                                  margin: const EdgeInsets.only(bottom: 12),
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black26,
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        _spokenText.isNotEmpty
-                                            ? 'You said: "$_spokenText"'
-                                            : 'Listening... speak clearly in German',
-                                        style: const TextStyle(
-                                          color: Colors.pinkAccent,
-                                          fontSize: 12,
-                                          fontStyle: FontStyle.italic,
-                                        ),
-                                      ),
-                                      if (_isListening)
-                                        Padding(
-                                          padding: const EdgeInsets.only(top: 5),
-                                          child: Row(
-                                            children: [
-                                              Container(
-                                                width: 6,
-                                                height: 6,
-                                                decoration: const BoxDecoration(
-                                                  color: Colors.greenAccent,
-                                                  shape: BoxShape.circle,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Text(
-                                                _spokenText.isNotEmpty
-                                                    ? 'Submits in 3s of silence, or tap Done'
-                                                    : 'German speech recognition active',
-                                                style: TextStyle(
-                                                  color: Colors.greenAccent.shade200,
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w500,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      if (_speechAccuracy > 0)
-                                        Padding(
-                                          padding: const EdgeInsets.only(top: 4),
-                                          child: Text(
-                                            'Accuracy: $_speechAccuracy%',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 11,
-                                              color: (_speechPassed == true) ? Colors.green : Colors.orange,
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
+                                child: Slider(
+                                  value: totalSeconds > 0
+                                      ? currentSeconds.clamp(0.0, totalSeconds)
+                                      : 0.0,
+                                  max: totalSeconds > 0 ? totalSeconds : 1.0,
+                                  onChanged: (val) => _seekTo(val),
                                 ),
-
-                              // Action Buttons
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  if (!isPassed && (_sentenceChances[idx] ?? 3) > 0)
-                                    if (!_isListening)
-                                      ElevatedButton.icon(
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.pink.shade600,
-                                          foregroundColor: Colors.white,
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                        ),
-                                        onPressed: () => _startListening(idx),
-                                        icon: const Icon(Icons.mic, size: 16),
-                                        label: const Text('Speak (Auf Deutsch)', style: TextStyle(fontSize: 12)),
-                                      )
-                                    else ...[
-                                      ElevatedButton.icon(
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.green.shade600,
-                                          foregroundColor: Colors.white,
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                        ),
-                                        onPressed: () => _handleManualSubmit(idx),
-                                        icon: const Icon(Icons.check_circle_outline, size: 16),
-                                        label: const Text('Done Speaking (Check Now ✓)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                      ),
-                                      OutlinedButton(
-                                        style: OutlinedButton.styleFrom(
-                                          foregroundColor: Colors.grey,
-                                          side: const BorderSide(color: Colors.white24),
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                        ),
-                                        onPressed: _cleanupListening,
-                                        child: const Text('Cancel', style: TextStyle(fontSize: 12)),
-                                      ),
-                                    ],
-                                  OutlinedButton.icon(
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: Colors.white70,
-                                      side: const BorderSide(color: Colors.white24),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                    ),
-                                    onPressed: () => _playSentence(idx),
-                                    icon: const Icon(Icons.volume_up, size: 15),
-                                    label: const Text('Listen Again', style: TextStyle(fontSize: 12)),
-                                  ),
-                                  if (idx + 1 < _sentences.length)
-                                    TextButton.icon(
-                                      onPressed: () => _playSentence(idx + 1),
-                                      icon: const Icon(Icons.arrow_forward, size: 14, color: AppColors.primary),
-                                      label: const Text('Next Sentence', style: TextStyle(color: AppColors.primary, fontSize: 12)),
-                                    ),
-                                ],
                               ),
                             ],
                           ),
                         ),
                       ],
-                    ],
+                    ),
+                    const SizedBox(height: 10),
+
+                    // Speed pills centered (Sync removed)
+                    Center(
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(9999),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [0.75, 1.0, 1.25].map((s) {
+                            final sel = _playbackRate == s;
+                            return GestureDetector(
+                              onTap: () => _changeSpeed(s),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: sel ? (AppColors.isDark ? AppColors.secondary : AppColors.primary) : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(9999),
+                                ),
+                                child: Text(
+                                  '${s}x',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 11,
+                                    fontWeight: sel ? FontWeight.bold : FontWeight.w600,
+                                    color: sel
+                                        ? (AppColors.isDark ? AppColors.onSecondaryContainer : Colors.white)
+                                        : AppColors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Transcript & Reading Stream
+            Expanded(
+              child: ListView.separated(
+                controller: _scrollController,
+                cacheExtent: 5000,
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
+                physics: const BouncingScrollPhysics(),
+                itemCount: _sentences.length + 1,
+                separatorBuilder: (_, __) => const SizedBox(height: 14),
+                itemBuilder: (context, idx) {
+                  // Bottom companion tip card
+                  if (idx == _sentences.length) {
+                    return _buildCompanionTipCard();
+                  }
+
+                  final sentence = _sentences[idx];
+                  final isActive = idx == activeSentenceIdx;
+                  final isTargetSprechen = idx == _activeSprechenIndex;
+
+                  final key = _sentenceKeys.putIfAbsent(idx, () => GlobalKey());
+
+                  Widget cardWidget;
+                  if (isActive || isTargetSprechen) {
+                    cardWidget = _buildActiveSentenceCard(sentence, idx, currentSeconds);
+                  } else {
+                    cardWidget = _buildInactiveSentenceCard(sentence, idx);
+                  }
+
+                  return KeyedSubtree(
+                    key: key,
+                    child: cardWidget,
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Segmented mode tab (Listening vs Sprechen)
+  Widget _buildModeSegment({
+    required IconData icon,
+    required String label,
+    required bool isActive,
+    required VoidCallback onTap,
+  }) {
+    final activeBg = AppColors.isDark ? AppColors.secondary : AppColors.primary;
+    final activeFg = AppColors.isDark ? AppColors.onSecondaryContainer : Colors.white;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive ? activeBg : Colors.transparent,
+          borderRadius: BorderRadius.circular(9999),
+          boxShadow: isActive
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
                   ),
-                );
-              },
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isActive ? activeFg : AppColors.onSurfaceVariant,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                fontWeight: isActive ? FontWeight.bold : FontWeight.w600,
+                color: isActive ? activeFg : AppColors.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Bottom companion tip card
+  Widget _buildCompanionTipCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.secondaryFixed,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Icon(Icons.psychology_rounded, color: AppColors.secondary, size: 24),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.lightbulb_outline_rounded, size: 14, color: AppColors.secondary),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Phonetic Kata Tip',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.secondary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Notice the short soft "e" in words like "lerne". Keep your tongue relaxed against the lower teeth.',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.onSurfaceVariant,
+                    height: 1.35,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -885,35 +912,459 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
     );
   }
 
-  Widget _buildModeTab({
-    required String title,
-    required IconData icon,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
+  // Inactive Sentence Card (clean, without 01/02 and without Speaker)
+  Widget _buildInactiveSentenceCard(KaraokeSentence sentence, int idx) {
     return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      onTap: () => _playSentence(idx),
+      child: Container(
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
+          color: AppColors.surfaceContainerLowest,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.02),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 14, color: isSelected ? Colors.white : Colors.white60),
-            const SizedBox(width: 4),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected ? Colors.white : Colors.white60,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    sentence.text,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.onSurface,
+                      height: 1.3,
+                    ),
+                  ),
+                  if (_showTranslations && sentence.translation != null && sentence.translation!.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      sentence.translation!,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        fontStyle: FontStyle.italic,
+                        color: AppColors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: AppColors.surfaceContainerLow,
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Icon(Icons.play_arrow_rounded, size: 18, color: AppColors.onSurfaceVariant),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // Active Sentence Card (clean, without 01/02, speaker, or sync badge)
+  Widget _buildActiveSentenceCard(KaraokeSentence sentence, int idx, double currentTime) {
+    final words = sentence.words.isNotEmpty
+        ? sentence.words
+        : sentence.text.split(' ').map((w) => KaraokeWord(word: w, clean: w, start: sentence.start, end: sentence.end)).toList();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.secondaryContainer.withOpacity(0.6), width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.secondaryContainer.withOpacity(0.12),
+            blurRadius: 24,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+
+          // Real-time Karaoke Word Highlighting Box
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 4,
+                  runSpacing: 6,
+                  children: words.map((w) {
+                    final isWordActive = currentTime >= w.start && currentTime <= w.end;
+                    if (isWordActive) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.secondaryFixed,
+                          borderRadius: BorderRadius.circular(9999),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.04),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          w.word,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.onSecondaryFixed,
+                          ),
+                        ),
+                      );
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: Text(
+                        w.word,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.onSurface,
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                if (_showTranslations && sentence.translation != null && sentence.translation!.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    sentence.translation!,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      fontStyle: FontStyle.italic,
+                      color: AppColors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          // SPRECHEN CHALLENGE BOX (Embedded when in Sprechen mode or active sentence)
+          if (_isSprechenMode || _activeSprechenIndex == idx) ...[
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Sprechen practice header (responsive - eliminates 58px overflow)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.mic_rounded, color: AppColors.secondary, size: 18),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                'SPRECHEN PRACTICE',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.secondary,
+                                  letterSpacing: 0.6,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceContainerHigh,
+                          borderRadius: BorderRadius.circular(9999),
+                        ),
+                        child: Text(
+                          'Chances: ${_sentenceChances[idx] ?? 3}/3',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.onSurface,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceContainerHigh,
+                          borderRadius: BorderRadius.circular(9999),
+                        ),
+                        child: Text(
+                          '≥75%',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Live Speech Recognition Feedback Canvas
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceContainerLowest,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.02),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: BoxDecoration(
+                                      color: _isListening ? AppColors.secondaryContainer : AppColors.surfaceContainerHigh,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Flexible(
+                                    child: Text(
+                                      _isListening ? 'Listening... speak clearly' : 'Tap Speak or Check Now',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: _isListening ? AppColors.secondary : AppColors.onSurfaceVariant,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.timer_outlined, size: 13, color: AppColors.onSurfaceVariant),
+                                const SizedBox(width: 3),
+                                Text(
+                                  '3s silence',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        // Readout box
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceContainerLow,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'YOU SAID:',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.onSurfaceVariant,
+                                  letterSpacing: 0.6,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _spokenText.isNotEmpty ? '"$_spokenText"' : 'Speak now in German...',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: _spokenText.isNotEmpty ? AppColors.onSurface : AppColors.textMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (_speechAccuracy > 0) ...[
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppColors.secondaryFixed,
+                              borderRadius: BorderRadius.circular(9999),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.verified_rounded, size: 16, color: AppColors.secondary),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '$_speechAccuracy% Accuracy ✓ ${(_speechPassed == true) ? 'Ausgezeichnet!' : 'Try Again'}',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.onSecondaryFixed,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Big Action Check Button
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      if (_isListening) {
+                        _handleManualSubmit(idx);
+                      } else {
+                        _startListening(idx);
+                      }
+                    },
+                    icon: Icon(
+                      _isListening ? Icons.check_circle_rounded : Icons.mic_rounded,
+                      size: 20,
+                      color: Colors.white,
+                    ),
+                    label: Text(
+                      _isListening ? 'Done Speaking (Check Now ✓)' : 'Start Speaking Auf Deutsch',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.secondary,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(double.infinity, 48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
+                      elevation: 2,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Bottom action Katas row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _playSentence(idx),
+                          icon: Icon(Icons.replay_rounded, size: 16, color: AppColors.onSurface),
+                          label: Text(
+                            'Listen (${_playbackRate}x)',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.onSurface,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.surfaceContainerHigh,
+                            foregroundColor: AppColors.onSurface,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            elevation: 0,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            if (idx + 1 < _sentences.length) {
+                              _playSentence(idx + 1);
+                            }
+                          },
+                          icon: Icon(
+                            Icons.arrow_forward_rounded,
+                            size: 16,
+                            color: AppColors.isDark ? AppColors.onSecondaryContainer : Colors.white,
+                          ),
+                          label: Text(
+                            'Next Sentence',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.isDark ? AppColors.onSecondaryContainer : Colors.white,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.isDark ? AppColors.secondary : AppColors.primary,
+                            foregroundColor: AppColors.isDark ? AppColors.onSecondaryContainer : Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            elevation: 2,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -936,7 +1387,7 @@ class KaraokeNoteReaderRouteScreen extends ConsumerWidget {
     }
     final noteAsync = ref.watch(noteDetailProvider(noteId));
     return noteAsync.when(
-      loading: () => const Scaffold(
+      loading: () => Scaffold(
         backgroundColor: AppColors.background,
         body: Center(
           child: CircularProgressIndicator(color: AppColors.primary),
@@ -947,14 +1398,14 @@ class KaraokeNoteReaderRouteScreen extends ConsumerWidget {
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            icon: Icon(Icons.arrow_back_rounded, color: AppColors.onSurface),
             onPressed: () => Navigator.of(context).pop(),
           ),
         ),
         body: Center(
           child: Text(
             'Failed to load note: $e',
-            style: const TextStyle(color: Colors.white70),
+            style: GoogleFonts.plusJakartaSans(color: AppColors.onSurfaceVariant),
           ),
         ),
       ),

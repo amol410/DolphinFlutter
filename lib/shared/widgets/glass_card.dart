@@ -16,7 +16,7 @@ class GlassCard extends StatelessWidget {
     required this.child,
     this.padding = const EdgeInsets.all(16),
     this.margin,
-    this.radius = 16,
+    this.radius = 20,
     this.color,
     this.borderColor,
     this.hasShadow = true,
@@ -25,20 +25,21 @@ class GlassCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final effectiveBorder = borderColor != null
+        ? Border.all(color: borderColor!, width: 1)
+        : (AppColors.isDark ? Border.all(color: const Color(0x22FFFFFF), width: 1) : null);
+
     return Container(
       margin: margin,
       decoration: BoxDecoration(
-        color: color ?? AppColors.surface,
+        color: color ?? AppColors.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(
-          color: borderColor ?? AppColors.border,
-          width: 1,
-        ),
+        border: effectiveBorder,
         boxShadow: hasShadow
             ? [
                 BoxShadow(
-                  color: AppColors.primary.withOpacity(0.04),
-                  blurRadius: 20,
+                  color: AppColors.isDark ? Colors.black.withOpacity(0.3) : Colors.black.withOpacity(0.03),
+                  blurRadius: 16,
                   offset: const Offset(0, 4),
                 )
               ]
@@ -50,8 +51,8 @@ class GlassCard extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(radius),
-          splashColor: AppColors.primary.withOpacity(0.08),
-          highlightColor: AppColors.primary.withOpacity(0.04),
+          splashColor: AppColors.primary.withOpacity(0.04),
+          highlightColor: AppColors.primary.withOpacity(0.02),
           child: Padding(padding: padding, child: child),
         ),
       ),

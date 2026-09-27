@@ -42,6 +42,7 @@ class KaraokeSentence {
   final int index;
   final String text;
   final String translation;
+  final String speaker;
   final double start;
   final double end;
   final List<KaraokeWord> words;
@@ -50,6 +51,7 @@ class KaraokeSentence {
     required this.index,
     required this.text,
     this.translation = '',
+    this.speaker = '',
     required this.start,
     required this.end,
     this.words = const [],
@@ -68,6 +70,7 @@ class KaraokeSentence {
       index: json['index'] is num ? (json['index'] as num).toInt() : 0,
       text: json['text']?.toString() ?? '',
       translation: json['translation']?.toString() ?? '',
+      speaker: json['speaker']?.toString() ?? '',
       start: (json['start'] is num) ? (json['start'] as num).toDouble() : 0.0,
       end: (json['end'] is num) ? (json['end'] as num).toDouble() : 0.0,
       words: parsedWords,

@@ -36,6 +36,10 @@ class AppTextField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textSecondary = isDark ? AppColors.pitchBlackTextSecondary : AppColors.lightTextSecondary;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -43,7 +47,7 @@ class AppTextField extends StatelessWidget {
           label,
           style: GoogleFonts.inter(
             fontSize: 13,
-            color: AppColors.textSecondary,
+            color: textSecondary,
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -60,7 +64,7 @@ class AppTextField extends StatelessWidget {
           textInputAction: textInputAction,
           style: GoogleFonts.inter(
             fontSize: 15,
-            color: AppColors.textPrimary,
+            color: onSurface,
           ),
           decoration: InputDecoration(
             hintText: hint,

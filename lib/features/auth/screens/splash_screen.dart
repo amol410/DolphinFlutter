@@ -323,7 +323,7 @@ class _DolphinPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..shader = const LinearGradient(
+      ..shader = LinearGradient(
         colors: [AppColors.primary, AppColors.accent],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,

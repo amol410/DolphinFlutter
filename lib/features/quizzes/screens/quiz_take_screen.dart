@@ -59,7 +59,6 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
   Future<void> _submit({bool autoSubmit = false}) async {
     final quiz = _quiz;
     if (quiz == null) return;
-    // Prevent double-submission
     if (ref.read(quizTakeProvider).isSubmitting) return;
 
     final qState = ref.read(quizTakeProvider);
@@ -79,34 +78,40 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
     final unanswered = quiz.questions.length - answeredCount;
 
     if (!autoSubmit && unanswered > 0) {
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+      final surfaceColor = isDark ? AppColors.pitchBlackSurface : AppColors.lightSurface;
+      final onSurface = Theme.of(context).colorScheme.onSurface;
+      final textSecondary = isDark ? AppColors.pitchBlackTextSecondary : AppColors.lightTextSecondary;
+
       final confirm = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
-        // Use dialogContext (the dialog's own BuildContext) for Navigator.pop.
-        // Using the screen's `context` inside a ShellRoute pops the ROUTE,
-        // not the dialog — which is why the detail screen appeared with the
-        // dialog still overlaid. dialogContext is scoped to the overlay entry.
         builder: (dialogContext) => AlertDialog(
-          backgroundColor: AppColors.surface,
-          title: Text('Submit Quiz?',
-            style: GoogleFonts.plusJakartaSans(color: Colors.white, fontWeight: FontWeight.w600)),
+          backgroundColor: surfaceColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(
+            'Submit Quiz?',
+            style: GoogleFonts.plusJakartaSans(color: onSurface, fontWeight: FontWeight.w600),
+          ),
           content: Text(
             'You have $unanswered unanswered question${unanswered > 1 ? 's' : ''}. Submit anyway?',
-            style: GoogleFonts.inter(color: AppColors.textSecondary)),
+            style: GoogleFonts.inter(color: textSecondary),
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel')),
+              child: Text('Cancel', style: GoogleFonts.inter(color: textSecondary)),
+            ),
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: Text('Submit', style: GoogleFonts.inter(color: AppColors.error))),
+              child: Text('Submit', style: GoogleFonts.inter(color: AppColors.error, fontWeight: FontWeight.w600)),
+            ),
           ],
         ),
       );
       if (confirm != true) return;
     }
 
-    // Stop the timer immediately to prevent double-submit from auto-fire
     _timer?.cancel();
     _timer = null;
 
@@ -126,11 +131,12 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
       }).toList();
       final timeTaken = ((DateTime.now().millisecondsSinceEpoch - _startTime) / 1000).round();
       final result = await ref.read(quizRepositoryProvider).submitAttempt(
-        widget.quizId, answers, timeTaken,
+        widget.quizId,
+        answers,
+        timeTaken,
       );
       if (!mounted) return;
 
-      // Build the result data map
       final resultData = <String, dynamic>{
         'score': result.score,
         'maxScore': result.maxScore,
@@ -141,12 +147,8 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
         'questions': quiz.questions,
       };
 
-      // Store result in provider BEFORE navigating so the result screen
-      // can always read it even if go_router drops the extra object.
       ref.read(quizResultProvider(widget.quizId).notifier).state = resultData;
 
-      // Use pushReplacement so go_router keeps the ShellRoute alive and
-      // correctly passes the extra Map to the result route builder.
       context.pushReplacement(
         '/quizzes/${widget.quizId}/result',
         extra: resultData,
@@ -154,8 +156,10 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Submission failed: ${e.toString()}'),
-            backgroundColor: AppColors.error),
+        SnackBar(
+          content: Text('Submission failed: ${e.toString()}'),
+          backgroundColor: AppColors.error,
+        ),
       );
       ref.read(quizTakeProvider.notifier).setSubmitting(false);
     }
@@ -164,12 +168,16 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
   void _openNavigator() {
     final quiz = _quiz;
     if (quiz == null) return;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surfaceColor = isDark ? AppColors.pitchBlackSurface : AppColors.lightSurface;
+
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.surface,
+      backgroundColor: surfaceColor,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (sheetContext) => _QuestionNavigatorSheet(
         quiz: quiz,
         onSelect: (i) {
@@ -191,10 +199,18 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
     final qState = ref.watch(quizTakeProvider);
     final quiz = _quiz;
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final surfaceColor = isDark ? AppColors.pitchBlackSurface : AppColors.lightSurface;
+    final surface2Color = isDark ? AppColors.pitchBlackSurface2 : AppColors.lightSurface2;
+    final borderColor = isDark ? AppColors.pitchBlackBorder : AppColors.lightBorder;
+    final textSecondary = isDark ? AppColors.pitchBlackTextSecondary : AppColors.lightTextSecondary;
+    final textMuted = isDark ? AppColors.pitchBlackTextMuted : AppColors.lightTextMuted;
+
     if (quiz == null) {
       return Scaffold(
-        backgroundColor: AppColors.background,
-        body: const Center(child: CircularProgressIndicator(color: AppColors.primary)),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
       );
     }
 
@@ -212,7 +228,7 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
     }
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
@@ -224,25 +240,28 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
                   GestureDetector(
                     onTap: () => context.go('/quizzes/${widget.quizId}'),
                     child: Container(
-                      width: 36, height: 36,
+                      width: 36,
+                      height: 36,
                       decoration: BoxDecoration(
-                        color: AppColors.surface2,
+                        color: surface2Color,
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Icon(Icons.close, color: Colors.white, size: 18),
+                      child: Icon(Icons.close, color: onSurface, size: 18),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(quiz.title,
-                      style: GoogleFonts.inter(fontSize: 14, color: Colors.white),
-                      overflow: TextOverflow.ellipsis),
+                    child: Text(
+                      quiz.title,
+                      style: GoogleFonts.inter(fontSize: 14, color: onSurface, fontWeight: FontWeight.w500),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                   if (quiz.timeLimit > 0)
                     CircularPercentIndicator(
                       radius: 28,
                       lineWidth: 3,
-                      percent: secondsRemaining / (quiz.timeLimit * 60),
+                      percent: (quiz.timeLimit * 60 > 0) ? (secondsRemaining / (quiz.timeLimit * 60)).clamp(0.0, 1.0) : 0.0,
                       progressColor: timerColor,
                       backgroundColor: timerColor.withOpacity(0.15),
                       center: Text(
@@ -264,13 +283,15 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
                 children: [
                   LinearProgressIndicator(
                     value: progress,
-                    color: AppColors.primary,
-                    backgroundColor: AppColors.surface2,
+                    color: isDark ? AppColors.secondary : AppColors.primary,
+                    backgroundColor: surface2Color,
                     borderRadius: BorderRadius.circular(4),
                   ),
                   const SizedBox(height: 4),
-                  Text('Q${qState.currentIndex + 1} of $total',
-                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+                  Text(
+                    'Q${qState.currentIndex + 1} of $total',
+                    style: GoogleFonts.inter(fontSize: 12, color: textMuted),
+                  ),
                 ],
               ),
             ),
@@ -286,9 +307,9 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: AppColors.surface,
+                        color: surfaceColor,
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.border),
+                        border: Border.all(color: borderColor),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -296,23 +317,27 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(
-                              color: AppColors.primary.withOpacity(0.15),
+                              color: (isDark ? AppColors.secondary : AppColors.primary).withOpacity(0.15),
                               borderRadius: BorderRadius.circular(20),
                             ),
-                            child: Text('Q${qState.currentIndex + 1}',
+                            child: Text(
+                              'Q${qState.currentIndex + 1}',
                               style: GoogleFonts.inter(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
-                                color: AppColors.primary,
-                              )),
+                                color: isDark ? AppColors.secondary : AppColors.primary,
+                              ),
+                            ),
                           ),
                           const SizedBox(height: 12),
-                          Text(question.text,
+                          Text(
+                            question.text,
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 16,
                               fontWeight: FontWeight.w500,
-                              color: Colors.white,
-                            )),
+                              color: onSurface,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -324,9 +349,9 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
                         margin: const EdgeInsets.only(bottom: 16),
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: AppColors.surface2,
+                          color: isDark ? surface2Color : const Color(0xFF1E293B),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppColors.border),
+                          border: Border.all(color: borderColor),
                         ),
                         child: Text(
                           question.code!,
@@ -344,8 +369,7 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
                         question: question,
                         currentMatches: qState.matchAnswers[question.id] ?? [],
                         onMatchesChanged: (matches) {
-                          ref.read(quizTakeProvider.notifier)
-                              .setMatchAnswer(question.id, matches);
+                          ref.read(quizTakeProvider.notifier).setMatchAnswer(question.id, matches);
                         },
                       ),
                       const SizedBox(height: 12),
@@ -358,50 +382,52 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
                         final selected = qState.selectedAnswers[question.id] == idx;
 
                         return GestureDetector(
-                          onTap: () => ref.read(quizTakeProvider.notifier)
-                              .selectAnswer(question.id, idx),
+                          onTap: () => ref.read(quizTakeProvider.notifier).selectAnswer(question.id, idx),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 150),
                             margin: const EdgeInsets.only(bottom: 10),
                             padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
                               color: selected
-                                  ? AppColors.primary.withOpacity(0.12)
-                                  : AppColors.surface,
+                                  ? (isDark ? AppColors.secondary : AppColors.primary).withOpacity(0.15)
+                                  : surfaceColor,
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: selected ? AppColors.primary : AppColors.border,
+                                color: selected ? (isDark ? AppColors.secondary : AppColors.primary) : borderColor,
                                 width: selected ? 1.5 : 1,
                               ),
                             ),
                             child: Row(
                               children: [
                                 Container(
-                                  width: 30, height: 30,
+                                  width: 30,
+                                  height: 30,
                                   decoration: BoxDecoration(
-                                    color: selected
-                                        ? AppColors.primary
-                                        : AppColors.surface2,
+                                    color: selected ? (isDark ? AppColors.secondary : AppColors.primary) : surface2Color,
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Center(
-                                    child: Text(letter,
+                                    child: Text(
+                                      letter,
                                       style: GoogleFonts.inter(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w600,
                                         color: selected
-                                            ? Colors.white
-                                            : AppColors.textSecondary,
-                                      )),
+                                            ? (isDark ? AppColors.onSecondaryContainer : Colors.white)
+                                            : textSecondary,
+                                      ),
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
-                                  child: Text(optText,
+                                  child: Text(
+                                    optText,
                                     style: GoogleFonts.inter(
                                       fontSize: 14,
-                                      color: Colors.white,
-                                    )),
+                                      color: onSurface,
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),
@@ -412,15 +438,14 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
 
                     // Mark for review
                     TextButton.icon(
-                      onPressed: () => ref.read(quizTakeProvider.notifier)
-                          .toggleReview(question.id),
+                      onPressed: () => ref.read(quizTakeProvider.notifier).toggleReview(question.id),
                       icon: Icon(
                         qState.markedForReview.contains(question.id)
                             ? Icons.flag
                             : Icons.flag_outlined,
                         color: qState.markedForReview.contains(question.id)
                             ? AppColors.warning
-                            : AppColors.textMuted,
+                            : textMuted,
                         size: 18,
                       ),
                       label: Text(
@@ -431,7 +456,7 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
                           fontSize: 13,
                           color: qState.markedForReview.contains(question.id)
                               ? AppColors.warning
-                              : AppColors.textMuted,
+                              : textMuted,
                         ),
                       ),
                     ),
@@ -443,8 +468,9 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
             // Bottom Bar
             Container(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: AppColors.surface2)),
+              decoration: BoxDecoration(
+                color: surfaceColor,
+                border: Border(top: BorderSide(color: borderColor)),
               ),
               child: Row(
                 children: [
@@ -454,10 +480,9 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
                           ? () => ref.read(quizTakeProvider.notifier).prev()
                           : null,
                       style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: AppColors.textMuted),
-                        foregroundColor: AppColors.textSecondary,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10)),
+                        side: BorderSide(color: borderColor),
+                        foregroundColor: textSecondary,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                       child: const Text('← Prev'),
@@ -466,11 +491,10 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
                   const SizedBox(width: 10),
                   IconButton(
                     onPressed: _openNavigator,
-                    icon: const Icon(Icons.grid_view_rounded, color: AppColors.textSecondary),
+                    icon: Icon(Icons.grid_view_rounded, color: onSurface),
                     style: IconButton.styleFrom(
-                      backgroundColor: AppColors.surface2,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
+                      backgroundColor: surface2Color,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -483,16 +507,20 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
                             onPressed: qState.isSubmitting ? null : () => _submit(),
                           )
                         : ElevatedButton(
-                            onPressed: () =>
-                                ref.read(quizTakeProvider.notifier).next(total),
+                            onPressed: () => ref.read(quizTakeProvider.notifier).next(total),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10)),
+                              backgroundColor: isDark ? AppColors.secondary : AppColors.primary,
+                              foregroundColor: isDark ? AppColors.onSecondaryContainer : Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
-                            child: const Text('Next →'),
+                            child: Text(
+                              'Next →',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? AppColors.onSecondaryContainer : Colors.white,
+                              ),
+                            ),
                           ),
                   ),
                 ],
@@ -520,6 +548,11 @@ class _QuestionNavigatorSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final qState = ref.watch(quizTakeProvider);
     final screenHeight = MediaQuery.of(context).size.height;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final surface2Color = isDark ? AppColors.pitchBlackSurface2 : AppColors.lightSurface2;
+    final textSecondary = isDark ? AppColors.pitchBlackTextSecondary : AppColors.lightTextSecondary;
+    final textMuted = isDark ? AppColors.pitchBlackTextMuted : AppColors.lightTextMuted;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -529,13 +562,14 @@ class _QuestionNavigatorSheet extends ConsumerWidget {
           padding: const EdgeInsets.fromLTRB(20, 20, 8, 0),
           child: Row(
             children: [
-              Text('Question Navigator',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
+              Text(
+                'Question Navigator',
+                style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w600, color: onSurface),
+              ),
               const Spacer(),
               IconButton(
                 onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close, color: AppColors.textSecondary, size: 20),
+                icon: Icon(Icons.close, color: textSecondary, size: 20),
               ),
             ],
           ),
@@ -562,26 +596,37 @@ class _QuestionNavigatorSheet extends ConsumerWidget {
                         : qState.selectedAnswers.containsKey(q.id);
                     final isMarked = qState.markedForReview.contains(q.id);
 
-                    Color bgColor = AppColors.surface2;
-                    if (isCurrent) bgColor = AppColors.primary;
-                    else if (isMarked) bgColor = AppColors.warning;
-                    else if (isAnswered) bgColor = AppColors.success;
+                    Color bgColor = surface2Color;
+                    Color numColor = onSurface;
+                    if (isCurrent) {
+                      bgColor = isDark ? AppColors.secondary : AppColors.primary;
+                      numColor = isDark ? AppColors.onSecondaryContainer : Colors.white;
+                    } else if (isMarked) {
+                      bgColor = AppColors.warning;
+                      numColor = Colors.white;
+                    } else if (isAnswered) {
+                      bgColor = AppColors.success;
+                      numColor = Colors.white;
+                    }
 
                     return GestureDetector(
                       onTap: () => onSelect(i),
                       child: Container(
-                        width: 40, height: 40,
+                        width: 40,
+                        height: 40,
                         decoration: BoxDecoration(
                           color: bgColor,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Center(
-                          child: Text('${i + 1}',
+                          child: Text(
+                            '${i + 1}',
                             style: GoogleFonts.inter(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            )),
+                              color: numColor,
+                            ),
+                          ),
                         ),
                       ),
                     );
@@ -592,11 +637,11 @@ class _QuestionNavigatorSheet extends ConsumerWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    _Legend(color: AppColors.surface2, label: 'Not answered'),
+                    _Legend(color: surface2Color, label: 'Not answered', textMuted: textMuted),
                     const SizedBox(width: 12),
-                    _Legend(color: AppColors.success, label: 'Answered'),
+                    _Legend(color: AppColors.success, label: 'Answered', textMuted: textMuted),
                     const SizedBox(width: 12),
-                    _Legend(color: AppColors.warning, label: 'Review'),
+                    _Legend(color: AppColors.warning, label: 'Review', textMuted: textMuted),
                   ],
                 ),
               ],
@@ -606,8 +651,7 @@ class _QuestionNavigatorSheet extends ConsumerWidget {
 
         // ── Fixed Submit button ──
         Padding(
-          padding: EdgeInsets.fromLTRB(20, 8, 20,
-              20 + MediaQuery.of(context).viewInsets.bottom),
+          padding: EdgeInsets.fromLTRB(20, 8, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
           child: GradientButton(text: 'Submit Quiz', height: 48, onPressed: onSubmit),
         ),
       ],
@@ -618,17 +662,20 @@ class _QuestionNavigatorSheet extends ConsumerWidget {
 class _Legend extends StatelessWidget {
   final Color color;
   final String label;
-  const _Legend({required this.color, required this.label});
+  final Color textMuted;
+  const _Legend({required this.color, required this.label, required this.textMuted});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Container(width: 12, height: 12,
-          decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3))),
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3)),
+        ),
         const SizedBox(width: 4),
-        Text(label,
-          style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted)),
+        Text(label, style: GoogleFonts.inter(fontSize: 11, color: textMuted)),
       ],
     );
   }

@@ -14,13 +14,21 @@ class FlashcardsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final decksAsync = ref.watch(flashcardListProvider);
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surfaceColor = isDark ? AppColors.pitchBlackSurface : AppColors.lightSurface;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Text('Flashcards',
+        title: Text(
+          'Flashcards',
           style: GoogleFonts.plusJakartaSans(
-            fontSize: 20, fontWeight: FontWeight.w600, color: Colors.white)),
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: onSurface,
+          ),
+        ),
         backgroundColor: Colors.transparent,
       ),
       body: decksAsync.when(
@@ -40,7 +48,7 @@ class FlashcardsScreen extends ConsumerWidget {
               )
             : RefreshIndicator(
                 color: AppColors.primary,
-                backgroundColor: AppColors.surface,
+                backgroundColor: surfaceColor,
                 onRefresh: () async => ref.invalidate(flashcardListProvider),
                 child: GridView.builder(
                   padding: const EdgeInsets.all(16),
@@ -82,28 +90,39 @@ class _DeckCard extends StatelessWidget {
             end: Alignment.bottomRight,
           ),
           borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: colors.first.withOpacity(0.35),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            )
+          ],
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
           children: [
             // Decorative circles
             Positioned(
-              top: -20, right: -20,
+              top: -20,
+              right: -20,
               child: Container(
-                width: 80, height: 80,
+                width: 80,
+                height: 80,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.white.withOpacity(0.05),
+                  color: Colors.white.withOpacity(0.06),
                 ),
               ),
             ),
             Positioned(
-              top: 10, right: 20,
+              top: 10,
+              right: 20,
               child: Container(
-                width: 50, height: 50,
+                width: 50,
+                height: 50,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.white.withOpacity(0.05),
+                  color: Colors.white.withOpacity(0.06),
                 ),
               ),
             ),
@@ -116,37 +135,38 @@ class _DeckCard extends StatelessWidget {
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15),
+                          color: Colors.white.withOpacity(0.18),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Text('${deck.cardCount} cards',
+                        child: Text(
+                          '${deck.cardCount} cards',
                           style: GoogleFonts.inter(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
                             color: Colors.white,
-                          )),
+                          ),
+                        ),
                       ),
                       const Spacer(),
                       if (!deck.isPublic)
-                        const Icon(Icons.lock_outline,
-                            color: Colors.white60, size: 14),
+                        const Icon(Icons.lock_outline, color: Colors.white70, size: 14),
                     ],
                   ),
                   const Spacer(),
                   Container(
-                    width: 44, height: 44,
+                    width: 44,
+                    height: 44,
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.12),
+                      color: Colors.white.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(Icons.style,
-                        color: Colors.white, size: 24),
+                    child: const Icon(Icons.style, color: Colors.white, size: 24),
                   ),
                   const SizedBox(height: 10),
-                  Text(deck.deckName,
+                  Text(
+                    deck.deckName,
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
@@ -156,9 +176,10 @@ class _DeckCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
-                  Text('Study →',
-                    style: GoogleFonts.inter(
-                      fontSize: 12, color: Colors.white70)),
+                  Text(
+                    'Study →',
+                    style: GoogleFonts.inter(fontSize: 12, color: Colors.white70),
+                  ),
                 ],
               ),
             ),

@@ -35,7 +35,7 @@ class _ActivityHistoryScreenState extends ConsumerState<ActivityHistoryScreen> {
     if (info.diffDays == 0) return const Color(0xFF06B6D4); // Cyan for TODAY
     if (info.diffDays == 1) return const Color(0xFF3B82F6); // Blue for YESTERDAY
     if (info.diffDays == 2) return const Color(0xFF8B5CF6); // Purple for DAY BEFORE YESTERDAY
-    return AppColors.primaryLight;
+    return AppColors.primary;
   }
 
   @override
@@ -43,26 +43,34 @@ class _ActivityHistoryScreenState extends ConsumerState<ActivityHistoryScreen> {
     final state = ref.watch(activityHistoryProvider);
     final todayCountsAsync = ref.watch(todayCountsProvider);
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final surfaceColor = isDark ? AppColors.pitchBlackSurface : AppColors.lightSurface;
+    final surface2Color = isDark ? AppColors.pitchBlackSurface2 : AppColors.lightSurface2;
+    final borderColor = isDark ? AppColors.pitchBlackBorder : AppColors.lightBorder;
+    final textSecondary = isDark ? AppColors.pitchBlackTextSecondary : AppColors.lightTextSecondary;
+    final textMuted = isDark ? AppColors.pitchBlackTextMuted : AppColors.lightTextMuted;
+
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(
           'Study & Activity History',
           style: GoogleFonts.plusJakartaSans(
             fontSize: 18,
             fontWeight: FontWeight.w600,
-            color: Colors.white,
+            color: onSurface,
           ),
         ),
         backgroundColor: Colors.transparent,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: Icon(Icons.arrow_back, color: onSurface),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
       body: RefreshIndicator(
         color: AppColors.primary,
-        backgroundColor: AppColors.surface,
+        backgroundColor: surfaceColor,
         onRefresh: () async {
           ref.invalidate(todayCountsProvider);
           await ref.read(activityHistoryProvider.notifier).fetchInitial();
@@ -77,44 +85,49 @@ class _ActivityHistoryScreenState extends ConsumerState<ActivityHistoryScreen> {
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [
-                      const Color(0xFF6366F1).withOpacity(0.2),
-                      const Color(0xFFA855F7).withOpacity(0.1),
-                    ],
+                    colors: isDark
+                        ? [
+                            const Color(0xFF6366F1).withOpacity(0.2),
+                            const Color(0xFFA855F7).withOpacity(0.1),
+                          ]
+                        : [
+                            const Color(0xFF6366F1).withOpacity(0.08),
+                            const Color(0xFFA855F7).withOpacity(0.04),
+                          ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+                  border: Border.all(color: (isDark ? AppColors.secondary : AppColors.primary).withOpacity(isDark ? 0.3 : 0.2)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.today_rounded, size: 18, color: AppColors.primaryLight),
+                        Icon(Icons.today_rounded, size: 18, color: isDark ? AppColors.secondary : AppColors.primary),
                         const SizedBox(width: 8),
                         Text(
                           'Today\'s Milestones',
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 15,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            color: onSurface,
                           ),
                         ),
                         const Spacer(),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.25),
+                            color: const Color(0xFF06B6D4).withOpacity(0.15),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
-                            '${counts.total} completed',
+                            'LIVE',
                             style: GoogleFonts.inter(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.primaryLight,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFF06B6D4),
                             ),
                           ),
                         ),
@@ -124,10 +137,10 @@ class _ActivityHistoryScreenState extends ConsumerState<ActivityHistoryScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        _MilestoneMini(icon: '🧠', label: 'Quizzes', count: counts.quizCount, color: AppColors.accent),
-                        _MilestoneMini(icon: '📝', label: 'Notes', count: counts.noteCount, color: AppColors.noteBlue),
-                        _MilestoneMini(icon: '🎤', label: 'Karaoke', count: counts.karaokeCount, color: const Color(0xFF06B6D4)),
-                        _MilestoneMini(icon: '🃏', label: 'Cards', count: counts.flashcardCount, color: AppColors.success),
+                        _MilestoneMini(icon: '🧠', label: 'Quizzes', count: counts.quizCount, color: AppColors.accent, textMuted: textMuted),
+                        _MilestoneMini(icon: '📝', label: 'Notes', count: counts.noteCount, color: AppColors.noteBlue, textMuted: textMuted),
+                        _MilestoneMini(icon: '🎤', label: 'Karaoke', count: counts.karaokeCount, color: const Color(0xFF06B6D4), textMuted: textMuted),
+                        _MilestoneMini(icon: '🃏', label: 'Cards', count: counts.flashcardCount, color: AppColors.success, textMuted: textMuted),
                       ],
                     ),
                   ],
@@ -142,13 +155,37 @@ class _ActivityHistoryScreenState extends ConsumerState<ActivityHistoryScreen> {
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: [
-                  _FilterChip(label: 'All Activity', isSelected: _activeFilter == 'all', onTap: () => setState(() => _activeFilter = 'all')),
+                  _FilterChip(
+                    label: 'All Activity',
+                    isSelected: _activeFilter == 'all',
+                    surface2Color: surface2Color,
+                    textSecondary: textSecondary,
+                    onTap: () => setState(() => _activeFilter = 'all'),
+                  ),
                   const SizedBox(width: 8),
-                  _FilterChip(label: 'Quizzes', isSelected: _activeFilter == 'quiz', onTap: () => setState(() => _activeFilter = 'quiz')),
+                  _FilterChip(
+                    label: 'Quizzes',
+                    isSelected: _activeFilter == 'quiz',
+                    surface2Color: surface2Color,
+                    textSecondary: textSecondary,
+                    onTap: () => setState(() => _activeFilter = 'quiz'),
+                  ),
                   const SizedBox(width: 8),
-                  _FilterChip(label: 'Notes & Karaoke', isSelected: _activeFilter == 'note', onTap: () => setState(() => _activeFilter = 'note')),
+                  _FilterChip(
+                    label: 'Notes & Karaoke',
+                    isSelected: _activeFilter == 'note',
+                    surface2Color: surface2Color,
+                    textSecondary: textSecondary,
+                    onTap: () => setState(() => _activeFilter = 'note'),
+                  ),
                   const SizedBox(width: 8),
-                  _FilterChip(label: 'Flashcards', isSelected: _activeFilter == 'flashcard', onTap: () => setState(() => _activeFilter = 'flashcard')),
+                  _FilterChip(
+                    label: 'Flashcards',
+                    isSelected: _activeFilter == 'flashcard',
+                    surface2Color: surface2Color,
+                    textSecondary: textSecondary,
+                    onTap: () => setState(() => _activeFilter = 'flashcard'),
+                  ),
                 ],
               ),
             ),
@@ -163,21 +200,21 @@ class _ActivityHistoryScreenState extends ConsumerState<ActivityHistoryScreen> {
                 child: Center(
                   child: Column(
                     children: [
-                      const Icon(Icons.history_rounded, size: 48, color: AppColors.textMuted),
+                      Icon(Icons.history_rounded, size: 48, color: AppColors.textMuted),
                       const SizedBox(height: 12),
                       Text(
                         'No study history found',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          color: onSurface,
                         ),
                       ),
                       const SizedBox(height: 6),
                       Text(
                         'Complete a quiz, read a note, or review flashcards to track your progress!',
                         textAlign: TextAlign.center,
-                        style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
+                        style: GoogleFonts.inter(fontSize: 13, color: textSecondary),
                       ),
                     ],
                   ),
@@ -185,7 +222,6 @@ class _ActivityHistoryScreenState extends ConsumerState<ActivityHistoryScreen> {
               )
             else ...[
               ...state.days.map((dayGroup) {
-                // Filter items according to activeFilter
                 List<ActivityItem> filteredItems = [];
                 if (_activeFilter == 'all') {
                   filteredItems = [
@@ -210,9 +246,9 @@ class _ActivityHistoryScreenState extends ConsumerState<ActivityHistoryScreen> {
                 return Container(
                   margin: const EdgeInsets.only(bottom: 20),
                   decoration: BoxDecoration(
-                    color: AppColors.surface,
+                    color: surfaceColor,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.border),
+                    border: Border.all(color: borderColor),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -221,9 +257,9 @@ class _ActivityHistoryScreenState extends ConsumerState<ActivityHistoryScreen> {
                       Container(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                         decoration: BoxDecoration(
-                          color: AppColors.surface2.withOpacity(0.5),
+                          color: surface2Color.withOpacity(0.5),
                           borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                          border: Border(bottom: BorderSide(color: AppColors.border.withOpacity(0.5))),
+                          border: Border(bottom: BorderSide(color: borderColor.withOpacity(0.5))),
                         ),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.center,
@@ -252,33 +288,30 @@ class _ActivityHistoryScreenState extends ConsumerState<ActivityHistoryScreen> {
                                   const SizedBox(height: 4),
                                   Text(
                                     dayGroup.info.dateLabel,
-                                    style: GoogleFonts.inter(
-                                      fontSize: 11,
-                                      color: AppColors.textMuted,
-                                    ),
+                                    style: GoogleFonts.inter(fontSize: 11, color: textMuted),
                                   ),
                                 ],
                               ),
                             ),
-                            // Daily Study Hours (Right Side Header)
+                            // Daily Study Hours
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                               decoration: BoxDecoration(
-                                color: AppColors.primary.withOpacity(0.15),
+                                color: (isDark ? AppColors.secondary : AppColors.primary).withOpacity(0.15),
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+                                border: Border.all(color: (isDark ? AppColors.secondary : AppColors.primary).withOpacity(0.3)),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.access_time_rounded, size: 14, color: AppColors.primaryLight),
+                                  Icon(Icons.access_time_rounded, size: 14, color: isDark ? AppColors.secondary : AppColors.primary),
                                   const SizedBox(width: 5),
                                   Text(
                                     totalStudyTimeStr,
                                     style: GoogleFonts.plusJakartaSans(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.white,
+                                      color: onSurface,
                                     ),
                                   ),
                                 ],
@@ -297,7 +330,13 @@ class _ActivityHistoryScreenState extends ConsumerState<ActivityHistoryScreen> {
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (_, i) {
                           final item = filteredItems[i];
-                          return _ActivityCard(item: item);
+                          return _ActivityCard(
+                            item: item,
+                            onSurface: onSurface,
+                            surface2Color: surface2Color,
+                            borderColor: borderColor,
+                            textMuted: textMuted,
+                          );
                         },
                       ),
                     ],
@@ -314,10 +353,10 @@ class _ActivityHistoryScreenState extends ConsumerState<ActivityHistoryScreen> {
                         ? null
                         : () => ref.read(activityHistoryProvider.notifier).loadPreviousWeek(),
                     icon: state.isLoadingMore
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 14,
                             height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            child: CircularProgressIndicator(strokeWidth: 2, color: onSurface),
                           )
                         : const Icon(Icons.arrow_downward_rounded, size: 16),
                     label: Text(
@@ -325,8 +364,8 @@ class _ActivityHistoryScreenState extends ConsumerState<ActivityHistoryScreen> {
                       style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
                     ),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.textSecondary,
-                      side: const BorderSide(color: AppColors.border),
+                      foregroundColor: textSecondary,
+                      side: BorderSide(color: borderColor),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
@@ -345,20 +384,22 @@ class _MilestoneMini extends StatelessWidget {
   final String label;
   final int count;
   final Color color;
+  final Color textMuted;
 
   const _MilestoneMini({
     required this.icon,
     required this.label,
     required this.count,
     required this.color,
+    required this.textMuted,
   });
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Text(icon, style: const TextStyle(fontSize: 20)),
-        const SizedBox(height: 3),
+        Text(icon, style: const TextStyle(fontSize: 18)),
+        const SizedBox(height: 2),
         Text(
           '$count',
           style: GoogleFonts.plusJakartaSans(
@@ -369,7 +410,7 @@ class _MilestoneMini extends StatelessWidget {
         ),
         Text(
           label,
-          style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+          style: GoogleFonts.inter(fontSize: 10, color: textMuted),
         ),
       ],
     );
@@ -380,11 +421,15 @@ class _FilterChip extends StatelessWidget {
   final String label;
   final bool isSelected;
   final VoidCallback onTap;
+  final Color surface2Color;
+  final Color textSecondary;
 
   const _FilterChip({
     required this.label,
     required this.isSelected,
     required this.onTap,
+    required this.surface2Color,
+    required this.textSecondary,
   });
 
   @override
@@ -393,20 +438,17 @@ class _FilterChip extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary : AppColors.surface,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: isSelected ? AppColors.primary : AppColors.border,
-          ),
+          color: isSelected ? AppColors.primary : surface2Color,
+          borderRadius: BorderRadius.circular(18),
         ),
         child: Text(
           label,
           style: GoogleFonts.inter(
             fontSize: 12,
             fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-            color: isSelected ? Colors.white : AppColors.textSecondary,
+            color: isSelected ? Colors.white : textSecondary,
           ),
         ),
       ),
@@ -416,40 +458,66 @@ class _FilterChip extends StatelessWidget {
 
 class _ActivityCard extends StatelessWidget {
   final ActivityItem item;
+  final Color onSurface;
+  final Color surface2Color;
+  final Color borderColor;
+  final Color textMuted;
 
-  const _ActivityCard({required this.item});
+  const _ActivityCard({
+    required this.item,
+    required this.onSurface,
+    required this.surface2Color,
+    required this.borderColor,
+    required this.textMuted,
+  });
 
   String _formatSeconds(int secs) {
-    if (secs <= 0) return '0s';
+    if (secs <= 0) return '';
     final m = secs ~/ 60;
     final s = secs % 60;
-    if (m > 0 && s > 0) return '${m}m ${s}s';
-    if (m > 0) return '${m}m';
+    if (m > 0) return '${m}m ${s}s';
     return '${s}s';
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    IconData typeIcon;
+    Color typeColor;
+    String typeLabel;
+    String route;
     final isQuiz = item.activityType == 'quiz';
-    final isKaraoke = item.isKaraoke;
-    final isFlashcard = item.activityType == 'flashcard';
 
-    IconData typeIcon = Icons.article_outlined;
-    Color typeColor = AppColors.noteBlue;
-    String typeLabel = 'Note';
-
-    if (isQuiz) {
-      typeIcon = Icons.psychology_outlined;
-      typeColor = AppColors.accent;
-      typeLabel = 'Quiz';
-    } else if (isKaraoke) {
-      typeIcon = Icons.music_note_rounded;
-      typeColor = const Color(0xFF06B6D4);
-      typeLabel = 'Karaoke';
-    } else if (isFlashcard) {
-      typeIcon = Icons.style_outlined;
-      typeColor = AppColors.success;
-      typeLabel = 'Flashcard';
+    switch (item.activityType) {
+      case 'quiz':
+        typeIcon = Icons.psychology_outlined;
+        typeColor = AppColors.accent;
+        typeLabel = 'QUIZ';
+        route = '/quizzes/${item.resourceId}/review';
+        break;
+      case 'karaoke':
+        typeIcon = Icons.mic_rounded;
+        typeColor = const Color(0xFF06B6D4);
+        typeLabel = 'KARAOKE';
+        route = '/notes/${item.resourceId}';
+        break;
+      case 'note':
+        typeIcon = Icons.article_outlined;
+        typeColor = AppColors.noteBlue;
+        typeLabel = 'NOTE';
+        route = '/notes/${item.resourceId}';
+        break;
+      case 'flashcard':
+        typeIcon = Icons.style_outlined;
+        typeColor = AppColors.success;
+        typeLabel = 'CARDS';
+        route = '/flashcards/${item.resourceId}/study';
+        break;
+      default:
+        typeIcon = Icons.school_outlined;
+        typeColor = isDark ? const Color(0xFFA1A1AA) : AppColors.primary;
+        typeLabel = 'STUDY';
+        route = '/home';
     }
 
     return Material(
@@ -457,22 +525,16 @@ class _ActivityCard extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
         onTap: () {
-          if (isQuiz) {
-            context.push('/quizzes/${item.resourceId}/review');
-          } else if (isKaraoke) {
-            context.push('/notes/karaoke/${item.resourceId}');
-          } else if (isFlashcard) {
-            context.push('/flashcards/${item.resourceId}/study');
-          } else {
-            context.push('/notes/${item.resourceId}');
+          if (route.isNotEmpty && item.resourceId > 0) {
+            context.push(route);
           }
         },
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: AppColors.surface2.withOpacity(0.3),
+            color: surface2Color.withOpacity(0.5),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppColors.border.withOpacity(0.5)),
+            border: Border.all(color: borderColor.withOpacity(0.5)),
           ),
           child: Row(
             children: [
@@ -512,7 +574,7 @@ class _ActivityCard extends StatelessWidget {
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                        color: onSurface,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -546,7 +608,7 @@ class _ActivityCard extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         _formatSeconds(item.secondsSpent),
-                        style: GoogleFonts.inter(fontSize: 10, color: AppColors.textMuted),
+                        style: GoogleFonts.inter(fontSize: 10, color: textMuted),
                       ),
                     ],
                   ],
@@ -554,11 +616,11 @@ class _ActivityCard extends StatelessWidget {
               ] else if (item.secondsSpent > 0) ...[
                 Text(
                   _formatSeconds(item.secondsSpent),
-                  style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+                  style: GoogleFonts.inter(fontSize: 11, color: textMuted),
                 ),
               ],
               const SizedBox(width: 4),
-              const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.white38),
+              Icon(Icons.arrow_forward_ios, size: 12, color: textMuted),
             ],
           ),
         ),

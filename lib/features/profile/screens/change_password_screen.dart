@@ -57,7 +57,7 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
     }
   }
 
-  Widget _strengthBar() {
+  Widget _strengthBar(Color trackColor) {
     final colors = [AppColors.error, AppColors.warning, AppColors.success];
     final labels = ['Weak', 'Medium', 'Strong'];
     if (_strength == 0) return const SizedBox.shrink();
@@ -74,7 +74,7 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
                 decoration: BoxDecoration(
                   color: i < _strength
                       ? colors[_strength - 1]
-                      : AppColors.surface2,
+                      : trackColor,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -93,13 +93,26 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surface2Color = isDark ? AppColors.pitchBlackSurface2 : AppColors.lightSurface2;
+
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Text('Change Password',
+        title: Text(
+          'Change Password',
           style: GoogleFonts.plusJakartaSans(
-            fontSize: 20, fontWeight: FontWeight.w600, color: Colors.white)),
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: onSurface,
+          ),
+        ),
         backgroundColor: Colors.transparent,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: onSurface),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -119,10 +132,13 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
                       prefixIcon: Icons.lock_outline,
                       validator: (v) => Validators.required(v, 'Current password'),
                       suffixIcon: IconButton(
-                        icon: Icon(_obscureCurrent
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
-                          color: AppColors.textSecondary, size: 20),
+                        icon: Icon(
+                          _obscureCurrent
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          color: AppColors.textSecondary,
+                          size: 20,
+                        ),
                         onPressed: () => setState(
                             () => _obscureCurrent = !_obscureCurrent),
                       ),
@@ -138,15 +154,18 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
                       onChanged: (v) => setState(
                           () => _strength = Validators.passwordStrength(v)),
                       suffixIcon: IconButton(
-                        icon: Icon(_obscureNew
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
-                          color: AppColors.textSecondary, size: 20),
+                        icon: Icon(
+                          _obscureNew
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          color: AppColors.textSecondary,
+                          size: 20,
+                        ),
                         onPressed: () =>
                             setState(() => _obscureNew = !_obscureNew),
                       ),
                     ),
-                    _strengthBar(),
+                    _strengthBar(surface2Color),
                     const SizedBox(height: 16),
                     AppTextField(
                       label: 'Confirm Password',
@@ -160,10 +179,13 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
                         return null;
                       },
                       suffixIcon: IconButton(
-                        icon: Icon(_obscureConfirm
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
-                          color: AppColors.textSecondary, size: 20),
+                        icon: Icon(
+                          _obscureConfirm
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          color: AppColors.textSecondary,
+                          size: 20,
+                        ),
                         onPressed: () => setState(
                             () => _obscureConfirm = !_obscureConfirm),
                       ),

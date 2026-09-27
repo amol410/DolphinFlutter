@@ -100,7 +100,7 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
     if (widget.readOnly) return;
     setState(() {
       if (_selectedLeft == leftText) {
-        _selectedLeft = null;
+        _selectedLeft = null; // deselect
       } else {
         _selectedLeft = leftText;
       }
@@ -109,24 +109,24 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
 
   void _onRightTap(String rightText) {
     if (widget.readOnly) return;
-    if (_selectedLeft == null) {
-      // If no left item is selected, check if this right item is already paired
-      final existingLeft = _pairsMap.entries
+    final selected = _selectedLeft;
+    if (selected == null) {
+      // Find if right is already paired and highlight its left
+      final pairedLeft = _pairsMap.entries
           .firstWhere((e) => e.value == rightText, orElse: () => const MapEntry('', ''))
           .key;
-      if (existingLeft.isNotEmpty) {
-        setState(() {
-          _selectedLeft = existingLeft;
-        });
+      if (pairedLeft.isNotEmpty) {
+        setState(() => _selectedLeft = pairedLeft);
       }
       return;
     }
 
     setState(() {
-      // If rightText was already assigned to another left, unassign it
+      // Remove any existing pairing that uses this rightText
       _pairsMap.removeWhere((_, r) => r == rightText);
-      _pairsMap[_selectedLeft!] = rightText;
-      _selectedLeft = null;
+      // Pair selected left with this rightText
+      _pairsMap[selected] = rightText;
+      _selectedLeft = null; // reset selection
     });
     _emitChange();
   }
@@ -155,6 +155,14 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final surfaceColor = isDark ? AppColors.pitchBlackSurface : AppColors.lightSurface;
+    final surface2Color = isDark ? AppColors.pitchBlackSurface2 : AppColors.lightSurface2;
+    final borderColor = isDark ? AppColors.pitchBlackBorder : AppColors.lightBorder;
+    final textSecondary = isDark ? AppColors.pitchBlackTextSecondary : AppColors.lightTextSecondary;
+    final textMuted = isDark ? AppColors.pitchBlackTextMuted : AppColors.lightTextMuted;
+
     final pairedCount = _leftItems.where((l) => (_pairsMap[l] ?? '').isNotEmpty).length;
     final totalCount = _leftItems.length;
     final isComplete = totalCount > 0 && pairedCount == totalCount;
@@ -166,10 +174,10 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
-            color: AppColors.surface,
+            color: surfaceColor,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isComplete ? AppColors.success.withOpacity(0.4) : AppColors.border,
+              color: isComplete ? AppColors.success.withOpacity(0.4) : borderColor,
             ),
           ),
           child: Row(
@@ -177,7 +185,7 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
               Icon(
                 isComplete ? Icons.check_circle : Icons.swap_horiz_rounded,
                 size: 18,
-                color: isComplete ? AppColors.success : AppColors.primary,
+                color: isComplete ? AppColors.success : (isDark ? AppColors.secondary : AppColors.primary),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -190,7 +198,7 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
                   style: GoogleFonts.inter(
                     fontSize: 12,
                     fontWeight: isComplete ? FontWeight.w600 : FontWeight.normal,
-                    color: isComplete ? AppColors.success : AppColors.textSecondary,
+                    color: isComplete ? AppColors.success : textSecondary,
                   ),
                 ),
               ),
@@ -204,7 +212,7 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
                   ),
                   child: Text(
                     'Reset',
-                    style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+                    style: GoogleFonts.inter(fontSize: 11, color: textMuted),
                   ),
                 ),
             ],
@@ -212,7 +220,7 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
         ),
         const SizedBox(height: 16),
 
-        // Side-by-side or Stacked columns
+        // Side-by-side columns
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -229,7 +237,7 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 0.8,
-                        color: AppColors.primaryLight,
+                        color: isDark ? AppColors.secondary : AppColors.primary,
                       ),
                     ),
                   ),
@@ -253,17 +261,17 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
                               color: isSelected
-                                  ? color.withOpacity(0.2)
+                                  ? color.withOpacity(0.18)
                                   : isPaired
                                       ? color.withOpacity(0.08)
-                                      : AppColors.surface,
+                                      : surfaceColor,
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
                                 color: isSelected
                                     ? color
                                     : isPaired
                                         ? color.withOpacity(0.6)
-                                        : AppColors.border,
+                                        : borderColor,
                                 width: isSelected ? 2 : 1,
                               ),
                             ),
@@ -276,7 +284,7 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
                                       width: 22,
                                       height: 22,
                                       decoration: BoxDecoration(
-                                        color: isPaired ? color : AppColors.surface2,
+                                        color: isPaired ? color : surface2Color,
                                         shape: BoxShape.circle,
                                       ),
                                       child: Center(
@@ -285,7 +293,7 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
                                           style: GoogleFonts.inter(
                                             fontSize: 11,
                                             fontWeight: FontWeight.bold,
-                                            color: isPaired ? Colors.white : AppColors.textSecondary,
+                                            color: isPaired ? Colors.white : textSecondary,
                                           ),
                                         ),
                                       ),
@@ -294,7 +302,11 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
                                     if (isPaired && !widget.readOnly)
                                       GestureDetector(
                                         onTap: () => _unpair(leftText),
-                                        child: const Icon(Icons.close, size: 16, color: Colors.white60),
+                                        child: Icon(
+                                          Icons.close,
+                                          size: 16,
+                                          color: isDark ? Colors.white60 : Colors.black45,
+                                        ),
                                       ),
                                   ],
                                 ),
@@ -304,7 +316,7 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
                                   style: GoogleFonts.inter(
                                     fontSize: 13,
                                     fontWeight: isPaired ? FontWeight.w600 : FontWeight.normal,
-                                    color: Colors.white,
+                                    color: onSurface,
                                   ),
                                 ),
                                 if (isPaired) ...[
@@ -312,15 +324,15 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: color.withOpacity(0.2),
+                                      color: color.withOpacity(0.15),
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
                                       '↔ $pairedRight',
                                       style: GoogleFonts.inter(
                                         fontSize: 10,
-                                        fontWeight: FontWeight.w500,
-                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                        color: color,
                                       ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
@@ -362,7 +374,7 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
                         .key;
                     final isPaired = pairedLeft.isNotEmpty;
                     final leftIndex = isPaired ? _leftItems.indexOf(pairedLeft) : -1;
-                    final color = leftIndex >= 0 ? _getColorForLeft(leftIndex) : AppColors.primary;
+                    final color = leftIndex >= 0 ? _getColorForLeft(leftIndex) : (isDark ? AppColors.secondary : AppColors.primary);
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 10),
@@ -377,10 +389,10 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
                             decoration: BoxDecoration(
                               color: isPaired
                                   ? color.withOpacity(0.12)
-                                  : AppColors.surface,
+                                  : surfaceColor,
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: isPaired ? color.withOpacity(0.7) : AppColors.border,
+                                color: isPaired ? color.withOpacity(0.7) : borderColor,
                                 width: isPaired ? 1.5 : 1,
                               ),
                             ),
@@ -406,7 +418,7 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
                                         ),
                                       )
                                     else
-                                      const Icon(Icons.link, size: 14, color: AppColors.textMuted),
+                                      Icon(Icons.link, size: 14, color: textMuted),
                                     const Spacer(),
                                     if (isPaired)
                                       Icon(Icons.check, size: 14, color: color),
@@ -418,7 +430,7 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
                                   style: GoogleFonts.inter(
                                     fontSize: 13,
                                     fontWeight: isPaired ? FontWeight.w600 : FontWeight.normal,
-                                    color: Colors.white,
+                                    color: onSurface,
                                   ),
                                 ),
                               ],

@@ -17,21 +17,32 @@ class QuizResultScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Read from provider first (set during submission), then fall back
-    // to route extra. The provider is set before navigation in _submit().
     final cached = ref.watch(quizResultProvider(quizId));
     final hasCached = cached != null && cached.isNotEmpty;
     final hasRoute = result.isNotEmpty;
     final data = hasCached ? cached! : result;
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final surfaceColor = isDark ? AppColors.pitchBlackSurface : AppColors.lightSurface;
+    final surface2Color = isDark ? AppColors.pitchBlackSurface2 : AppColors.lightSurface2;
+    final borderColor = isDark ? AppColors.pitchBlackBorder : AppColors.lightBorder;
+    final textSecondary = isDark ? AppColors.pitchBlackTextSecondary : AppColors.lightTextSecondary;
+    final textMuted = isDark ? AppColors.pitchBlackTextMuted : AppColors.lightTextMuted;
+
     // If neither source has data, show an error state
     if (!hasCached && !hasRoute) {
       return Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: AppBar(
-          title: Text('Quiz Results',
+          title: Text(
+            'Quiz Results',
             style: GoogleFonts.plusJakartaSans(
-              fontSize: 20, fontWeight: FontWeight.w600, color: Colors.white)),
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: onSurface,
+            ),
+          ),
           backgroundColor: Colors.transparent,
           automaticallyImplyLeading: false,
         ),
@@ -39,23 +50,25 @@ class QuizResultScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, color: AppColors.textMuted, size: 48),
+              Icon(Icons.error_outline, color: AppColors.textMuted, size: 48),
               const SizedBox(height: 16),
-              Text('No result data available.',
-                style: GoogleFonts.inter(fontSize: 16, color: AppColors.textSecondary)),
+              Text(
+                'No result data available.',
+                style: GoogleFonts.inter(fontSize: 16, color: textSecondary),
+              ),
               const SizedBox(height: 20),
               OutlinedButton(
                 onPressed: () => context.go('/quizzes'),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: AppColors.textMuted),
-                  foregroundColor: Colors.white,
+                  side: BorderSide(color: borderColor),
+                  foregroundColor: onSurface,
                   padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: Text('Back to Quizzes',
-                  style: GoogleFonts.inter(
-                    fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
+                child: Text(
+                  'Back to Quizzes',
+                  style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: onSurface),
+                ),
               ),
             ],
           ),
@@ -92,62 +105,72 @@ class QuizResultScreen extends ConsumerWidget {
     }
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Text('Quiz Results',
+        title: Text(
+          'Quiz Results',
           style: GoogleFonts.plusJakartaSans(
-            fontSize: 20, fontWeight: FontWeight.w600, color: Colors.white)),
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: onSurface,
+          ),
+        ),
         backgroundColor: Colors.transparent,
         automaticallyImplyLeading: false,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Score hero
+            // Score card
             GlassCard(
               child: Column(
                 children: [
                   CircularPercentIndicator(
-                    radius: 70,
+                    radius: 65,
                     lineWidth: 10,
                     percent: (percentage / 100).clamp(0.0, 1.0),
                     progressColor: ringColor,
                     backgroundColor: ringColor.withOpacity(0.15),
-                    animation: true,
-                    animationDuration: 1200,
-                    center: Text(
-                      '${percentage.toStringAsFixed(0)}%',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: ringColor,
-                      ),
+                    circularStrokeCap: CircularStrokeCap.round,
+                    center: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${percentage.round()}%',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 26,
+                            fontWeight: FontWeight.bold,
+                            color: ringColor,
+                          ),
+                        ),
+                        Text(
+                          '$score / $maxScore',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: textSecondary,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: ringColor.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: ringColor.withOpacity(0.3)),
-                    ),
-                    child: Text(
-                      passed ? '🎉  PASSED' : '✗  FAILED',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: ringColor,
-                      ),
+                  Text(
+                    passed ? '🎉 Congratulations!' : 'Keep Practicing!',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: onSurface,
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 6),
                   Text(
-                    '$score / $maxScore points',
-                    style: GoogleFonts.inter(
-                      fontSize: 15, color: AppColors.textSecondary),
+                    passed
+                        ? 'You have passed this quiz successfully!'
+                        : 'Review your mistakes and try again.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(fontSize: 15, color: textSecondary),
                   ),
                 ],
               ),
@@ -157,26 +180,62 @@ class QuizResultScreen extends ConsumerWidget {
             // Stats row
             Row(
               children: [
-                _StatMini(value: '$correct', label: 'Correct', color: AppColors.success,
-                    icon: Icons.check_circle_outline),
+                _StatMini(
+                  value: '$correct',
+                  label: 'Correct',
+                  color: AppColors.success,
+                  icon: Icons.check_circle_outline,
+                  surfaceColor: surfaceColor,
+                  borderColor: borderColor,
+                  textMuted: textMuted,
+                ),
                 const SizedBox(width: 8),
-                _StatMini(value: '$wrong', label: 'Wrong', color: AppColors.error,
-                    icon: Icons.cancel_outlined),
+                _StatMini(
+                  value: '$wrong',
+                  label: 'Wrong',
+                  color: AppColors.error,
+                  icon: Icons.cancel_outlined,
+                  surfaceColor: surfaceColor,
+                  borderColor: borderColor,
+                  textMuted: textMuted,
+                ),
                 const SizedBox(width: 8),
-                _StatMini(value: '$skipped', label: 'Skipped', color: AppColors.textMuted,
-                    icon: Icons.remove_circle_outline),
+                _StatMini(
+                  value: '$skipped',
+                  label: 'Skipped',
+                  color: textMuted,
+                  icon: Icons.remove_circle_outline,
+                  surfaceColor: surfaceColor,
+                  borderColor: borderColor,
+                  textMuted: textMuted,
+                ),
                 const SizedBox(width: 8),
-                _StatMini(value: formatTime(timeTaken), label: 'Time',
-                    color: AppColors.primary, icon: Icons.timer_outlined),
+                _StatMini(
+                  value: formatTime(timeTaken),
+                  label: 'Time',
+                  color: isDark ? AppColors.secondary : AppColors.primary,
+                  icon: Icons.timer_outlined,
+                  surfaceColor: surfaceColor,
+                  borderColor: borderColor,
+                  textMuted: textMuted,
+                ),
               ],
             ),
             const SizedBox(height: 20),
 
             // Question review
             if (questions.isNotEmpty && answers.isNotEmpty) ...[
-              Text('Review Answers',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white)),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Review Answers',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: onSurface,
+                  ),
+                ),
+              ),
               const SizedBox(height: 12),
               ListView.separated(
                 shrinkWrap: true,
@@ -185,16 +244,20 @@ class QuizResultScreen extends ConsumerWidget {
                 separatorBuilder: (_, __) => const SizedBox(height: 12),
                 itemBuilder: (_, i) {
                   final answer = answers[i];
-                  final isCorrect = answer is AttemptAnswer ? answer.correct
+                  final isCorrect = answer is AttemptAnswer
+                      ? answer.correct
                       : (answer is Map ? answer['correct'] == true : false);
                   final isSkipped = answer is AttemptAnswer
                       ? answer.selectedIndex == -1
                       : (answer is Map ? (answer['selectedIndex'] ?? -1) == -1 : false);
-                  final selectedIdx = answer is AttemptAnswer ? answer.selectedIndex
+                  final selectedIdx = answer is AttemptAnswer
+                      ? answer.selectedIndex
                       : (answer is Map ? (answer['selectedIndex'] ?? -1) as int : -1);
-                  final correctIdx = answer is AttemptAnswer ? answer.correctIndex
+                  final correctIdx = answer is AttemptAnswer
+                      ? answer.correctIndex
                       : (answer is Map ? (answer['correctIndex'] ?? 0) as int : 0);
-                  final explanation = answer is AttemptAnswer ? answer.explanation
+                  final explanation = answer is AttemptAnswer
+                      ? answer.explanation
                       : (answer is Map ? answer['explanation'] as String? : null);
 
                   QuizQuestion? question;
@@ -202,44 +265,45 @@ class QuizResultScreen extends ConsumerWidget {
                     question = questions[i] as QuizQuestion;
                   }
 
-                  final borderColor = isSkipped
-                      ? AppColors.textMuted
+                  final itemBorderColor = isSkipped
+                      ? textMuted
                       : isCorrect
                           ? AppColors.success
                           : AppColors.error;
 
-                  // Status label + icon for the top-right badge
-                  final statusLabel = isSkipped ? 'Skipped'
-                      : isCorrect ? 'Correct' : 'Wrong';
-                  final statusColor = isSkipped ? AppColors.textMuted
-                      : isCorrect ? AppColors.success : AppColors.error;
-                  final statusIcon = isSkipped ? Icons.remove_circle_outline
+                  final statusLabel = isSkipped ? 'Skipped' : isCorrect ? 'Correct' : 'Wrong';
+                  final statusColor = isSkipped ? textMuted : isCorrect ? AppColors.success : AppColors.error;
+                  final statusIcon = isSkipped
+                      ? Icons.remove_circle_outline
                       : isCorrect ? Icons.check_circle_outline : Icons.cancel_outlined;
 
                   return Container(
                     decoration: BoxDecoration(
-                      color: AppColors.surface,
+                      color: surfaceColor,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border(left: BorderSide(color: borderColor, width: 4)),
+                      border: Border(left: BorderSide(color: itemBorderColor, width: 4)),
                     ),
-                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                    padding: const EdgeInsets.all(14),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Question number + status badge row
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                               decoration: BoxDecoration(
-                                color: AppColors.primary.withOpacity(0.15),
+                                color: (isDark ? AppColors.secondary : AppColors.primary).withOpacity(0.15),
                                 borderRadius: BorderRadius.circular(20),
                               ),
-                              child: Text('Q${i + 1}',
+                              child: Text(
+                                'Q${i + 1}',
                                 style: GoogleFonts.inter(
-                                  fontSize: 12, fontWeight: FontWeight.w700,
-                                  color: AppColors.primary)),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark ? AppColors.secondary : AppColors.primary,
+                                ),
+                              ),
                             ),
                             const Spacer(),
                             Row(
@@ -247,32 +311,38 @@ class QuizResultScreen extends ConsumerWidget {
                               children: [
                                 Icon(statusIcon, color: statusColor, size: 15),
                                 const SizedBox(width: 4),
-                                Text(statusLabel,
+                                Text(
+                                  statusLabel,
                                   style: GoogleFonts.inter(
-                                    fontSize: 13, fontWeight: FontWeight.w600,
-                                    color: statusColor)),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: statusColor,
+                                  ),
+                                ),
                               ],
                             ),
                           ],
                         ),
                         const SizedBox(height: 10),
 
-                        // Full question text — no line clamp
                         Text(
                           question?.text ?? 'Question ${i + 1}',
                           style: GoogleFonts.plusJakartaSans(
-                            fontSize: 15, fontWeight: FontWeight.w600,
-                            color: Colors.white, height: 1.45),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: onSurface,
+                            height: 1.45,
+                          ),
                         ),
                         const SizedBox(height: 10),
 
-                        // Divider
-                        Divider(color: AppColors.border, height: 1),
+                        Divider(color: borderColor, height: 1),
                         const SizedBox(height: 10),
 
-                        // Your answer (if answered)
-                        if (!isSkipped && question != null &&
-                            selectedIdx >= 0 && selectedIdx < question.options.length) ...[
+                        if (!isSkipped &&
+                            question != null &&
+                            selectedIdx >= 0 &&
+                            selectedIdx < question.options.length) ...[
                           _AnswerRow(
                             label: 'Your answer',
                             text: question.options[selectedIdx],
@@ -282,24 +352,26 @@ class QuizResultScreen extends ConsumerWidget {
                           const SizedBox(height: 6),
                         ],
 
-                        // Skipped label
                         if (isSkipped) ...[
                           Row(
                             children: [
-                              Icon(Icons.remove_circle_outline,
-                                  color: AppColors.textMuted, size: 16),
+                              Icon(Icons.remove_circle_outline, color: textMuted, size: 16),
                               const SizedBox(width: 6),
-                              Text('Not answered (Skipped)',
+                              Text(
+                                'Not answered (Skipped)',
                                 style: GoogleFonts.inter(
-                                  fontSize: 14, color: AppColors.textMuted,
-                                  fontStyle: FontStyle.italic)),
+                                  fontSize: 14,
+                                  color: textMuted,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 6),
                         ],
 
-                        // Always show correct answer for wrong or skipped
-                        if ((!isCorrect || isSkipped) && question != null &&
+                        if ((!isCorrect || isSkipped) &&
+                            question != null &&
                             correctIdx < question.options.length) ...[
                           _AnswerRow(
                             label: 'Correct answer',
@@ -310,37 +382,42 @@ class QuizResultScreen extends ConsumerWidget {
                           const SizedBox(height: 6),
                         ],
 
-                        // Explanation — always visible, no accordion
                         if (explanation != null && explanation.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Container(
                             width: double.infinity,
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: AppColors.background,
+                              color: surface2Color,
                               borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: AppColors.border),
+                              border: Border.all(color: borderColor),
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
                                   children: [
-                                    Icon(Icons.lightbulb_outline,
-                                      color: AppColors.warning, size: 15),
+                                    const Icon(Icons.lightbulb_outline, color: AppColors.warning, size: 15),
                                     const SizedBox(width: 6),
-                                    Text('Explanation',
+                                    Text(
+                                      'Explanation',
                                       style: GoogleFonts.inter(
-                                        fontSize: 13, fontWeight: FontWeight.w600,
-                                        color: AppColors.warning)),
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.warning,
+                                      ),
+                                    ),
                                   ],
                                 ),
                                 const SizedBox(height: 8),
-                                Text(explanation,
+                                Text(
+                                  explanation,
                                   style: GoogleFonts.inter(
                                     fontSize: 14,
-                                    color: AppColors.textSecondary,
-                                    height: 1.5)),
+                                    color: textSecondary,
+                                    height: 1.5,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -353,17 +430,18 @@ class QuizResultScreen extends ConsumerWidget {
               const SizedBox(height: 20),
             ],
 
-
             // Action buttons
             ElevatedButton.icon(
               onPressed: () => context.push('/quizzes/$quizId/review'),
               icon: const Icon(Icons.fact_check_outlined, size: 18),
-              label: Text('Review Questions & Answers',
-                style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.bold)),
+              label: Text(
+                'Review Questions & Answers',
+                style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.bold),
+              ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.surface,
-                foregroundColor: AppColors.primaryLight,
-                side: const BorderSide(color: AppColors.primary, width: 1.5),
+                backgroundColor: surfaceColor,
+                foregroundColor: onSurface,
+                side: BorderSide(color: isDark ? AppColors.secondary : AppColors.primary, width: 1.5),
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
@@ -378,15 +456,15 @@ class QuizResultScreen extends ConsumerWidget {
             OutlinedButton(
               onPressed: () => context.go('/quizzes'),
               style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: AppColors.textMuted),
-                foregroundColor: Colors.white,
+                side: BorderSide(color: borderColor),
+                foregroundColor: onSurface,
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              child: Text('Back to Quizzes',
-                style: GoogleFonts.inter(
-                  fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
+              child: Text(
+                'Back to Quizzes',
+                style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: onSurface),
+              ),
             ),
             const SizedBox(height: 32),
           ],
@@ -401,12 +479,18 @@ class _StatMini extends StatelessWidget {
   final String label;
   final Color color;
   final IconData icon;
+  final Color surfaceColor;
+  final Color borderColor;
+  final Color textMuted;
 
   const _StatMini({
     required this.value,
     required this.label,
     required this.color,
     required this.icon,
+    required this.surfaceColor,
+    required this.borderColor,
+    required this.textMuted,
   });
 
   @override
@@ -415,19 +499,26 @@ class _StatMini extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: surfaceColor,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(color: borderColor),
         ),
         child: Column(
           children: [
             Icon(icon, color: color, size: 18),
             const SizedBox(height: 4),
-            Text(value,
+            Text(
+              value,
               style: GoogleFonts.plusJakartaSans(
-                fontSize: 14, fontWeight: FontWeight.bold, color: color)),
-            Text(label,
-              style: GoogleFonts.inter(fontSize: 10, color: AppColors.textMuted)),
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            Text(
+              label,
+              style: GoogleFonts.inter(fontSize: 10, color: textMuted),
+            ),
           ],
         ),
       ),
@@ -435,9 +526,6 @@ class _StatMini extends StatelessWidget {
   }
 }
 
-/// A labelled answer row used in the review section.
-/// Shows [label] (e.g. "Your answer" / "Correct answer") with an icon
-/// and the option [text] in the appropriate [color].
 class _AnswerRow extends StatelessWidget {
   final String label;
   final String text;

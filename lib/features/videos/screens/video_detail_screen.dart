@@ -52,13 +52,14 @@ class _VideoDetailScreenState extends ConsumerState<VideoDetailScreen> {
   Widget build(BuildContext context) {
     final videoAsync = ref.watch(videoDetailProvider(widget.videoId));
 
+    final isLight = Theme.of(context).brightness == Brightness.light;
     return videoAsync.when(
       loading: () => Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         body: const ShimmerListLoader(count: 4),
       ),
       error: (e, _) => Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: AppBar(backgroundColor: Colors.transparent),
         body: Center(
           child: Column(
@@ -67,7 +68,7 @@ class _VideoDetailScreenState extends ConsumerState<VideoDetailScreen> {
               const Icon(Icons.error_outline, color: AppColors.error, size: 48),
               const SizedBox(height: 12),
               Text('Failed to load video',
-                style: GoogleFonts.inter(color: AppColors.textSecondary)),
+                style: GoogleFonts.inter(color: isLight ? AppColors.lightTextSecondary : AppColors.textSecondary)),
               TextButton(
                 onPressed: () => ref.invalidate(videoDetailProvider(widget.videoId)),
                 child: const Text('Retry'),
@@ -79,7 +80,7 @@ class _VideoDetailScreenState extends ConsumerState<VideoDetailScreen> {
       data: (video) {
         _loadVideo(video.youtubeVideoId);
         return Scaffold(
-          backgroundColor: AppColors.background,
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           body: Column(
             children: [
               // YouTube Player
@@ -123,28 +124,28 @@ class _VideoDetailScreenState extends ConsumerState<VideoDetailScreen> {
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          const Icon(Icons.remove_red_eye_outlined,
-                              size: 14, color: AppColors.textSecondary),
+                          Icon(Icons.remove_red_eye_outlined,
+                              size: 14, color: isLight ? AppColors.lightTextSecondary : AppColors.textSecondary),
                           const SizedBox(width: 4),
                           Text('${video.viewCount} views',
                             style: GoogleFonts.inter(
-                              fontSize: 13, color: AppColors.textSecondary)),
+                              fontSize: 13, color: isLight ? AppColors.lightTextSecondary : AppColors.textSecondary)),
                           const SizedBox(width: 12),
-                          const Icon(Icons.calendar_today_outlined,
-                              size: 14, color: AppColors.textSecondary),
+                          Icon(Icons.calendar_today_outlined,
+                              size: 14, color: isLight ? AppColors.lightTextSecondary : AppColors.textSecondary),
                           const SizedBox(width: 4),
                           Text(_formatDate(video.createdAt),
                             style: GoogleFonts.inter(
-                              fontSize: 13, color: AppColors.textSecondary)),
+                              fontSize: 13, color: isLight ? AppColors.lightTextSecondary : AppColors.textSecondary)),
                         ],
                       ),
-                      const Divider(color: AppColors.surface2, height: 24),
+                      Divider(color: isLight ? AppColors.lightBorder : AppColors.surface2, height: 24),
                       if (video.subjectName != null || video.topic != null)
                         Wrap(
                           spacing: 8,
@@ -162,26 +163,26 @@ class _VideoDetailScreenState extends ConsumerState<VideoDetailScreen> {
                           children: video.tags.map((t) => Chip(
                             label: Text('#$t',
                               style: GoogleFonts.inter(
-                                fontSize: 11, color: AppColors.textSecondary)),
-                            backgroundColor: AppColors.surface2,
+                                fontSize: 11, color: isLight ? AppColors.lightTextSecondary : AppColors.textSecondary)),
+                            backgroundColor: isLight ? AppColors.lightSurface2 : AppColors.surface2,
                             padding: EdgeInsets.zero,
                             side: BorderSide.none,
                           )).toList(),
                         ),
                       ],
                       if (video.description != null && video.description!.isNotEmpty) ...[
-                        const Divider(color: AppColors.surface2, height: 24),
+                        Divider(color: isLight ? AppColors.lightBorder : AppColors.surface2, height: 24),
                         Text('Description',
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.textSecondary,
+                            color: isLight ? AppColors.lightTextSecondary : AppColors.textSecondary,
                           )),
                         const SizedBox(height: 8),
                         Text(video.description!,
                           style: GoogleFonts.inter(
                             fontSize: 14,
-                            color: AppColors.textSecondary,
+                            color: isLight ? AppColors.lightTextSecondary : AppColors.textSecondary,
                           )),
                       ],
                     ],

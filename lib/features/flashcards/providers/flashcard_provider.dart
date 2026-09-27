@@ -94,6 +94,8 @@ class StudySessionNotifier extends StateNotifier<StudySessionState> {
   void restart() {
     state = const StudySessionState();
   }
+
+  void reset() => restart();
 }
 
 final studySessionProvider =

@@ -11,16 +11,16 @@ class SubjectBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.primary.withOpacity(0.3), width: 1),
+        color: AppColors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(9999),
+        border: AppColors.isDark ? Border.all(color: const Color(0x22FFFFFF), width: 1) : null,
       ),
       child: Text(
         label,
-        style: GoogleFonts.inter(
+        style: GoogleFonts.plusJakartaSans(
           fontSize: 11,
           fontWeight: FontWeight.w600,
-          color: AppColors.primaryLight,
+          color: AppColors.onSurfaceVariant,
         ),
       ),
     );
@@ -36,16 +36,16 @@ class TopicBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFF3B82F6).withOpacity(0.15),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF3B82F6).withOpacity(0.3), width: 1),
+        color: AppColors.secondaryFixed,
+        borderRadius: BorderRadius.circular(9999),
+        border: AppColors.isDark ? Border.all(color: AppColors.secondary.withOpacity(0.3), width: 1) : null,
       ),
       child: Text(
         label,
-        style: GoogleFonts.inter(
+        style: GoogleFonts.plusJakartaSans(
           fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: const Color(0xFF60A5FA),
+          fontWeight: FontWeight.bold,
+          color: AppColors.onSecondaryFixed,
         ),
       ),
     );
