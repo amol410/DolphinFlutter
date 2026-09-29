@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:percent_indicator/percent_indicator.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
+import '../../flashcards/providers/difficult_words_provider.dart';
 import '../providers/quiz_provider.dart';
 
 class QuizReviewScreen extends ConsumerWidget {
@@ -286,14 +287,68 @@ class _ReviewStat extends StatelessWidget {
   }
 }
 
-class _QuestionReviewCard extends StatelessWidget {
+class _QuestionReviewCard extends ConsumerWidget {
   final int index;
   final Map<String, dynamic> data;
 
   const _QuestionReviewCard({required this.index, required this.data});
 
+  String _extractCorrectAnswer(Map<String, dynamic> data, String? explanation) {
+    final options = (data['options'] as List? ?? []).cast<Map<String, dynamic>>();
+    final correctOpt = options.firstWhere(
+      (o) => o['isCorrect'] == true,
+      orElse: () => <String, dynamic>{},
+    );
+    final correctText = (correctOpt['text'] ?? '').toString();
+    if (explanation != null && explanation.trim().isNotEmpty) {
+      return correctText.isEmpty ? explanation : '$correctText\n\n💡 $explanation';
+    }
+    return correctText;
+  }
+
+  Widget _buildStarButton({
+    required BuildContext context,
+    required WidgetRef ref,
+    required String front,
+    required String back,
+    required String hint,
+    required Color textMuted,
+  }) {
+    final isStarred = ref.watch(difficultWordsProvider).isBookmarked(front);
+
+    return GestureDetector(
+      onTap: () async {
+        final msg = await ref.read(difficultWordsProvider.notifier).toggleBookmark(
+          front: front,
+          back: back,
+          hint: hint,
+        );
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(msg, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w500)),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
+        }
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.all(2),
+        child: Icon(
+          isStarred ? Icons.star_rounded : Icons.star_outline_rounded,
+          color: isStarred ? const Color(0xFFFFB800) : textMuted,
+          size: 20,
+        ),
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final onSurface = Theme.of(context).colorScheme.onSurface;
     final surfaceColor = isDark ? AppColors.pitchBlackSurface : AppColors.lightSurface;
@@ -359,6 +414,17 @@ class _QuestionReviewCard extends StatelessWidget {
                   color: isCorrect ? AppColors.success : textMuted,
                 ),
               ),
+              if (!isMatchPairs && text.toString().trim().isNotEmpty) ...[
+                const SizedBox(width: 8),
+                _buildStarButton(
+                  context: context,
+                  ref: ref,
+                  front: text.toString(),
+                  back: _extractCorrectAnswer(data, explanation),
+                  hint: 'Quiz Review',
+                  textMuted: textMuted,
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 10),
@@ -393,7 +459,7 @@ class _QuestionReviewCard extends StatelessWidget {
 
           // Render options or match-pairs table
           if (isMatchPairs)
-            _buildMatchPairsReview(data, onSurface, textMuted)
+            _buildMatchPairsReview(data, onSurface, textMuted, ref, context)
           else
             _buildMcqReview(data, isDark, onSurface, surfaceColor, surface2Color, borderColor),
 
@@ -541,7 +607,13 @@ class _QuestionReviewCard extends StatelessWidget {
     );
   }
 
-  Widget _buildMatchPairsReview(Map<String, dynamic> data, Color onSurface, Color textMuted) {
+  Widget _buildMatchPairsReview(
+    Map<String, dynamic> data,
+    Color onSurface,
+    Color textMuted,
+    WidgetRef ref,
+    BuildContext context,
+  ) {
     final pairs = (data['pairs'] as List? ?? []).cast<Map<String, dynamic>>();
     final submittedMatches = (data['submittedMatches'] as List? ?? []).cast<Map<String, dynamic>>();
 
@@ -570,6 +642,7 @@ class _QuestionReviewCard extends StatelessWidget {
           );
           final studentRight = studentMatch['right']?.toString() ?? '(unmatched)';
           final isPairCorrect = studentRight.trim().toLowerCase() == correctRight.trim().toLowerCase();
+          final isPairStarred = left.trim().isNotEmpty && ref.watch(difficultWordsProvider).isBookmarked(left);
 
           return Container(
             margin: const EdgeInsets.only(bottom: 8),
@@ -646,6 +719,41 @@ class _QuestionReviewCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (left.trim().isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () async {
+                      final msg = await ref.read(difficultWordsProvider.notifier).toggleBookmark(
+                        front: left,
+                        back: correctRight,
+                        hint: 'Matching Pair',
+                      );
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              msg,
+                              style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w500),
+                            ),
+                            behavior: SnackBarBehavior.floating,
+                            duration: const Duration(seconds: 2),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        );
+                      }
+                    },
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(
+                        isPairStarred ? Icons.star_rounded : Icons.star_outline_rounded,
+                        color: isPairStarred ? const Color(0xFFFFB800) : textMuted,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           );

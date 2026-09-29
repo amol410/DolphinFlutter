@@ -6,6 +6,7 @@ import 'package:percent_indicator/percent_indicator.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/glass_card.dart';
 import '../../../shared/widgets/gradient_button.dart';
+import '../../flashcards/providers/difficult_words_provider.dart';
 import '../data/models/quiz_model.dart';
 import '../providers/quiz_provider.dart';
 
@@ -17,6 +18,7 @@ class QuizResultScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final difficultWordsState = ref.watch(difficultWordsProvider);
     final cached = ref.watch(quizResultProvider(quizId));
     final hasCached = cached != null && cached.isNotEmpty;
     final hasRoute = result.isNotEmpty;
@@ -277,6 +279,23 @@ class QuizResultScreen extends ConsumerWidget {
                       ? Icons.remove_circle_outline
                       : isCorrect ? Icons.check_circle_outline : Icons.cancel_outlined;
 
+                  String cardFront = '';
+                  String cardBack = '';
+                  if (question != null) {
+                    cardFront = question.text;
+                    if (correctIdx >= 0 && correctIdx < question.options.length) {
+                      cardBack = question.options[correctIdx];
+                    }
+                    if (explanation != null && explanation.trim().isNotEmpty) {
+                      cardBack = cardBack.isEmpty ? explanation : '$cardBack\n\n💡 $explanation';
+                    }
+                  } else if (answer is Map) {
+                    cardFront = (answer['questionText'] ?? 'Question ${i + 1}').toString();
+                    cardBack = (answer['correctAnswer'] ?? answer['explanation'] ?? '').toString();
+                  }
+
+                  final isStarred = cardFront.isNotEmpty && difficultWordsState.isBookmarked(cardFront);
+
                   return Container(
                     decoration: BoxDecoration(
                       color: surfaceColor,
@@ -288,7 +307,7 @@ class QuizResultScreen extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
@@ -321,6 +340,48 @@ class QuizResultScreen extends ConsumerWidget {
                                 ),
                               ],
                             ),
+                            if (cardFront.isNotEmpty) ...[
+                              const SizedBox(width: 10),
+                              GestureDetector(
+                                onTap: () async {
+                                  final msg = await ref
+                                      .read(difficultWordsProvider.notifier)
+                                      .toggleBookmark(
+                                        front: cardFront,
+                                        back: cardBack,
+                                        hint: 'Quiz Revision',
+                                      );
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          msg,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        behavior: SnackBarBehavior.floating,
+                                        duration: const Duration(seconds: 2),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                                behavior: HitTestBehavior.opaque,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(2),
+                                  child: Icon(
+                                    isStarred ? Icons.star_rounded : Icons.star_outline_rounded,
+                                    color: isStarred ? const Color(0xFFFFB800) : textMuted,
+                                    size: 22,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                         const SizedBox(height: 10),

@@ -18,15 +18,20 @@ class FlashcardDeck {
   });
 
   factory FlashcardDeck.fromJson(Map<String, dynamic> json) {
+    final rawCards = json['cards'];
+    List<Flashcard> parsedCards = [];
+    if (rawCards is List) {
+      parsedCards = rawCards
+          .map((c) => Flashcard.fromJson(c is Map<String, dynamic> ? c : Map<String, dynamic>.from(c as Map)))
+          .toList();
+    }
     return FlashcardDeck(
-      id: json['_id']?.toString() ?? '',
+      id: (json['_id'] ?? json['id'] ?? '').toString(),
       deckName: json['deckName'] ?? '',
-      description: json['description'],
-      color: json['color'],
-      cards: (json['cards'] as List? ?? [])
-          .map((c) => Flashcard.fromJson(c as Map<String, dynamic>))
-          .toList(),
-      cardCount: json['cardCount'] ?? (json['cards'] as List? ?? []).length,
+      description: json['description']?.toString(),
+      color: json['color']?.toString(),
+      cards: parsedCards,
+      cardCount: json['cardCount'] is int ? json['cardCount'] as int : parsedCards.length,
       isPublic: json['isPublic'] ?? true,
     );
   }
@@ -47,10 +52,10 @@ class Flashcard {
 
   factory Flashcard.fromJson(Map<String, dynamic> json) {
     return Flashcard(
-      id: json['_id']?.toString() ?? '',
-      front: json['front'] ?? '',
-      back: json['back'] ?? '',
-      hint: json['hint'],
+      id: (json['_id'] ?? json['id'] ?? '').toString(),
+      front: json['front']?.toString() ?? '',
+      back: json['back']?.toString() ?? '',
+      hint: json['hint']?.toString(),
     );
   }
 }
