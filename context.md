@@ -343,4 +343,26 @@ PUT  /api/auth/password        { currentPassword, newPassword }
 
 ---
 
-*Last updated: 2026-08-19 | Conversation ID: 7f77e111-4e3d-4bc7-a3bf-30e612789492*
+## 💡 FEATURE LOG
+
+### FEAT-002 — Duolingo-Style Sprechen Mode with Animated Character (`karaoke_note_reader_screen.dart`) (COMPLETE ✅)
+**Date:** 2026-09-30  
+**Status:** Built, analyzed, and verified with zero compilation errors.  
+- **New Files**:
+  - `lib/features/notes/widgets/animated_karaoke_character.dart` — Custom 60 FPS vector character with real-time lip-sync, blinking, and emotion states (speaking, listening, celebration).
+  - `lib/features/notes/widgets/karaoke_speech_bubble.dart` — Comic speech bubble with speaker replay button and word-by-word active highlighting.
+- **Key Capabilities**:
+  - **Updated Sprechen Layout Hierarchy**:
+    - **Header Row**: Compact "Speak this sentence" (22px) and "Full Script" toggle button placed together on the same horizontal line.
+    - **German Karaoke Text**: Full-width card at the top with word-by-word real-time highlight sync.
+    - **Character & Audio Row**: Scaled-down animated character (size 85) with a dedicated "Play Audio" button right beside him.
+    - **English Translation**: Muted translation card (13px font) located directly below the character.
+    - **Tap to Speak**: Large tap-to-speak button located underneath the translation, with explicit-only user activation and ✕ cancel control.
+  - Duolingo-style bottom sheets: green celebration banner (`#D7FFB8`) with `"Excellent! Meaning:"` and big green **`CONTINUE`** button; red banner (`#FFDFE0`) with `"TRY AGAIN"`.
+  - Seamless toggle back to `"Full Script"` listening mode via top chip.
+
+---
+
+*Last updated: 2026-09-30 | Conversation ID: 7a93c79c-2b85-40c4-b582-c8242f31d7d6*
+
+

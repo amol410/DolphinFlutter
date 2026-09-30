@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -9,6 +10,8 @@ import '../../../core/theme/app_colors.dart';
 import '../data/models/karaoke_model.dart';
 import '../data/models/note_model.dart';
 import '../providers/notes_provider.dart';
+import '../widgets/animated_karaoke_character.dart';
+import '../widgets/karaoke_speech_bubble.dart';
 
 class KaraokeNoteReaderScreen extends ConsumerStatefulWidget {
   final NoteModel note;
@@ -39,6 +42,7 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
   double _syncOffset = 0.0;
 
   // Sprechen state
+  int _sprechenIndex = 0;
   int? _activeSprechenIndex;
   bool _isListening = false;
   String _spokenText = '';
@@ -82,6 +86,8 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
     _isSprechenMode = _story.isSprechen;
     if (_isSprechenMode) {
       _playbackRate = 0.75;
+      _sprechenIndex = 0;
+      _activeSprechenIndex = 0;
     }
 
     _initAudio();
@@ -172,12 +178,14 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
             _lastPausedIndex = i;
             if (!mounted) return;
             setState(() {
+              _sprechenIndex = i;
               _activeSprechenIndex = i;
               _speechPassed = null;
               _spokenText = '';
               _speechAccuracy = 0;
             });
-            _startListening(i);
+            // Do not start listening automatically.
+            // Awaiting explicit user click on "TAP TO SPEAK".
             return;
           }
         }
@@ -387,7 +395,8 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
     _lastPausedIndex = sIdx - 1;
     _lastScrolledSentenceIdx = -1;
     setState(() {
-      _activeSprechenIndex = null;
+      _sprechenIndex = sIdx;
+      _activeSprechenIndex = sIdx;
       _speechPassed = null;
       _spokenText = '';
     });
@@ -433,11 +442,24 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
     }
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: _isSprechenMode ? Colors.white : AppColors.background,
       body: SafeArea(
-        child: Column(
-          children: [
-            // Top Header Bar
+        child: _isSprechenMode
+            ? _buildSprechenDuolingoView(context, currentSeconds, totalSeconds)
+            : _buildListeningModeView(context, currentSeconds, totalSeconds, activeSentenceIdx),
+      ),
+    );
+  }
+
+  Widget _buildListeningModeView(
+    BuildContext context,
+    double currentSeconds,
+    double totalSeconds,
+    int activeSentenceIdx,
+  ) {
+    return Column(
+      children: [
+        // Top Header Bar
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
               child: Row(
@@ -798,7 +820,750 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
               ),
             ),
           ],
+        );
+  }
+
+  // Duolingo-style Single-Sentence Sprechen Practice View with Animated Character
+  Widget _buildSprechenDuolingoView(
+    BuildContext context,
+    double currentSeconds,
+    double totalSeconds,
+  ) {
+    if (_sentences.isEmpty) {
+      return Center(
+        child: Text(
+          'No sentences found in this story',
+          style: GoogleFonts.plusJakartaSans(color: const Color(0xFF3C3C3C)),
         ),
+      );
+    }
+
+    final safeIdx = math.max(0, math.min(_sentences.length - 1, _sprechenIndex));
+    final currentSentence = _sentences[safeIdx];
+    final chances = _sentenceChances[safeIdx] ?? 3;
+
+    final isSpeakingNow = _isPlaying &&
+        currentSeconds >= currentSentence.start &&
+        currentSeconds <= (currentSentence.end + 0.15);
+
+    return Container(
+      color: Colors.white,
+      child: Column(
+        children: [
+          // 1. Top Duolingo Bar (Close, Progress Bar with Star, Chances)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Row(
+              children: [
+                // 'X' Close button
+                GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: const Padding(
+                    padding: EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 28,
+                      color: Color(0xFFAFAFAF),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+
+                // Center Progress Bar with Star / Streak indicator
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.star_rounded, size: 14, color: Color(0xFFFF9600)),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                '${safeIdx + 1} OF ${_sentences.length} IN A ROW',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFFFF9600),
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 5),
+                      Container(
+                        height: 14,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE5E5E5),
+                          borderRadius: BorderRadius.circular(9999),
+                        ),
+                        child: FractionallySizedBox(
+                          alignment: Alignment.centerLeft,
+                          widthFactor: math.min(1.0, (safeIdx + 1) / _sentences.length),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFFFF9600), Color(0xFFFFC800)],
+                              ),
+                              borderRadius: BorderRadius.circular(9999),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFFFF9600).withOpacity(0.3),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+
+                // Hearts / Chances Counter
+                Row(
+                  children: [
+                    const Icon(Icons.favorite_rounded, color: Color(0xFFFF4B4B), size: 24),
+                    const SizedBox(width: 4),
+                    Text(
+                      '$chances',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        color: const Color(0xFFFF4B4B),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // 2. Main Scrollable Content Area
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1. Combined Headline (22px) + Full Script Pill
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Speak this sentence',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF3C3C3C),
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _isSprechenMode = false;
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF3F4F6),
+                            borderRadius: BorderRadius.circular(9999),
+                            border: Border.all(color: const Color(0xFFE5E7EB)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.headphones_rounded, size: 13, color: Color(0xFF6B7280)),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Full Script',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF4B5563),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 2. Karaoke German Sentence (Word-level active highlight)
+                  Builder(
+                    builder: (context) {
+                      final words = currentSentence.words.isNotEmpty
+                          ? currentSentence.words
+                          : currentSentence.text
+                              .split(' ')
+                              .map((w) => KaraokeWord(
+                                    word: w,
+                                    clean: w,
+                                    start: currentSentence.start,
+                                    end: currentSentence.end,
+                                  ))
+                              .toList();
+
+                      return Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0xFFE5E7EB), width: 2),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0xFFE5E7EB),
+                              blurRadius: 0,
+                              offset: Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: words.map((w) {
+                            final isWordActive = _isPlaying &&
+                                currentSeconds >= w.start &&
+                                currentSeconds <= w.end;
+
+                            return GestureDetector(
+                              onTap: () => _playSentence(safeIdx),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                decoration: isWordActive
+                                    ? BoxDecoration(
+                                        color: const Color(0xFF1CB0F6).withOpacity(0.18),
+                                        borderRadius: BorderRadius.circular(6),
+                                      )
+                                    : null,
+                                child: Text(
+                                  w.word,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w800,
+                                    color: isWordActive
+                                        ? const Color(0xFF0284C7)
+                                        : const Color(0xFF1CB0F6),
+                                    decoration: isWordActive ? TextDecoration.underline : null,
+                                    decorationStyle: TextDecorationStyle.dotted,
+                                    decorationColor: const Color(0xFF1CB0F6),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 3. Character + Play Audio Button Beside Him
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // Animated Vector Character (size scaled down to 85)
+                      AnimatedKaraokeCharacter(
+                        size: 85,
+                        isTalking: isSpeakingNow,
+                        isListening: _isListening,
+                        isCelebrating: _speechPassed == true,
+                        onTap: () => _playSentence(safeIdx),
+                      ),
+                      const SizedBox(width: 14),
+
+                      // Audio Replay Button Beside Character
+                      GestureDetector(
+                        onTap: () => _playSentence(safeIdx),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1CB0F6).withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: const Color(0xFF1CB0F6).withOpacity(0.3),
+                              width: 1.5,
+                            ),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0xFFE5E7EB),
+                                blurRadius: 0,
+                                offset: Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _isPlaying ? Icons.volume_up_rounded : Icons.volume_up_outlined,
+                                color: const Color(0xFF1CB0F6),
+                                size: 24,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Play Audio',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF1CB0F6),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // 4. English Translation Sentence in Small Font Below Character
+                  if (currentSentence.translation.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF9FAFB),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.translate_rounded, size: 16, color: Color(0xFF9CA3AF)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              currentSentence.translation,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF6B7280),
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+
+                  // 5. Tap to Speak Button or Active Listening Canvas
+                  if (!_isListening && _speechPassed == null) ...[
+                    GestureDetector(
+                      onTap: () => _startListening(safeIdx),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 18),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0xFFE5E7EB), width: 2.5),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0xFFE5E7EB),
+                              blurRadius: 0,
+                              offset: Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.mic_rounded,
+                              color: Color(0xFF1CB0F6),
+                              size: 28,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'TAP TO SPEAK',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                color: const Color(0xFF1CB0F6),
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Center(
+                      child: Text(
+                        'Tap Play Audio to listen, or tap above to speak',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF9CA3AF),
+                        ),
+                      ),
+                    ),
+                  ] else if (_isListening) ...[
+                    // Active Recording Card
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFF1CB0F6), width: 2.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF1CB0F6).withOpacity(0.15),
+                            blurRadius: 16,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 10,
+                                height: 10,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFFF4B4B),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Listening... speak clearly in German',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF1CB0F6),
+                                ),
+                              ),
+                              const Spacer(),
+                              IconButton(
+                                icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF9CA3AF)),
+                                onPressed: _cleanupListening,
+                                tooltip: 'Cancel listening',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF3F4F6),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'YOU SAID:',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    color: const Color(0xFF9CA3AF),
+                                    letterSpacing: 0.6,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _spokenText.isNotEmpty ? '"$_spokenText"' : 'Speak now in German...',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    color: _spokenText.isNotEmpty ? const Color(0xFF1F2937) : const Color(0xFF9CA3AF),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          // Done Speaking Check Button
+                          ElevatedButton.icon(
+                            onPressed: () => _handleManualSubmit(safeIdx),
+                            icon: const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                            label: Text(
+                              'Done Speaking (Check Now ✓)',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF58CC02),
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size(double.infinity, 48),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              elevation: 0,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+
+          // 5. Duolingo Bottom Feedback Sheet
+          if (_speechPassed != null)
+            _buildDuolingoBottomFeedbackSheet(safeIdx, currentSentence),
+        ],
+      ),
+    );
+  }
+
+  // Duolingo Bottom Feedback Sheet (Green on Pass, Light Red on Retry)
+  Widget _buildDuolingoBottomFeedbackSheet(int safeIdx, KaraokeSentence currentSentence) {
+    final isSuccess = _speechPassed == true;
+    final chances = _sentenceChances[safeIdx] ?? 3;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+      decoration: BoxDecoration(
+        color: isSuccess ? const Color(0xFFD7FFB8) : const Color(0xFFFFDFE0),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(24),
+          topRight: Radius.circular(24),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isSuccess ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                color: isSuccess ? const Color(0xFF58A700) : const Color(0xFFEA2B2B),
+                size: 28,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isSuccess ? 'Excellent! Meaning:' : 'Not quite! Meaning:',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    color: isSuccess ? const Color(0xFF58A700) : const Color(0xFFEA2B2B),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.only(left: 36),
+            child: Text(
+              currentSentence.translation.isNotEmpty
+                  ? currentSentence.translation
+                  : currentSentence.text,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: isSuccess ? const Color(0xFF388E3C) : const Color(0xFFB71C1C),
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          if (isSuccess) ...[
+            // Big Green CONTINUE Button
+            ElevatedButton(
+              onPressed: _continueToNextSprechenSentence,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF58CC02),
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 50),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 3,
+                shadowColor: const Color(0xFF58A700),
+              ),
+              child: Text(
+                'CONTINUE',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.8,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ] else ...[
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _playSentence(safeIdx),
+                    icon: const Icon(Icons.volume_up_rounded, size: 18, color: Color(0xFFEA2B2B)),
+                    label: Text(
+                      'Listen (0.75x)',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFFEA2B2B),
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFFEA2B2B), width: 1.5),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: chances > 0
+                        ? () {
+                            _cleanupListening();
+                            setState(() {
+                              _speechPassed = null;
+                              _spokenText = '';
+                              _speechAccuracy = 0;
+                            });
+                          }
+                        : _continueToNextSprechenSentence,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: chances > 0 ? const Color(0xFFFF4B4B) : const Color(0xFF58CC02),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      elevation: 0,
+                    ),
+                    child: Text(
+                      chances > 0 ? 'TRY AGAIN ($chances left)' : 'CONTINUE',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _continueToNextSprechenSentence() {
+    final nextIdx = _sprechenIndex + 1;
+    if (nextIdx < _sentences.length) {
+      setState(() {
+        _sprechenIndex = nextIdx;
+        _activeSprechenIndex = nextIdx;
+        _speechPassed = null;
+        _spokenText = '';
+        _speechAccuracy = 0;
+      });
+      _playSentence(nextIdx);
+    } else {
+      _showAllSentencesCompletedDialog();
+    }
+  }
+
+  void _showAllSentencesCompletedDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Row(
+          children: [
+            const Text('🎉', style: TextStyle(fontSize: 28)),
+            const SizedBox(width: 8),
+            Text(
+              'Lesson Complete!',
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.w900,
+                color: const Color(0xFF3C3C3C),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'You have completed all ${_sentences.length} sentences in this story with great pronunciation!',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 14,
+            color: const Color(0xFF6B7280),
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogCtx).pop();
+              setState(() {
+                _sprechenIndex = 0;
+                _activeSprechenIndex = 0;
+                _speechPassed = null;
+                _spokenText = '';
+                _speechAccuracy = 0;
+              });
+              _playSentence(0);
+            },
+            child: Text(
+              'Practice Again',
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF1CB0F6),
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(dialogCtx).pop();
+              Navigator.of(context).pop();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF58CC02),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text(
+              'Done',
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -945,10 +1710,10 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
                       height: 1.3,
                     ),
                   ),
-                  if (_showTranslations && sentence.translation != null && sentence.translation!.isNotEmpty) ...[
+                  if (_showTranslations && sentence.translation.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Text(
-                      sentence.translation!,
+                      sentence.translation,
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
@@ -1055,10 +1820,10 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
                     );
                   }).toList(),
                 ),
-                if (_showTranslations && sentence.translation != null && sentence.translation!.isNotEmpty) ...[
+                if (_showTranslations && sentence.translation.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text(
-                    sentence.translation!,
+                    sentence.translation,
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
