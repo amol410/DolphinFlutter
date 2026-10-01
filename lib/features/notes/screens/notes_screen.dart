@@ -322,8 +322,14 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
               child: Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceContainerLow,
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFE0F2FE), Color(0xFFBAE6FD)],
+                  ),
                   borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFF7DD3FC), width: 1.2),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0xFFE2E8F0), blurRadius: 0, offset: Offset(0, 3)),
+                  ],
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -333,15 +339,15 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                         Container(
                           width: 40,
                           height: 40,
-                          decoration: BoxDecoration(
-                            color: AppColors.secondaryFixed,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF0284C7),
                             shape: BoxShape.circle,
                           ),
-                          child: Center(
+                          child: const Center(
                             child: Icon(
                               Icons.headphones_rounded,
                               size: 22,
-                              color: AppColors.onSecondaryFixed,
+                              color: Colors.white,
                             ),
                           ),
                         ),
@@ -633,16 +639,18 @@ class _FeedNoteCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: AppColors.surfaceContainerLowest,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
+          boxShadow: const [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 18,
-              offset: const Offset(0, 4),
+              color: Color(0xFFE2E8F0),
+              blurRadius: 0,
+              offset: Offset(0, 3),
             ),
           ],
         ),
@@ -800,8 +808,9 @@ class _FeedNoteCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceContainerLow,
+                  color: const Color(0xFFE0F2FE),
                   borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFBAE6FD)),
                 ),
                 child: Row(
                   children: [
@@ -809,17 +818,17 @@ class _FeedNoteCard extends StatelessWidget {
                       child: Row(
                         children: [
                           Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: AppColors.isDark ? AppColors.secondary : AppColors.primary,
+                            width: 34,
+                            height: 34,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF0284C7),
                               shape: BoxShape.circle,
                             ),
-                            child: Center(
+                            child: const Center(
                               child: Icon(
                                 Icons.play_arrow_rounded,
-                                color: AppColors.isDark ? AppColors.onSecondaryContainer : Colors.white,
-                                size: 18,
+                                color: Colors.white,
+                                size: 20,
                               ),
                             ),
                           ),
@@ -831,20 +840,20 @@ class _FeedNoteCard extends StatelessWidget {
                                 Text(
                                   previewQuote,
                                   style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 12,
+                                    fontSize: 13,
                                     fontWeight: FontWeight.w700,
-                                    color: AppColors.onSurface,
+                                    color: const Color(0xFF1E293B),
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
-                                const SizedBox(height: 1),
+                                const SizedBox(height: 2),
                                 Text(
                                   'Audio sync track • 03:45',
                                   style: GoogleFonts.plusJakartaSans(
                                     fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.secondary,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF0284C7),
                                   ),
                                 ),
                               ],
@@ -854,7 +863,7 @@ class _FeedNoteCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Icon(Icons.graphic_eq_rounded, size: 22, color: AppColors.secondaryContainer),
+                    const Icon(Icons.graphic_eq_rounded, size: 24, color: Color(0xFF0284C7)),
                   ],
                 ),
               ),

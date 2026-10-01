@@ -6,6 +6,13 @@ import '../../features/auth/screens/splash_screen.dart';
 import '../../features/auth/screens/onboarding_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/auth/screens/register_screen.dart';
+import '../../features/gamification/screens/archipelago_map_screen.dart';
+import '../../features/gamification/screens/lesson_session_screen.dart';
+import '../../features/gamification/data/models/gamification_models.dart';
+import '../../features/gamification/screens/leagues_screen.dart';
+import '../../features/gamification/screens/quests_screen.dart';
+import '../../features/gamification/screens/shop_screen.dart';
+import '../../features/gamification/screens/gamified_profile_screen.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
 import '../../features/dashboard/screens/activity_history_screen.dart';
 import '../../features/notes/screens/notes_screen.dart';
@@ -46,6 +53,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/onboarding', builder: (_, __) => const OnboardingScreen()),
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
+      GoRoute(
+        path: '/lesson/:index',
+        builder: (context, state) {
+          final idx = int.tryParse(state.pathParameters['index'] ?? '0') ?? 0;
+          return LessonSessionScreen(
+            nodeIndex: idx,
+            node: state.extra as PathNodeModel?,
+          );
+        },
+      ),
 
       // Shell (bottom nav)
       ShellRoute(
@@ -53,7 +70,27 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: '/home',
-            builder: (_, __) => const DashboardScreen(),
+            builder: (_, __) => const ArchipelagoMapScreen(),
+          ),
+          GoRoute(
+            path: '/leagues',
+            builder: (_, __) => const LeaguesScreen(),
+          ),
+          GoRoute(
+            path: '/quests',
+            builder: (_, __) => const QuestsScreen(),
+          ),
+          GoRoute(
+            path: '/shop',
+            builder: (_, __) => const ShopScreen(),
+          ),
+          GoRoute(
+            path: '/profile',
+            builder: (_, __) => const GamifiedProfileScreen(),
+            routes: [
+              GoRoute(path: 'edit', builder: (_, __) => const EditProfileScreen()),
+              GoRoute(path: 'password', builder: (_, __) => const ChangePasswordScreen()),
+            ],
           ),
           GoRoute(
             path: '/notes',
@@ -113,14 +150,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 builder: (_, state) =>
                     StudyScreen(deckId: state.pathParameters['id']!),
               ),
-            ],
-          ),
-          GoRoute(
-            path: '/profile',
-            builder: (_, __) => const ProfileScreen(),
-            routes: [
-              GoRoute(path: 'edit', builder: (_, __) => const EditProfileScreen()),
-              GoRoute(path: 'password', builder: (_, __) => const ChangePasswordScreen()),
             ],
           ),
         ],

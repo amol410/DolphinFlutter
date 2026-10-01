@@ -4,9 +4,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../../core/theme/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../shared/widgets/animated_dolphin_mascot.dart';
 
+/// DolphinCoder 2.0 Splash Screen
+/// Features glowing oceanic depth gradient, rising bubble physics,
+/// 3D Pixar Leaping Dolphin Mascot, and seamless authentication check.
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -14,27 +17,19 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen>
-    with TickerProviderStateMixin {
-  // Phase 1 — background glow pulse
-  late AnimationController _bgController;
+class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
+  late final AnimationController _bubbleController;
+  late final AnimationController _mascotController;
+  late final Animation<double> _mascotScale;
+  late final Animation<double> _mascotFade;
 
-  // Phase 2 — logo entrance (scale + fade)
-  late AnimationController _logoController;
-  late Animation<double> _logoScale;
-  late Animation<double> _logoFade;
+  late final AnimationController _textController;
+  late final Animation<double> _textSlide;
+  late final Animation<double> _textFade;
 
-  // Phase 3 — text slide up + fade in
-  late AnimationController _textController;
-  late Animation<double> _textSlide;
-  late Animation<double> _textFade;
-
-  // Phase 4 — dots pulse (loading indicator)
-  late AnimationController _dotsController;
-
-  // Phase 5 — exit fade
-  late AnimationController _exitController;
-  late Animation<double> _exitFade;
+  late final AnimationController _pulseController;
+  late final AnimationController _exitController;
+  late final Animation<double> _exitFade;
 
   @override
   void initState() {
@@ -44,77 +39,73 @@ class _SplashScreenState extends State<SplashScreen>
       statusBarIconBrightness: Brightness.light,
     ));
 
-    // Background glow — slow infinite pulse
-    _bgController = AnimationController(
+    // Marine bubble flow
+    _bubbleController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3000),
-    )..repeat(reverse: true);
+      duration: const Duration(seconds: 4),
+    )..repeat();
 
-    // Logo entrance — 700ms, delayed 200ms
-    _logoController = AnimationController(
+    // Mascot entrance with elastic bounce
+    _mascotController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 700),
+      duration: const Duration(milliseconds: 900),
     );
-    _logoScale = Tween<double>(begin: 0.4, end: 1.0).animate(
-      CurvedAnimation(parent: _logoController, curve: Curves.elasticOut),
+    _mascotScale = Tween<double>(begin: 0.4, end: 1.0).animate(
+      CurvedAnimation(parent: _mascotController, curve: Curves.elasticOut),
     );
-    _logoFade = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _logoController,
-        curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
-      ),
+    _mascotFade = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _mascotController, curve: const Interval(0.0, 0.4, curve: Curves.easeOut)),
     );
 
-    // Text slide — 500ms, delayed after logo
+    // Typography slide up
     _textController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 600),
     );
-    _textSlide = Tween<double>(begin: 30.0, end: 0.0).animate(
-      CurvedAnimation(parent: _textController, curve: Curves.easeOut),
+    _textSlide = Tween<double>(begin: 25.0, end: 0.0).animate(
+      CurvedAnimation(parent: _textController, curve: Curves.easeOutCubic),
     );
     _textFade = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _textController, curve: Curves.easeOut),
     );
 
-    // Dots pulse — infinite
-    _dotsController = AnimationController(
+    // Pulse dots for loading
+    _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
 
-    // Exit fade out
+    // Exit transition
     _exitController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 350),
     );
     _exitFade = Tween<double>(begin: 1.0, end: 0.0).animate(
       CurvedAnimation(parent: _exitController, curve: Curves.easeIn),
     );
 
-    _runSequence();
+    _bootSequence();
   }
 
-  Future<void> _runSequence() async {
-    // Small pause before logo appears
-    await Future.delayed(const Duration(milliseconds: 200));
+  Future<void> _bootSequence() async {
+    // 1. Kickoff mascot reveal
+    await Future.delayed(const Duration(milliseconds: 150));
     if (!mounted) return;
-    _logoController.forward();
+    _mascotController.forward();
 
-    // Text appears after logo settles
-    await Future.delayed(const Duration(milliseconds: 500));
+    // 2. Reveal brand text
+    await Future.delayed(const Duration(milliseconds: 350));
     if (!mounted) return;
     _textController.forward();
 
-    // Check auth after 2.2s total
-    await Future.delayed(const Duration(milliseconds: 1700));
+    // 3. Auth verification check (generous 3s for pleasant brand mascot feel)
+    await Future.delayed(const Duration(milliseconds: 2600));
     if (!mounted) return;
 
     const storage = FlutterSecureStorage();
     final token = await storage.read(key: AppConstants.tokenKey);
     if (!mounted) return;
 
-    // Fade out before navigating
     await _exitController.forward();
     if (!mounted) return;
 
@@ -127,10 +118,10 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   void dispose() {
-    _bgController.dispose();
-    _logoController.dispose();
+    _bubbleController.dispose();
+    _mascotController.dispose();
     _textController.dispose();
-    _dotsController.dispose();
+    _pulseController.dispose();
     _exitController.dispose();
     super.dispose();
   }
@@ -142,334 +133,231 @@ class _SplashScreenState extends State<SplashScreen>
     return FadeTransition(
       opacity: _exitFade,
       child: Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: const Color(0xFF0F172A),
         body: Stack(
           children: [
-            // ── Layer 1: Animated background orbs ──────────────────────
-            AnimatedBuilder(
-              animation: _bgController,
-              builder: (_, __) {
-                final t = _bgController.value;
-                return CustomPaint(
-                  size: Size(size.width, size.height),
-                  painter: _BackgroundPainter(t),
-                );
-              },
+            // Layer 1: Radiant Oceanic Deep Gradient
+            Container(
+              width: double.infinity,
+              height: double.infinity,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFF0284C7),
+                    Color(0xFF0369A1),
+                    Color(0xFF0F172A),
+                  ],
+                  stops: [0.0, 0.45, 1.0],
+                ),
+              ),
             ),
 
-            // ── Layer 2: Content ────────────────────────────────────────
+            // Layer 2: Floating rising water bubbles
+            AnimatedBuilder(
+              animation: _bubbleController,
+              builder: (context, _) => CustomPaint(
+                size: Size(size.width, size.height),
+                painter: _MarineBubblesPainter(_bubbleController.value),
+              ),
+            ),
+
+            // Layer 3: Central Content
             SafeArea(
               child: SizedBox(
                 width: double.infinity,
                 child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                  const Spacer(flex: 3),
+                    const Spacer(flex: 3),
 
-                  // Logo
-                  AnimatedBuilder(
-                    animation: _logoController,
-                    builder: (_, __) => FadeTransition(
-                      opacity: _logoFade,
-                      child: Transform.scale(
-                        scale: _logoScale.value,
-                        child: const _DolphinLogo(),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 32),
-
-                  // App name + tagline
-                  AnimatedBuilder(
-                    animation: _textController,
-                    builder: (_, __) => FadeTransition(
-                      opacity: _textFade,
-                      child: Transform.translate(
-                        offset: Offset(0, _textSlide.value),
-                        child: Column(
-                          children: [
-                            // App name with gradient
-                            ShaderMask(
-                              shaderCallback: (bounds) =>
-                                  AppColors.primaryGradient.createShader(bounds),
-                              child: Text(
-                                'DolphinCoder',
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 36,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                  letterSpacing: -0.5,
+                    // Leaping 3D Pixar Dolphin Mascot
+                    AnimatedBuilder(
+                      animation: _mascotController,
+                      builder: (_, __) => FadeTransition(
+                        opacity: _mascotFade,
+                        child: Transform.scale(
+                          scale: _mascotScale.value,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF06B6D4).withOpacity(0.35),
+                                  blurRadius: 50,
+                                  spreadRadius: 8,
                                 ),
-                              ),
+                              ],
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Learn · Practice · Master',
-                              style: GoogleFonts.inter(
-                                fontSize: 14,
-                                color: AppColors.textSecondary,
-                                letterSpacing: 1.5,
-                                fontWeight: FontWeight.w400,
-                              ),
+                            child: const AnimatedDolphinMascot(
+                              size: 195,
+                              pose: MascotPose.jump,
                             ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
 
-                  const Spacer(flex: 3),
+                    const SizedBox(height: 28),
 
-                  // Animated dots loading indicator
-                  AnimatedBuilder(
-                    animation: _textController,
-                    builder: (_, child) => FadeTransition(
-                      opacity: _textFade,
-                      child: child,
+                    // Typography
+                    AnimatedBuilder(
+                      animation: _textController,
+                      builder: (_, __) => FadeTransition(
+                        opacity: _textFade,
+                        child: Transform.translate(
+                          offset: Offset(0, _textSlide.value),
+                          child: Column(
+                            children: [
+                              Text(
+                                'DolphinCoder',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 38,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.white,
+                                  letterSpacing: -1.0,
+                                  shadows: [
+                                    Shadow(
+                                      color: Colors.black.withOpacity(0.35),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 32),
+                                child: Text(
+                                  'Learn German naturally, one splash at a time.',
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                    color: const Color(0xFFBAE6FD),
+                                    letterSpacing: 0.2,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 56),
-                      child: _PulsingDots(controller: _dotsController),
+
+                    const Spacer(flex: 3),
+
+                    // Subtle pulsating marine loading dots
+                    AnimatedBuilder(
+                      animation: _pulseController,
+                      builder: (_, __) {
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(3, (i) {
+                            final delay = i * 0.25;
+                            final curvedVal = math.sin((_pulseController.value * math.pi) + (delay * math.pi)).abs();
+                            return Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 5),
+                              width: 8 + (curvedVal * 4),
+                              height: 8 + (curvedVal * 4),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Color.lerp(
+                                  const Color(0xFF38BDF8),
+                                  Colors.white,
+                                  curvedVal,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(0xFF38BDF8).withOpacity(0.4),
+                                    blurRadius: 6,
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                        );
+                      },
                     ),
-                  ),
-                ],
-              ),
-            ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
-// ─────────────────────────────────────────────────────────────────
-// Dolphin Logo Widget
-// ─────────────────────────────────────────────────────────────────
-class _DolphinLogo extends StatelessWidget {
-  const _DolphinLogo();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 130,
-      height: 130,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1A1F3A), Color(0xFF0F172A)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withOpacity(0.5),
-            blurRadius: 40,
-            spreadRadius: 4,
-          ),
-          BoxShadow(
-            color: AppColors.accent.withOpacity(0.3),
-            blurRadius: 60,
-            spreadRadius: -4,
-          ),
-        ],
-        border: Border.all(
-          color: AppColors.primary.withOpacity(0.3),
-          width: 1.5,
-        ),
-      ),
-      child: ClipOval(
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // Inner glow ring
-            Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.primary.withOpacity(0.06),
-              ),
-            ),
-            // Logo image (or fallback painter)
-            const _LogoImage(),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _LogoImage extends StatelessWidget {
-  const _LogoImage();
-
-  @override
-  Widget build(BuildContext context) {
-    return Image.asset(
-      'assets/images/logo.png',
-      width: 90,
-      height: 90,
-      fit: BoxFit.contain,
-      errorBuilder: (_, __, ___) => CustomPaint(
-        size: const Size(80, 80),
-        painter: _DolphinPainter(),
-      ),
-    );
-  }
-}
-
-// Fallback: hand-drawn dolphin if image asset fails to load
-class _DolphinPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..shader = LinearGradient(
-        colors: [AppColors.primary, AppColors.accent],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height))
-      ..style = PaintingStyle.fill;
-
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-
-    // Dolphin body arc
-    final path = Path();
-    path.moveTo(cx - 30, cy + 10);
-    path.cubicTo(cx - 20, cy - 25, cx + 20, cy - 25, cx + 35, cy);
-    path.cubicTo(cx + 20, cy + 15, cx - 10, cy + 20, cx - 30, cy + 10);
-    // Dorsal fin
-    path.moveTo(cx, cy - 15);
-    path.cubicTo(cx + 5, cy - 30, cx + 15, cy - 25, cx + 10, cy - 10);
-    // Tail
-    path.moveTo(cx - 28, cy + 10);
-    path.cubicTo(cx - 38, cy + 5, cx - 40, cy - 5, cx - 35, cy - 8);
-    path.cubicTo(cx - 38, cy - 2, cx - 40, cy + 10, cx - 32, cy + 18);
-
-    canvas.drawPath(path, paint);
-
-    // Eye
-    canvas.drawCircle(
-      Offset(cx + 22, cy - 3),
-      2.5,
-      Paint()..color = Colors.white.withOpacity(0.9),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-// ─────────────────────────────────────────────────────────────────
-// Animated Background — radial gradient orbs that breathe
-// ─────────────────────────────────────────────────────────────────
-class _BackgroundPainter extends CustomPainter {
-  final double t;
-  const _BackgroundPainter(this.t);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Deep navy base
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      Paint()..color = AppColors.background,
-    );
-
-    // Primary glow — top centre
-    final glowRadius1 = 180.0 + 40.0 * t;
-    canvas.drawCircle(
-      Offset(size.width * 0.5, size.height * 0.25),
-      glowRadius1,
-      Paint()
-        ..shader = RadialGradient(
-          colors: [
-            AppColors.primary.withOpacity(0.18 + 0.06 * t),
-            AppColors.primary.withOpacity(0.0),
-          ],
-        ).createShader(Rect.fromCircle(
-          center: Offset(size.width * 0.5, size.height * 0.25),
-          radius: glowRadius1,
-        )),
-    );
-
-    // Accent glow — bottom right
-    final glowRadius2 = 150.0 + 30.0 * (1 - t);
-    canvas.drawCircle(
-      Offset(size.width * 0.8, size.height * 0.7),
-      glowRadius2,
-      Paint()
-        ..shader = RadialGradient(
-          colors: [
-            AppColors.accent.withOpacity(0.12 + 0.05 * (1 - t)),
-            AppColors.accent.withOpacity(0.0),
-          ],
-        ).createShader(Rect.fromCircle(
-          center: Offset(size.width * 0.8, size.height * 0.7),
-          radius: glowRadius2,
-        )),
-    );
-
-    // Small teal accent — bottom left
-    canvas.drawCircle(
-      Offset(size.width * 0.1, size.height * 0.75),
-      80.0 + 20.0 * t,
-      Paint()
-        ..shader = RadialGradient(
-          colors: [
-            AppColors.success.withOpacity(0.08 + 0.03 * t),
-            AppColors.success.withOpacity(0.0),
-          ],
-        ).createShader(Rect.fromCircle(
-          center: Offset(size.width * 0.1, size.height * 0.75),
-          radius: 80,
-        )),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_BackgroundPainter oldDelegate) => oldDelegate.t != t;
-}
-
-// ─────────────────────────────────────────────────────────────────
-// Pulsing dots — 3 dots that animate in sequence
-// ─────────────────────────────────────────────────────────────────
-class _PulsingDots extends StatelessWidget {
-  final AnimationController controller;
-  const _PulsingDots({required this.controller});
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (_, __) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(3, (i) {
-            final phase = (controller.value + i / 3.0) % 1.0;
-            final scale = 0.6 + 0.7 * math.sin(phase * math.pi);
-            final opacity = 0.3 + 0.7 * math.sin(phase * math.pi);
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Transform.scale(
-                scale: scale,
-                child: Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.primary.withOpacity(opacity),
-                        AppColors.accent.withOpacity(opacity),
-                      ],
-                    ),
-                  ),
+                    const SizedBox(height: 36),
+                  ],
                 ),
               ),
-            );
-          }),
-        );
-      },
+            ),
+          ],
+        ),
+      ),
     );
   }
+}
+
+/// Custom painter for floating underwater bubbles
+class _MarineBubblesPainter extends CustomPainter {
+  final double progress;
+  static final math.Random _rng = math.Random(42);
+
+  // Pre-generate stable bubble seeds
+  static final List<_BubbleSpec> _bubbles = List.generate(24, (i) {
+    return _BubbleSpec(
+      relX: _rng.nextDouble(),
+      speed: 0.6 + (_rng.nextDouble() * 0.8),
+      radius: 4.0 + (_rng.nextDouble() * 10.0),
+      alpha: 0.12 + (_rng.nextDouble() * 0.25),
+      wobbleFreq: 2.0 + (_rng.nextDouble() * 3.0),
+    );
+  });
+
+  _MarineBubblesPainter(this.progress);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final b in _bubbles) {
+      final y = ((1.0 - ((progress * b.speed) % 1.0)) * (size.height + 40)) - 20;
+      final wobble = math.sin((progress * 2 * math.pi * b.wobbleFreq) + (b.relX * 10)) * 14;
+      final x = (b.relX * size.width) + wobble;
+
+      final paint = Paint()
+        ..color = const Color(0xFFBAE6FD).withOpacity(b.alpha)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4;
+
+      final fillPaint = Paint()
+        ..color = const Color(0xFFBAE6FD).withOpacity(b.alpha * 0.4)
+        ..style = PaintingStyle.fill;
+
+      canvas.drawCircle(Offset(x, y), b.radius, fillPaint);
+      canvas.drawCircle(Offset(x, y), b.radius, paint);
+
+      // Bubble specular highlight
+      final highlightPaint = Paint()
+        ..color = Colors.white.withOpacity(b.alpha * 1.2)
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(
+        Offset(x - (b.radius * 0.35), y - (b.radius * 0.35)),
+        b.radius * 0.22,
+        highlightPaint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MarineBubblesPainter oldDelegate) => true;
+}
+
+class _BubbleSpec {
+  final double relX;
+  final double speed;
+  final double radius;
+  final double alpha;
+  final double wobbleFreq;
+
+  const _BubbleSpec({
+    required this.relX,
+    required this.speed,
+    required this.radius,
+    required this.alpha,
+    required this.wobbleFreq,
+  });
 }

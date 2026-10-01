@@ -20,6 +20,13 @@ class ApiConstants {
   static const String quizzes = '/quizzes';
   static const String flashcards = '/flashcards';
 
+  // Gamification & Archipelago Path
+  static const String gamificationStatus = '/gamification/status';
+  static const String gamificationPath = '/gamification/path';
+  static const String gamificationCompleteNode = '/gamification/complete-node';
+  static const String gamificationLeaderboard = '/gamification/leaderboard';
+  static const String gamificationRefillOxygen = '/gamification/shop/refill-oxygen';
+
   static Future<String> getBaseUrl() async {
     // Ignore any cached local IPs from previous builds to prevent connection timeouts
     return defaultBaseUrl;

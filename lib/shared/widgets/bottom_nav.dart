@@ -9,10 +9,10 @@ class AppShell extends StatelessWidget {
 
   int _currentIndex(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
-    if (location.startsWith('/notes')) return 1;
-    if (location.startsWith('/quizzes')) return 2;
-    if (location.startsWith('/profile')) return 3;
-    if (location.startsWith('/flashcards')) return -1;
+    if (location.startsWith('/leagues')) return 1;
+    if (location.startsWith('/quests')) return 2;
+    if (location.startsWith('/shop')) return 3;
+    if (location.startsWith('/profile')) return 4;
     return 0; // /home
   }
 
@@ -21,26 +21,26 @@ class AppShell extends StatelessWidget {
     final index = _currentIndex(context);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: const Color(0xFFF1F5F9),
       extendBody: true,
       body: child,
       bottomNavigationBar: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
           child: Container(
             height: 64,
             decoration: BoxDecoration(
-              color: AppColors.surfaceContainerLowest.withOpacity(0.95),
+              color: Colors.white,
               borderRadius: BorderRadius.circular(9999),
               border: Border.all(
-                color: AppColors.isDark ? const Color(0x22FFFFFF) : AppColors.surfaceContainerHigh.withOpacity(0.8),
-                width: 1,
+                color: const Color(0xFFE2E8F0),
+                width: 1.5,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.isDark ? Colors.black.withOpacity(0.5) : const Color(0xFF0D0E11).withOpacity(0.08),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
+                  color: Colors.black.withOpacity(0.06),
+                  blurRadius: 20,
+                  offset: const Offset(0, 6),
                 ),
               ],
             ),
@@ -48,27 +48,33 @@ class AppShell extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 _NavPillItem(
-                  icon: Icons.home_rounded,
-                  label: 'Home',
+                  icon: Icons.explore_rounded,
+                  label: 'Learn',
                   isSelected: index == 0,
                   onTap: () => context.go('/home'),
                 ),
                 _NavPillItem(
-                  icon: Icons.menu_book_rounded,
-                  label: 'Notes',
+                  icon: Icons.shield_rounded,
+                  label: 'Leagues',
                   isSelected: index == 1,
-                  onTap: () => context.go('/notes'),
+                  onTap: () => context.go('/leagues'),
                 ),
                 _NavPillItem(
-                  icon: Icons.psychology_rounded,
-                  label: 'Quizzes',
+                  icon: Icons.flag_rounded,
+                  label: 'Quests',
                   isSelected: index == 2,
-                  onTap: () => context.go('/quizzes'),
+                  onTap: () => context.go('/quests'),
+                ),
+                _NavPillItem(
+                  icon: Icons.storefront_rounded,
+                  label: 'Shop',
+                  isSelected: index == 3,
+                  onTap: () => context.go('/shop'),
                 ),
                 _NavPillItem(
                   icon: Icons.person_rounded,
                   label: 'Profile',
-                  isSelected: index == 3,
+                  isSelected: index == 4,
                   onTap: () => context.go('/profile'),
                 ),
               ],
@@ -100,13 +106,13 @@ class _NavPillItem extends StatelessWidget {
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
-            color: AppColors.primary,
+            color: const Color(0xFF0284C7),
             borderRadius: BorderRadius.circular(9999),
             boxShadow: [
               BoxShadow(
-                color: AppColors.isDark ? Colors.black.withOpacity(0.3) : Colors.black.withOpacity(0.12),
+                color: const Color(0xFF0284C7).withValues(alpha: 0.3),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -115,13 +121,13 @@ class _NavPillItem extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: AppColors.onPrimary, size: 20),
-              const SizedBox(width: 6),
+              Icon(icon, color: Colors.white, size: 20),
+              const SizedBox(width: 4),
               Text(
                 label,
                 style: GoogleFonts.plusJakartaSans(
-                  color: AppColors.onPrimary,
-                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
                   fontSize: 12,
                 ),
               ),
@@ -135,23 +141,10 @@ class _NavPillItem extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: AppColors.onSurfaceVariant, size: 20),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: GoogleFonts.plusJakartaSans(
-                color: AppColors.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Icon(icon, color: const Color(0xFF64748B), size: 24),
       ),
     );
   }
 }
+

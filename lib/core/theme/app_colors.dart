@@ -10,60 +10,58 @@ class AppColors {
   // correct colours without per-screen context helpers.
 
   // Backgrounds & Surfaces
-  static Color get background => isDark ? const Color(0xFF000000) : const Color(0xFFF7F9FC);
-  static Color get surface => isDark ? const Color(0xFF000000) : const Color(0xFFF7F9FC);
-  static Color get surfaceContainerLowest => isDark ? const Color(0xFF111116) : const Color(0xFFFFFFFF);
-  static Color get surfaceContainerLow => isDark ? const Color(0xFF1A1A24) : const Color(0xFFF2F4F7);
-  static Color get surfaceContainer => isDark ? const Color(0xFF222230) : const Color(0xFFECEEF1);
-  static Color get surfaceContainerHigh => isDark ? const Color(0xFF2A2A38) : const Color(0xFFE6E8EB);
-  static Color get surfaceContainerHighest => isDark ? const Color(0xFF333342) : const Color(0xFFE0E3E6);
+  static Color get background => const Color(0xFFF8FAFC);
+  static Color get surface => const Color(0xFFFFFFFF);
+  static Color get surfaceContainerLowest => const Color(0xFFFFFFFF);
+  static Color get surfaceContainerLow => const Color(0xFFF1F5F9);
+  static Color get surfaceContainer => const Color(0xFFE2E8F0);
+  static Color get surfaceContainerHigh => const Color(0xFFCBD5E1);
+  static Color get surfaceContainerHighest => const Color(0xFF94A3B8);
 
   // Surface aliases for backward compatibility
-  static Color get surface2 => isDark ? const Color(0xFF1A1A24) : const Color(0xFFF2F4F7);
-  static Color get border => isDark ? const Color(0x22FFFFFF) : const Color(0xFFE6E8EB);
+  static Color get surface2 => const Color(0xFFF1F5F9);
+  static Color get border => const Color(0xFFE2E8F0);
 
-  // Primary & Monochrome Accents
-  // In dark mode, primary stays dark so buttons (bg=primary, text=white) remain readable.
-  // Use `onSurface` for text that needs to be white on dark backgrounds.
-  static Color get primary => isDark ? const Color(0xFF1E1E2E) : const Color(0xFF000000);
-  static Color get primaryContainer => isDark ? const Color(0xFF2A2A3A) : const Color(0xFF1B1B1F);
+  // Primary & Ocean Accents
+  static Color get primary => const Color(0xFF0284C7);
+  static Color get primaryContainer => const Color(0xFFE0F2FE);
   static Color get onPrimary => const Color(0xFFFFFFFF);
-  static Color get primaryLight => isDark ? const Color(0xFFA1A1AA) : const Color(0xFF2D3133);
+  static Color get primaryLight => const Color(0xFF38BDF8);
 
   // Dedicated Button Colors
-  static Color get buttonPrimary => isDark ? const Color(0xFF252538) : const Color(0xFF000000);
+  static Color get buttonPrimary => const Color(0xFF0284C7);
   static Color get buttonOnPrimary => const Color(0xFFFFFFFF);
 
   // Secondary Accents (Cyan / Sky Blue)
-  static Color get secondary => isDark ? const Color(0xFF38BDF8) : const Color(0xFF00658D);
-  static Color get secondaryContainer => isDark ? const Color(0xFF38BDF8) : const Color(0xFF3DBEFF);
-  static Color get onSecondaryContainer => isDark ? const Color(0xFF001E2D) : const Color(0xFF004A69);
-  static Color get secondaryFixed => isDark ? const Color(0xFF0C3A52) : const Color(0xFFC6E7FF);
-  static Color get secondaryFixedDim => isDark ? const Color(0xFF38BDF8) : const Color(0xFF83CFFF);
-  static Color get onSecondaryFixed => isDark ? const Color(0xFFC6E7FF) : const Color(0xFF001E2D);
+  static Color get secondary => const Color(0xFF06B6D4);
+  static Color get secondaryContainer => const Color(0xFFE0F2FE);
+  static Color get onSecondaryContainer => const Color(0xFF0284C7);
+  static Color get secondaryFixed => const Color(0xFFE0F2FE);
+  static Color get secondaryFixedDim => const Color(0xFF38BDF8);
+  static Color get onSecondaryFixed => const Color(0xFF0284C7);
 
   // Tertiary Accents (Lavender / Purple)
-  static Color get tertiary => isDark ? const Color(0xFF1E1E2E) : const Color(0xFF000000);
-  static const Color tertiaryContainer = Color(0xFF1C0062);
-  static Color get tertiaryFixed => isDark ? const Color(0xFF2D1A6E) : const Color(0xFFE6DEFF);
-  static const Color tertiaryFixedDim = Color(0xFFCABEFF);
-  static Color get onTertiaryFixed => isDark ? const Color(0xFFE6DEFF) : const Color(0xFF1C0062);
+  static Color get tertiary => const Color(0xFF0284C7);
+  static const Color tertiaryContainer = Color(0xFFE0F2FE);
+  static Color get tertiaryFixed => const Color(0xFFE0F2FE);
+  static const Color tertiaryFixedDim = Color(0xFFBAE6FD);
+  static Color get onTertiaryFixed => const Color(0xFF0284C7);
 
   // Semantic (same in both themes)
-  static const Color success = Color(0xFF0F9D58);
+  static const Color success = Color(0xFF10B981);
   static const Color warning = Color(0xFFF59E0B);
-  static const Color error = Color(0xFFBA1A1A);
-  static const Color errorContainer = Color(0xFFFFDAD6);
-  static const Color onErrorContainer = Color(0xFF93000A);
+  static const Color error = Color(0xFFEF4444);
+  static const Color errorContainer = Color(0xFFFEE2E2);
+  static const Color onErrorContainer = Color(0xFFB91C1C);
 
   // Text Hierarchy
-  static Color get onSurface => isDark ? const Color(0xFFF4F4F5) : const Color(0xFF191C1E);
-  static Color get textPrimary => isDark ? const Color(0xFFF4F4F5) : const Color(0xFF191C1E);
-  static Color get onSurfaceVariant => isDark ? const Color(0xFFA1A1AA) : const Color(0xFF46464B);
-  static Color get textSecondary => isDark ? const Color(0xFFA1A1AA) : const Color(0xFF46464B);
-  static Color get outline => isDark ? const Color(0xFF71717A) : const Color(0xFF77777B);
-  static Color get outlineVariant => isDark ? const Color(0xFF3F3F46) : const Color(0xFFC7C6CB);
-  static Color get textMuted => isDark ? const Color(0xFF71717A) : const Color(0xFF77777B);
+  static Color get onSurface => const Color(0xFF1E293B);
+  static Color get textPrimary => const Color(0xFF1E293B);
+  static Color get onSurfaceVariant => const Color(0xFF64748B);
+  static Color get textSecondary => const Color(0xFF64748B);
+  static Color get outline => const Color(0xFFCBD5E1);
+  static Color get outlineVariant => const Color(0xFFE2E8F0);
+  static Color get textMuted => const Color(0xFF94A3B8);
 
   // Accent & note colors (same in both themes)
   static const Color accent = Color(0xFF00658D);
@@ -106,10 +104,8 @@ class AppColors {
     }
   }
 
-  static Gradient get primaryGradient => LinearGradient(
-    colors: isDark
-        ? [const Color(0xFF1E1E2E), const Color(0xFF2A2A3A)]
-        : [const Color(0xFF000000), const Color(0xFF1B1B1F)],
+  static Gradient get primaryGradient => const LinearGradient(
+    colors: [Color(0xFF0284C7), Color(0xFF0369A1)],
     begin: Alignment.centerLeft,
     end: Alignment.centerRight,
   );

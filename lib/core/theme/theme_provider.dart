@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_colors.dart';
 
 const String _kThemePrefKey = 'app_theme_mode';
 
@@ -9,7 +10,7 @@ final themeModeProvider = StateNotifierProvider<ThemeModeNotifier, ThemeMode>((r
 });
 
 class ThemeModeNotifier extends StateNotifier<ThemeMode> {
-  ThemeModeNotifier() : super(ThemeMode.dark) {
+  ThemeModeNotifier() : super(ThemeMode.light) {
     _loadTheme();
   }
 
@@ -17,17 +18,29 @@ class ThemeModeNotifier extends StateNotifier<ThemeMode> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final modeStr = prefs.getString(_kThemePrefKey);
-      if (modeStr == 'light') {
+      // DolphinCoder 2.0 uses the vibrant oceanic light theme.
+      // If legacy 'dark' was stored from the older app version, migrate it to 'light'.
+      if (modeStr == 'dark') {
         state = ThemeMode.light;
+        AppColors.isDark = false;
+        await prefs.setString(_kThemePrefKey, 'light');
+      } else if (modeStr == 'light') {
+        state = ThemeMode.light;
+        AppColors.isDark = false;
       } else {
-        // Default to dark / pitch black as requested
-        state = ThemeMode.dark;
+        state = ThemeMode.light;
+        AppColors.isDark = false;
+        await prefs.setString(_kThemePrefKey, 'light');
       }
-    } catch (_) {}
+    } catch (_) {
+      state = ThemeMode.light;
+      AppColors.isDark = false;
+    }
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {
     state = mode;
+    AppColors.isDark = mode == ThemeMode.dark;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_kThemePrefKey, mode == ThemeMode.light ? 'light' : 'dark');

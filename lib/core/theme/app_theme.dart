@@ -11,14 +11,14 @@ class AppTheme {
     return base.copyWith(
       useMaterial3: true,
       brightness: Brightness.light,
-      scaffoldBackgroundColor: const Color(0xFFF7F9FC),
+      scaffoldBackgroundColor: const Color(0xFFF8FAFC),
       colorScheme: const ColorScheme.light(
-        primary: Color(0xFF000000),
-        secondary: Color(0xFF00658D),
+        primary: Color(0xFF0284C7),
+        secondary: Color(0xFF06B6D4),
         surface: Color(0xFFFFFFFF),
         error: Color(0xFFBA1A1A),
         onPrimary: Color(0xFFFFFFFF),
-        onSurface: Color(0xFF191C1E),
+        onSurface: Color(0xFF1E293B),
       ),
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
@@ -133,14 +133,14 @@ class AppTheme {
     return base.copyWith(
       useMaterial3: true,
       brightness: Brightness.dark,
-      scaffoldBackgroundColor: const Color(0xFF000000),
+      scaffoldBackgroundColor: const Color(0xFF0B1329),
       colorScheme: const ColorScheme.dark(
-        primary: Color(0xFFFFFFFF),
-        secondary: Color(0xFF38BDF8),
-        surface: Color(0xFF111116),
+        primary: Color(0xFF0284C7),
+        secondary: Color(0xFF06B6D4),
+        surface: Color(0xFF131D38),
         error: Color(0xFFEF4444),
-        onPrimary: Color(0xFF000000),
-        onSurface: Color(0xFFF4F4F5),
+        onPrimary: Color(0xFFFFFFFF),
+        onSurface: Color(0xFFF1F5F9),
       ),
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
