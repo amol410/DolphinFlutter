@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:audioplayers/audioplayers.dart';
+import '../../../core/constants/api_constants.dart';
 import '../../../shared/widgets/animated_dolphin_mascot.dart';
 import '../../../shared/widgets/tactile_game_button.dart';
 import '../../../shared/widgets/duo_feedback_sheet.dart';
@@ -30,10 +33,15 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   int _currentStage = 0; // 0: Word Match, 1: Listening, 2: Sentence Builder, 3: Sprechen, 4: Celebration
   final int _totalStages = 4;
 
+  late final AudioPlayer _audioPlayer;
+  StreamSubscription? _playerCompleteSub;
+  StreamSubscription? _playerStateSub;
+  bool _isPlayingAudio = false;
+
   // ── Stage 0: Word Match Data ──────────────────────────────────────
-  final List<String> _germanWords = ['Guten Tag', 'Danke', 'Bitte', 'Tschüss'];
-  final List<String> _englishWords = ['Thank you', 'Bye', 'Hello', 'Please'];
-  final Map<String, String> _solutionPairs = {
+  List<String> _germanWords = ['Guten Tag', 'Danke', 'Bitte', 'Tschüss'];
+  List<String> _englishWords = ['Thank you', 'Bye', 'Hello', 'Please'];
+  Map<String, String> _solutionPairs = {
     'Guten Tag': 'Hello',
     'Danke': 'Thank you',
     'Bitte': 'Please',
@@ -46,22 +54,199 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   bool _matchFinished = false;
 
   // ── Stage 1: Listening Data ───────────────────────────────────────
-  final List<String> _listenBank = ['Kaffee', 'Guten', 'Tag,', 'ich', 'bin', 'Anna'];
-  final List<String> _listenTarget = ['Guten', 'Tag,', 'ich', 'bin', 'Anna'];
+  String _listenTargetSentence = 'Guten Tag, ich bin Anna';
+  List<String> _listenBank = ['Kaffee', 'Guten', 'Tag,', 'ich', 'bin', 'Anna'];
+  List<String> _listenTarget = ['Guten', 'Tag,', 'ich', 'bin', 'Anna'];
   final List<String> _listenSelected = [];
   bool? _listenCorrect;
+  String _listenAudioUrl = '';
 
   // ── Stage 2: Sentence Builder Data ────────────────────────────────
-  final String _sentencePrompt = 'Translate: "Good morning, how are you?"';
-  final List<String> _builderBank = ['Guten', 'Morgen,', 'wie', 'geht', 'es', 'dir?', 'schlafe', 'Kalt'];
-  final List<String> _builderTarget = ['Guten', 'Morgen,', 'wie', 'geht', 'es', 'dir?'];
+  String _sentencePrompt = 'Translate: "Good morning, how are you?"';
+  String _builderTargetSentence = 'Guten Morgen, wie geht es dir?';
+  List<String> _builderBank = ['Guten', 'Morgen,', 'wie', 'geht', 'es', 'dir?', 'schlafe', 'Kalt'];
+  List<String> _builderTarget = ['Guten', 'Morgen,', 'wie', 'geht', 'es', 'dir?'];
   final List<String> _builderSelected = [];
   bool? _builderCorrect;
 
   // ── Stage 3: Sprechen Voice Data ──────────────────────────────────
+  String _sprechenPrompt = 'Guten Tag! Wie geht es dir?';
+  String _sprechenTranslation = 'Hello! How are you?';
   bool _isSpeaking = false;
   bool? _speechPassed;
   String _spokenText = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _audioPlayer = AudioPlayer();
+
+    _playerCompleteSub = _audioPlayer.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _isPlayingAudio = false);
+    });
+
+    _playerStateSub = _audioPlayer.onPlayerStateChanged.listen((state) {
+      if (mounted) {
+        setState(() => _isPlayingAudio = (state == PlayerState.playing));
+      }
+    });
+
+    _initStagesData();
+  }
+
+  @override
+  void dispose() {
+    _playerCompleteSub?.cancel();
+    _playerStateSub?.cancel();
+    _audioPlayer.stop();
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  String _resolveAudioUrl(String? rawUrl) {
+    if (rawUrl == null || rawUrl.trim().isEmpty) return '';
+    final trimmed = rawUrl.trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+    final clean = trimmed.startsWith('/') ? trimmed : '/$trimmed';
+    if (clean.startsWith('/api')) {
+      return 'https://dolphincoder.com$clean';
+    }
+    return '${ApiConstants.defaultBaseUrl}$clean';
+  }
+
+  Future<void> _playListenAudio() async {
+    final rawUrl = _listenAudioUrl.isNotEmpty ? _listenAudioUrl : (widget.node?.audioUrl ?? '');
+    final url = _resolveAudioUrl(rawUrl);
+
+    if (url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No audio attached to this stage.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    try {
+      if (_isPlayingAudio) {
+        await _audioPlayer.stop();
+        if (mounted) setState(() => _isPlayingAudio = false);
+      } else {
+        await _audioPlayer.stop();
+        await _audioPlayer.play(UrlSource(url));
+        if (mounted) setState(() => _isPlayingAudio = true);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isPlayingAudio = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Audio error: $e'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  void _initStagesData() {
+    final stages = widget.node?.stages;
+    if (stages == null || stages.isEmpty) {
+      if (widget.node?.audioUrl != null && widget.node!.audioUrl!.isNotEmpty) {
+        _listenAudioUrl = widget.node!.audioUrl!;
+      }
+      return;
+    }
+
+    for (final rawStage in stages) {
+      if (rawStage is! Map) continue;
+      final stage = Map<String, dynamic>.from(rawStage);
+      final type = stage['type']?.toString();
+
+      if (type == 'match_pairs' && stage['pairs'] is List) {
+        final pairsList = stage['pairs'] as List;
+        if (pairsList.isNotEmpty) {
+          final newGerman = <String>[];
+          final newEnglish = <String>[];
+          final newPairs = <String, String>{};
+          for (final p in pairsList) {
+            if (p is Map) {
+              final g = p['german']?.toString().trim() ?? '';
+              final e = p['english']?.toString().trim() ?? '';
+              if (g.isNotEmpty && e.isNotEmpty) {
+                newGerman.add(g);
+                newEnglish.add(e);
+                newPairs[g] = e;
+              }
+            }
+          }
+          if (newGerman.isNotEmpty) {
+            _germanWords = newGerman;
+            _englishWords = newEnglish..shuffle();
+            _solutionPairs = newPairs;
+          }
+        }
+      } else if (type == 'listen_tap') {
+        final target = stage['targetSentence']?.toString().trim() ?? '';
+        if (target.isNotEmpty) {
+          _listenTargetSentence = target;
+          _listenTarget = target
+              .split(RegExp(r'\s+'))
+              .where((w) => w.isNotEmpty)
+              .toList();
+        }
+        if (stage['tokens'] is List && (stage['tokens'] as List).isNotEmpty) {
+          _listenBank = (stage['tokens'] as List)
+              .map((e) => e.toString().trim())
+              .where((e) => e.isNotEmpty)
+              .toSet()
+              .toList()
+            ..shuffle();
+        } else if (_listenTarget.isNotEmpty) {
+          _listenBank = List<String>.from(_listenTarget)..shuffle();
+        }
+        final stageAudio = stage['audioUrl']?.toString().trim();
+        if (stageAudio != null && stageAudio.isNotEmpty) {
+          _listenAudioUrl = stageAudio;
+        } else if (widget.node?.audioUrl != null && widget.node!.audioUrl!.isNotEmpty) {
+          _listenAudioUrl = widget.node!.audioUrl!;
+        }
+      } else if (type == 'sentence_builder') {
+        final prompt = stage['prompt']?.toString().trim();
+        if (prompt != null && prompt.isNotEmpty) {
+          _sentencePrompt = prompt;
+        }
+        final target = stage['targetSentence']?.toString().trim() ?? '';
+        if (target.isNotEmpty) {
+          _builderTargetSentence = target;
+          _builderTarget = target
+              .split(RegExp(r'\s+'))
+              .where((w) => w.isNotEmpty)
+              .toList();
+        }
+        if (stage['tokens'] is List && (stage['tokens'] as List).isNotEmpty) {
+          _builderBank = (stage['tokens'] as List)
+              .map((e) => e.toString().trim())
+              .where((e) => e.isNotEmpty)
+              .toSet()
+              .toList()
+            ..shuffle();
+        }
+      } else if (type == 'sprechen') {
+        final prompt = stage['prompt']?.toString().trim();
+        if (prompt != null && prompt.isNotEmpty) {
+          _sprechenPrompt = prompt;
+        }
+        final trans = stage['translation']?.toString().trim();
+        if (trans != null && trans.isNotEmpty) {
+          _sprechenTranslation = trans;
+        }
+      }
+    }
+  }
 
   void _onGermanMatchTap(String word) {
     if (_matchedGerman.contains(word)) return;
@@ -104,7 +289,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   }
 
   void _nextStage() {
+    _audioPlayer.stop();
     setState(() {
+      _isPlayingAudio = false;
       _currentStage++;
     });
   }
@@ -366,37 +553,34 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const AnimatedDolphinMascot(
+                    AnimatedDolphinMascot(
                       size: 110,
                       pose: MascotPose.headphones,
-                      isListening: true,
+                      isListening: _isPlayingAudio,
                     ),
                     const SizedBox(width: 16),
                     GestureDetector(
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('🔊 Playing: "Guten Tag, ich bin Anna"'),
-                            duration: Duration(seconds: 1),
-                          ),
-                        );
-                      },
+                      onTap: _playListenAudio,
                       child: Container(
                         width: 58,
                         height: 58,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF0284C7),
+                          color: _isPlayingAudio ? const Color(0xFF10B981) : const Color(0xFF0284C7),
                           borderRadius: BorderRadius.circular(18),
-                          boxShadow: const [
+                          boxShadow: [
                             BoxShadow(
-                              color: Color(0xFF0369A1),
+                              color: _isPlayingAudio ? const Color(0xFF059669) : const Color(0xFF0369A1),
                               blurRadius: 0,
-                              offset: Offset(0, 4),
+                              offset: const Offset(0, 4),
                             ),
                           ],
                         ),
-                        child: const Center(
-                          child: Icon(Icons.volume_up_rounded, color: Colors.white, size: 30),
+                        child: Center(
+                          child: Icon(
+                            _isPlayingAudio ? Icons.pause_rounded : Icons.volume_up_rounded,
+                            color: Colors.white,
+                            size: 30,
+                          ),
                         ),
                       ),
                     ),
@@ -509,7 +693,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
               onPressed: _listenSelected.isEmpty
                   ? null
                   : () {
-                      final isMatch = _listenSelected.join(' ') == _listenTarget.join(' ');
+                      final selectedClean = _listenSelected.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
+                      final targetClean = _listenTarget.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
+                      final isMatch = selectedClean == targetClean || _listenSelected.join(' ') == _listenTarget.join(' ');
                       setState(() => _listenCorrect = isMatch);
                     },
             ),
@@ -518,7 +704,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           DuoFeedbackSheet(
             isSuccess: _listenCorrect == true,
             title: _listenCorrect == true ? 'Sehr gut! Correct sequence!' : 'Almost there!',
-            subtitle: 'Target: "Guten Tag, ich bin Anna"',
+            subtitle: 'Target: "${_listenTargetSentence.isNotEmpty ? _listenTargetSentence : _listenTarget.join(' ')}"',
             buttonText: 'NEXT TASK →',
             onContinue: _nextStage,
           ),
@@ -685,7 +871,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
               onPressed: _builderSelected.isEmpty
                   ? null
                   : () {
-                      final isMatch = _builderSelected.join(' ') == _builderTarget.join(' ');
+                      final selClean = _builderSelected.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
+                      final tgtClean = _builderTarget.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
+                      final isMatch = selClean == tgtClean || _builderSelected.join(' ') == _builderTarget.join(' ');
                       setState(() => _builderCorrect = isMatch);
                     },
             ),
@@ -694,7 +882,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           DuoFeedbackSheet(
             isSuccess: _builderCorrect == true,
             title: _builderCorrect == true ? 'Hervorragend! Outstanding!' : 'Check punctuation and order',
-            subtitle: 'German: "Guten Morgen, wie geht es dir?"',
+            subtitle: 'German: "${_builderTargetSentence.isNotEmpty ? _builderTargetSentence : _builderTarget.join(' ')}"',
             buttonText: 'NEXT TASK →',
             onContinue: _nextStage,
           ),
@@ -762,7 +950,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Guten Tag! Wie geht es dir?',
+                              _sprechenPrompt.isNotEmpty ? _sprechenPrompt : 'Guten Tag! Wie geht es dir?',
                               style: GoogleFonts.plusJakartaSans(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w900,
@@ -771,7 +959,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              'Hello! How are you?',
+                              _sprechenTranslation.isNotEmpty ? _sprechenTranslation : 'Hello! How are you?',
                               style: GoogleFonts.plusJakartaSans(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
@@ -802,7 +990,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                         if (mounted) {
                           setState(() {
                             _isSpeaking = false;
-                            _spokenText = 'Guten Tag! Wie geht es dir?';
+                            _spokenText = _sprechenPrompt.isNotEmpty ? _sprechenPrompt : 'Guten Tag! Wie geht es dir?';
                             _speechPassed = true;
                           });
                         }

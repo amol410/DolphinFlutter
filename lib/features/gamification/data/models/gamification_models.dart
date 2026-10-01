@@ -49,6 +49,8 @@ class PathNodeModel {
   final String? sourceType; // note, quiz
   final dynamic sourceId;
   final double offset;
+  final String? audioUrl;
+  final List<dynamic>? stages;
 
   const PathNodeModel({
     required this.index,
@@ -63,6 +65,8 @@ class PathNodeModel {
     this.sourceType,
     this.sourceId,
     this.offset = 0.0,
+    this.audioUrl,
+    this.stages,
   });
 
   factory PathNodeModel.fromJson(Map<String, dynamic> json) {
@@ -79,6 +83,8 @@ class PathNodeModel {
       sourceType: json['sourceType']?.toString(),
       sourceId: json['sourceId'],
       offset: (json['offset'] as num?)?.toDouble() ?? 0.0,
+      audioUrl: json['audioUrl']?.toString(),
+      stages: json['stages'] as List<dynamic>?,
     );
   }
 }
