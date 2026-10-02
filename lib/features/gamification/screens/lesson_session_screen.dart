@@ -270,13 +270,17 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
     final startSec = (match['start'] as num?)?.toDouble() ?? 0.0;
     final endSec = (match['end'] as num?)?.toDouble() ?? (startSec + 0.6);
-    final safeEndSec = (endSec > startSec) ? endSec : (startSec + 0.6);
 
-    debugPrint('🔊 [_playWordAudio] Pronouncing "$word" -> start: ${startSec}s, end: ${safeEndSec}s');
+    // Add natural phonetic release buffer (+220ms) and pre-attack so the word finishes completely without clipping
+    final safeStartSec = (startSec > 0.04) ? (startSec - 0.03) : startSec;
+    final rawEnd = (endSec > startSec) ? endSec : (startSec + 0.6);
+    final safeEndSec = rawEnd + 0.22;
+
+    debugPrint('🔊 [_playWordAudio] Pronouncing "$word" -> start: ${safeStartSec}s, end: ${safeEndSec}s (with release buffer)');
 
     _wordAudioTimer?.cancel();
     _targetStopSec = safeEndSec;
-    final durationMs = (((safeEndSec - startSec).abs()) * 1000).toInt().clamp(250, 4000);
+    final durationMs = (((safeEndSec - safeStartSec).abs()) * 1000).toInt().clamp(380, 5000);
     _pendingWordDurationMs = durationMs;
 
     try {
@@ -288,7 +292,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       }
 
       if (!mounted) return;
-      await _audioPlayer.seek(Duration(milliseconds: (startSec * 1000).round()));
+      await _audioPlayer.seek(Duration(milliseconds: (safeStartSec * 1000).round()));
       await _audioPlayer.resume();
 
       if (_isPlayingAudio) {
@@ -806,19 +810,19 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                         width: 58,
                         height: 58,
                         decoration: BoxDecoration(
-                          color: _isPlayingAudio ? const Color(0xFF10B981) : const Color(0xFF0284C7),
+                          color: const Color(0xFF0284C7),
                           borderRadius: BorderRadius.circular(18),
-                          boxShadow: [
+                          boxShadow: const [
                             BoxShadow(
-                              color: _isPlayingAudio ? const Color(0xFF059669) : const Color(0xFF0369A1),
+                              color: Color(0xFF0369A1),
                               blurRadius: 0,
-                              offset: const Offset(0, 4),
+                              offset: Offset(0, 4),
                             ),
                           ],
                         ),
-                        child: Center(
+                        child: const Center(
                           child: Icon(
-                            _isPlayingAudio ? Icons.pause_rounded : Icons.volume_up_rounded,
+                            Icons.volume_up_rounded,
                             color: Colors.white,
                             size: 30,
                           ),
