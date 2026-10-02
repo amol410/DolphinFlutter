@@ -4,10 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../../../core/constants/api_constants.dart';
 import '../../../shared/widgets/animated_dolphin_mascot.dart';
 import '../../../shared/widgets/tactile_game_button.dart';
 import '../../../shared/widgets/duo_feedback_sheet.dart';
+import '../../notes/data/models/karaoke_model.dart';
 import '../data/models/gamification_models.dart';
 import '../providers/gamification_provider.dart';
 
@@ -36,6 +38,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   late final AudioPlayer _audioPlayer;
   StreamSubscription? _playerCompleteSub;
   StreamSubscription? _playerStateSub;
+  StreamSubscription? _positionSub;
 
   bool _isPlayingAudio = false;
   String _preparedAudioUrl = '';
@@ -71,38 +74,91 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   final List<String> _builderSelected = [];
   bool? _builderCorrect;
 
-  // ── Stage 3: Sprechen Voice Data ──────────────────────────────────
+  // ── Stage 3: Sprechen Voice & Lip-Sync Karaoke Data ───────────────
   String _sprechenPrompt = 'Guten Tag! Wie geht es dir?';
   String _sprechenTranslation = 'Hello! How are you?';
+  String _sprechenAudioUrl = '';
+  List<KaraokeWord> _sprechenKaraokeWords = [];
+  int _sprechenMinAccuracy = 75;
+  bool _hasPlayedSprechenDemo = false;
+  bool _isSprechenDemoPlaying = false;
+  int _activeSprechenWordIndex = -1;
+  Timer? _sprechenAutoPlayTimer;
+
+  late final stt.SpeechToText _speech;
+  bool _speechInitialized = false;
   bool _isSpeaking = false;
   bool? _speechPassed;
   String _spokenText = '';
+  int _speechAccuracy = 0;
+  Timer? _silenceTimer;
 
   @override
   void initState() {
     super.initState();
+    _speech = stt.SpeechToText();
     _audioPlayer = AudioPlayer();
 
     _playerCompleteSub = _audioPlayer.onPlayerComplete.listen((_) {
       if (mounted) {
-        setState(() => _isPlayingAudio = false);
+        setState(() {
+          _isPlayingAudio = false;
+          _isSprechenDemoPlaying = false;
+          _activeSprechenWordIndex = -1;
+        });
       }
     });
 
     _playerStateSub = _audioPlayer.onPlayerStateChanged.listen((state) {
       if (mounted) {
-        setState(() => _isPlayingAudio = (state == PlayerState.playing));
+        setState(() {
+          _isPlayingAudio = (state == PlayerState.playing);
+          if (state != PlayerState.playing) {
+            _isSprechenDemoPlaying = false;
+            _activeSprechenWordIndex = -1;
+          }
+        });
+      }
+    });
+
+    _positionSub = _audioPlayer.onPositionChanged.listen((pos) {
+      if (!mounted) return;
+      if (_currentStage == 3 && _isSprechenDemoPlaying && _sprechenKaraokeWords.isNotEmpty) {
+        final sec = pos.inMilliseconds / 1000.0;
+        int activeIdx = -1;
+        for (int i = 0; i < _sprechenKaraokeWords.length; i++) {
+          final w = _sprechenKaraokeWords[i];
+          if (sec >= w.start && sec <= w.end) {
+            activeIdx = i;
+            break;
+          }
+        }
+        if (activeIdx != _activeSprechenWordIndex) {
+          setState(() {
+            _activeSprechenWordIndex = activeIdx;
+          });
+        }
       }
     });
 
     _initStagesData();
     _prepareListenAudio();
+
+    if (_currentStage == 3) {
+      _triggerSprechenAutoPlay();
+    }
   }
 
   @override
   void dispose() {
+    _sprechenAutoPlayTimer?.cancel();
+    _silenceTimer?.cancel();
     _playerCompleteSub?.cancel();
     _playerStateSub?.cancel();
+    _positionSub?.cancel();
+    try {
+      _speech.stop();
+    } catch (_) {}
     _audioPlayer.stop();
     _audioPlayer.dispose();
     super.dispose();
@@ -264,7 +320,51 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         if (trans != null && trans.isNotEmpty) {
           _sprechenTranslation = trans;
         }
+        if (stage['minAccuracy'] is num) {
+          _sprechenMinAccuracy = (stage['minAccuracy'] as num).toInt();
+        }
+        final audio = stage['audioUrl']?.toString().trim();
+        if (audio != null && audio.isNotEmpty) {
+          _sprechenAudioUrl = audio;
+        }
+        if (stage['karaokeData'] != null) {
+          final kd = stage['karaokeData'];
+          if (kd is Map && kd['words'] is List) {
+            _sprechenKaraokeWords = (kd['words'] as List)
+                .map((w) => KaraokeWord.fromJson(Map<String, dynamic>.from(w as Map)))
+                .toList();
+          } else if (kd is List) {
+            _sprechenKaraokeWords = kd
+                .map((w) => KaraokeWord.fromJson(Map<String, dynamic>.from(w as Map)))
+                .toList();
+          } else if (kd is Map && kd['sentences'] is List && (kd['sentences'] as List).isNotEmpty) {
+            final firstS = kd['sentences'][0];
+            if (firstS is Map && firstS['words'] is List) {
+              _sprechenKaraokeWords = (firstS['words'] as List)
+                  .map((w) => KaraokeWord.fromJson(Map<String, dynamic>.from(w as Map)))
+                  .toList();
+            }
+          }
+        }
       }
+    }
+
+    if (_sprechenKaraokeWords.isEmpty && _sprechenPrompt.isNotEmpty) {
+      final words = _sprechenPrompt.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+      _sprechenKaraokeWords = words
+          .asMap()
+          .entries
+          .map((e) => KaraokeWord(
+                word: e.value,
+                clean: e.value,
+                start: e.key * 0.5,
+                end: (e.key * 0.5) + 0.45,
+              ))
+          .toList();
+    }
+
+    if (_sprechenAudioUrl.isEmpty && widget.node?.audioUrl != null && widget.node!.audioUrl!.isNotEmpty) {
+      _sprechenAudioUrl = widget.node!.audioUrl!;
     }
 
     if (_listenAudioUrl.isEmpty) {
@@ -274,7 +374,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         _listenAudioUrl = '/api/notes/audio/db/5';
       }
     }
-    debugPrint('🎧 [_initStagesData] Loaded sentence audio: $_listenAudioUrl');
+    debugPrint('🎧 [_initStagesData] Loaded sentence audio: $_listenAudioUrl | Sprechen: $_sprechenAudioUrl (${_sprechenKaraokeWords.length} words)');
   }
 
   void _onGermanMatchTap(String word) {
@@ -317,14 +417,231 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     }
   }
 
+  void _triggerSprechenAutoPlay() {
+    if (_hasPlayedSprechenDemo) return;
+    _sprechenAutoPlayTimer?.cancel();
+    _sprechenAutoPlayTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted && _currentStage == 3 && !_hasPlayedSprechenDemo) {
+        _playSprechenDemo();
+      }
+    });
+  }
+
+  Future<void> _playSprechenDemo() async {
+    _hasPlayedSprechenDemo = true;
+    final rawUrl = _sprechenAudioUrl.isNotEmpty ? _sprechenAudioUrl : '';
+    if (rawUrl.isEmpty) {
+      debugPrint('ℹ️ [_playSprechenDemo] No audio URL configured for stage 3 sprechen');
+      return;
+    }
+    final url = _resolveAudioUrl(rawUrl);
+    if (url.isEmpty) return;
+
+    try {
+      if (!mounted) return;
+      debugPrint('🔊 [_playSprechenDemo] Starting one-time reference playback: $url');
+      await _audioPlayer.stop();
+      setState(() {
+        _isSprechenDemoPlaying = true;
+        _activeSprechenWordIndex = -1;
+      });
+      await _audioPlayer.play(UrlSource(url));
+    } catch (e) {
+      debugPrint('⚠️ [_playSprechenDemo] Audio playback error: $e');
+      if (mounted) {
+        setState(() {
+          _isSprechenDemoPlaying = false;
+          _activeSprechenWordIndex = -1;
+        });
+      }
+    }
+  }
+
+  List<String> _cleanWords(String text) {
+    return text
+        .toLowerCase()
+        .replaceAll(RegExp(r'[.,/#!$%^&*;:{}=\-_`~()?"«»„“]'), '')
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((s) => s.isNotEmpty)
+        .toList();
+  }
+
+  bool _isFuzzyMatch(String w1, String w2) {
+    if (w1 == w2) return true;
+    if ((w1.length - w2.length).abs() <= 1) {
+      int diff = 0;
+      int minLen = w1.length < w2.length ? w1.length : w2.length;
+      for (int i = 0; i < minLen; i++) {
+        if (w1[i] != w2[i]) diff++;
+      }
+      return diff <= 1;
+    }
+    return false;
+  }
+
+  Future<void> _toggleSpeaking() async {
+    if (_isSprechenDemoPlaying) {
+      await _audioPlayer.stop();
+      if (mounted) {
+        setState(() {
+          _isSprechenDemoPlaying = false;
+          _activeSprechenWordIndex = -1;
+        });
+      }
+    }
+
+    if (_isSpeaking) {
+      _silenceTimer?.cancel();
+      try {
+        await _speech.stop();
+      } catch (_) {}
+      if (mounted) {
+        setState(() => _isSpeaking = false);
+        _evaluateSpeechPronunciation();
+      }
+      return;
+    }
+
+    setState(() {
+      _isSpeaking = true;
+      _spokenText = '';
+      _speechAccuracy = 0;
+      _speechPassed = null;
+    });
+
+    try {
+      bool available = _speechInitialized;
+      if (!available) {
+        available = await _speech.initialize(
+          onError: (val) => debugPrint('STT error: ${val.errorMsg}'),
+          onStatus: (val) {
+            debugPrint('STT status: $val');
+            if (val == 'done' || val == 'notListening') {
+              if (mounted && _isSpeaking) {
+                _silenceTimer?.cancel();
+                _silenceTimer = Timer(const Duration(milliseconds: 1200), () {
+                  if (mounted && _isSpeaking) {
+                    setState(() => _isSpeaking = false);
+                    _evaluateSpeechPronunciation();
+                  }
+                });
+              }
+            }
+          },
+        );
+        _speechInitialized = available;
+      }
+
+      if (!available) {
+        debugPrint('⚠️ Speech recognition unavailable; fallback test simulation');
+        _silenceTimer?.cancel();
+        _silenceTimer = Timer(const Duration(milliseconds: 1800), () {
+          if (mounted && _isSpeaking) {
+            setState(() {
+              _isSpeaking = false;
+              _spokenText = _sprechenPrompt;
+            });
+            _evaluateSpeechPronunciation();
+          }
+        });
+        return;
+      }
+
+      await _speech.listen(
+        onResult: (result) {
+          if (mounted) {
+            setState(() {
+              _spokenText = result.recognizedWords.trim();
+            });
+          }
+          if (_spokenText.isNotEmpty) {
+            _silenceTimer?.cancel();
+            _silenceTimer = Timer(const Duration(milliseconds: 2000), () {
+              if (mounted && _isSpeaking) {
+                _speech.stop();
+                setState(() => _isSpeaking = false);
+                _evaluateSpeechPronunciation();
+              }
+            });
+          }
+        },
+        listenOptions: stt.SpeechListenOptions(
+          listenMode: stt.ListenMode.dictation,
+          cancelOnError: false,
+          partialResults: true,
+        ),
+      );
+    } catch (e) {
+      debugPrint('Speech listen exception: $e');
+      if (mounted) {
+        setState(() {
+          _isSpeaking = false;
+          _spokenText = _sprechenPrompt;
+        });
+        _evaluateSpeechPronunciation();
+      }
+    }
+  }
+
+  void _evaluateSpeechPronunciation() {
+    _silenceTimer?.cancel();
+    if (!mounted) return;
+
+    final targetText = _sprechenPrompt.isNotEmpty ? _sprechenPrompt : 'Guten Tag! Wie geht es dir?';
+    final targetWords = _cleanWords(targetText);
+    final spokenWords = _cleanWords(_spokenText);
+
+    int matches = 0;
+    for (final tWord in targetWords) {
+      if (spokenWords.any((sWord) => _isFuzzyMatch(tWord, sWord))) {
+        matches++;
+      }
+    }
+
+    final accuracy = targetWords.isEmpty ? 100 : ((matches / targetWords.length) * 100).round();
+    final threshold = _sprechenMinAccuracy > 0 ? _sprechenMinAccuracy : 75;
+    // User requirement: user speak match must be strictly greater than 75
+    final isPassed = accuracy > threshold;
+
+    setState(() {
+      _speechAccuracy = accuracy;
+      _speechPassed = isPassed;
+    });
+
+    if (isPassed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF15803D),
+          content: Text('Ausgezeichnet! ($accuracy% match) 🎉'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFFDC2626),
+          content: Text('Match $accuracy% — Must be greater than 75% to pass. Try again!'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
   void _nextStage() {
+    _sprechenAutoPlayTimer?.cancel();
+    _silenceTimer?.cancel();
     _audioPlayer.pause();
     setState(() {
       _isPlayingAudio = false;
+      _isSprechenDemoPlaying = false;
+      _activeSprechenWordIndex = -1;
       _currentStage++;
     });
     if (_currentStage == 1) {
       _prepareListenAudio();
+    } else if (_currentStage == 3) {
+      _triggerSprechenAutoPlay();
     }
   }
 
@@ -923,7 +1240,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   }
 
   // ══════════════════════════════════════════════════════════════════
-  // STAGE 3: Sprechen Speech Pronunciation
+  // STAGE 3: Sprechen Speech Pronunciation & Lip-Sync Karaoke
   // ══════════════════════════════════════════════════════════════════
   Widget _buildSprechenStage() {
     return Column(
@@ -954,7 +1271,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // Mascot & German Prompt Bubble
+                // Mascot & German Prompt Bubble with Real-Time Lip-Sync Highlighting
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -962,7 +1279,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                       size: 95,
                       pose: _speechPassed == true
                           ? MascotPose.celebrate
-                          : (_isSpeaking ? MascotPose.thinking : MascotPose.jump),
+                          : (_isSpeaking
+                              ? MascotPose.thinking
+                              : (_isSprechenDemoPlaying ? MascotPose.jump : null)),
                       isListening: _isSpeaking,
                       isCelebrating: _speechPassed == true,
                     ),
@@ -973,25 +1292,98 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: const Color(0xFF0284C7), width: 2),
-                          boxShadow: const [
-                            BoxShadow(color: Color(0xFFBAE6FD), blurRadius: 0, offset: Offset(0, 3)),
+                          border: Border.all(
+                            color: _isSprechenDemoPlaying
+                                ? const Color(0xFF0284C7)
+                                : const Color(0xFF0284C7),
+                            width: 2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _isSprechenDemoPlaying
+                                  ? const Color(0xFF7DD3FC)
+                                  : const Color(0xFFBAE6FD),
+                              blurRadius: 0,
+                              offset: const Offset(0, 3),
+                            ),
                           ],
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              _sprechenPrompt.isNotEmpty ? _sprechenPrompt : 'Guten Tag! Wie geht es dir?',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                color: const Color(0xFF0284C7),
+                            if (_isSprechenDemoPlaying)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFF0284C7),
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Echo is speaking...',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: const Color(0xFF0284C7),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
+                            Wrap(
+                              spacing: 4,
+                              runSpacing: 6,
+                              children: _sprechenKaraokeWords.asMap().entries.map((entry) {
+                                final idx = entry.key;
+                                final w = entry.value;
+                                final isWordActive = (_isSprechenDemoPlaying && idx == _activeSprechenWordIndex);
+
+                                return AnimatedContainer(
+                                  duration: const Duration(milliseconds: 150),
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: isWordActive ? 8 : 3,
+                                    vertical: isWordActive ? 3 : 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isWordActive
+                                        ? const Color(0xFF0284C7)
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(8),
+                                    boxShadow: isWordActive
+                                        ? [
+                                            BoxShadow(
+                                              color: const Color(0xFF0284C7).withValues(alpha: 0.35),
+                                              blurRadius: 6,
+                                              offset: const Offset(0, 2),
+                                            ),
+                                          ]
+                                        : null,
+                                  ),
+                                  child: Text(
+                                    w.word,
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w900,
+                                      color: isWordActive
+                                          ? Colors.white
+                                          : const Color(0xFF0284C7),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
                             ),
-                            const SizedBox(height: 6),
+                            const SizedBox(height: 8),
                             Text(
-                              _sprechenTranslation.isNotEmpty ? _sprechenTranslation : 'Hello! How are you?',
+                              _sprechenTranslation.isNotEmpty
+                                  ? _sprechenTranslation
+                                  : 'Hello! How are you?',
                               style: GoogleFonts.plusJakartaSans(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
@@ -1007,27 +1399,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                 ),
                 const SizedBox(height: 36),
 
-                // Large Microphone Button
+                // Large Microphone Button (No replay button anywhere on this stage)
                 Center(
                   child: GestureDetector(
-                    onTap: () {
-                      if (_isSpeaking) return;
-                      setState(() {
-                        _isSpeaking = true;
-                        _spokenText = '';
-                        _speechPassed = null;
-                      });
-
-                      Future.delayed(const Duration(milliseconds: 1800), () {
-                        if (mounted) {
-                          setState(() {
-                            _isSpeaking = false;
-                            _spokenText = _sprechenPrompt.isNotEmpty ? _sprechenPrompt : 'Guten Tag! Wie geht es dir?';
-                            _speechPassed = true;
-                          });
-                        }
-                      });
-                    },
+                    onTap: _toggleSpeaking,
                     child: Container(
                       width: 90,
                       height: 90,
@@ -1068,31 +1443,72 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
                 if (_spokenText.isNotEmpty) ...[
                   const SizedBox(height: 24),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFDCFCE7),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFF86EFAC), width: 1.5),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.check_circle_rounded, color: Color(0xFF15803D), size: 24),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Recognized 98%: "$_spokenText"',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
-                              color: const Color(0xFF15803D),
+                  if (_speechPassed == true)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFDCFCE7),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFF86EFAC), width: 1.5),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.check_circle_rounded, color: Color(0xFF15803D), size: 24),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Recognized $_speechAccuracy%: "$_spokenText"',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF15803D),
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
+                    )
+                  else
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF2F2),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFFCA5A5), width: 1.5),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.cancel_outlined, color: Color(0xFFDC2626), size: 24),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Match $_speechAccuracy%: "$_spokenText"',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w800,
+                                    color: const Color(0xFFDC2626),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Need > 75% match to pass. Tap mic to try again!',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF991B1B),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                 ],
               ],
             ),
@@ -1103,7 +1519,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           DuoFeedbackSheet(
             isSuccess: true,
             title: 'Native-Level Pronunciation!',
-            subtitle: 'Echo is proud of your German accent!',
+            subtitle: 'Echo is proud of your German accent! ($_speechAccuracy% match)',
             buttonText: 'SEE RESULTS 🎉',
             onContinue: _nextStage,
           ),

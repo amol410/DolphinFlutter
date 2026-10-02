@@ -373,6 +373,11 @@ PUT  /api/auth/password        { currentPassword, newPassword }
 - **Key Audio & Stage Capabilities**:
   - **Full-Sentence Audio & Pure Sequencing Word Bank**: High-fidelity sentence audio streaming using dedicated `_audioPlayer` pre-buffered on stage load. In `listen_tap`, word chips function purely as responsive tactile selection tiles without individual word sound playback, allowing learners to focus cleanly on arranging the correct sentence order based on the mascot's spoken sentence.
   - **Dynamic Stage Parser (`_initStagesData`)**: Dynamically extracts `listen_tap` target sentences, tokens, and isolated `audioUrl`, as well as `match_pairs`, `sentence_builder`, and `sprechen` prompts from `widget.node.stages`.
+  - **Stage 3 Sprechen Lip-Sync**:
+    - **One-Time Auto-Play Demonstration (1s Delay)**: When transitioning to Stage 3, waits 1 second then automatically triggers teacher reference audio playback once with animated dolphin speaker reactions.
+    - **No Replay Button**: Deliberately omits any replay or speaker button to foster incremental recall from prior listening and assembly stages.
+    - **Real-Time Karaoke Highlighting**: Synchronizes `_audioPlayer.onPositionChanged` with `karaokeData.words` to illuminate words in real-time inside the speech bubble.
+    - **Strict Passing Threshold (> 75%)**: Speech-to-text recognition (`speech_to_text`) evaluates pronunciation using fuzzy token matching; requires strictly `accuracy > 75` to succeed and reveal the celebration feedback.
   - **Tactile Speaker & Mascot**: Speaker button maintains continuous `volume_up_rounded` iconography for intuitive repeat sentence listening, while Echo the Dolphin wears headphones and reacts with listening animations during active playback.
   - **Tolerant Verification**: Punctuation-insensitive and whitespace-normalized validation for listening and sentence builder tasks.
 
