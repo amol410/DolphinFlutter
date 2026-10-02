@@ -34,15 +34,22 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   int _currentStage = 0; // 0: Word Match, 1: Listening, 2: Sentence Builder, 3: Sprechen, 4: Celebration
   final int _totalStages = 4;
 
-  late final AudioPlayer _audioPlayer;
-  StreamSubscription? _playerCompleteSub;
-  StreamSubscription? _playerStateSub;
-  StreamSubscription? _positionSub;
+  late final AudioPlayer _sentenceAudioPlayer;
+  late final AudioPlayer _wordAudioPlayer;
+  StreamSubscription? _sentenceCompleteSub;
+  StreamSubscription? _sentenceStateSub;
+  StreamSubscription? _sentencePositionSub;
+  StreamSubscription? _wordCompleteSub;
+  StreamSubscription? _wordStateSub;
+  StreamSubscription? _wordPositionSub;
+
   bool _isPlayingAudio = false;
   double? _targetStopSec;
   int? _pendingWordDurationMs;
-  bool _isAudioSourcePrepared = false;
-  String _preparedAudioUrl = '';
+  bool _isSentenceSourcePrepared = false;
+  String _preparedSentenceUrl = '';
+  bool _isWordSourcePrepared = false;
+  String _preparedWordUrl = '';
 
   // ── Stage 0: Word Match Data ──────────────────────────────────────
   List<String> _germanWords = ['Guten Tag', 'Danke', 'Bitte', 'Tschüss'];
@@ -66,6 +73,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   final List<String> _listenSelected = [];
   bool? _listenCorrect;
   String _listenAudioUrl = '/api/notes/audio/db/5';
+  String _listenWordsAudioUrl = '';
+  double? _listenSentenceStartSec;
+  double? _listenSentenceEndSec;
   List<Map<String, dynamic>> _listenWordTimestamps = [
     {'word': 'Guten', 'start': 0.12, 'end': 0.65},
     {'word': 'Tag', 'start': 0.70, 'end': 1.15},
@@ -74,6 +84,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     {'word': 'Anna', 'start': 1.95, 'end': 2.45},
   ];
   Timer? _wordAudioTimer;
+  Timer? _sentenceStopTimer;
 
   // ── Stage 2: Sentence Builder Data ────────────────────────────────
   String _sentencePrompt = 'Translate: "Good morning, how are you?"';
@@ -93,39 +104,46 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   @override
   void initState() {
     super.initState();
-    _audioPlayer = AudioPlayer();
+    _sentenceAudioPlayer = AudioPlayer();
+    _wordAudioPlayer = AudioPlayer();
 
-    _playerCompleteSub = _audioPlayer.onPlayerComplete.listen((_) {
+    // Sentence audio player listeners
+    _sentenceCompleteSub = _sentenceAudioPlayer.onPlayerComplete.listen((_) {
       if (mounted) {
-        setState(() {
-          _isPlayingAudio = false;
-          _targetStopSec = null;
-        });
+        setState(() => _isPlayingAudio = false);
       }
     });
 
-    _playerStateSub = _audioPlayer.onPlayerStateChanged.listen((state) {
+    _sentenceStateSub = _sentenceAudioPlayer.onPlayerStateChanged.listen((state) {
       if (mounted) {
         setState(() => _isPlayingAudio = (state == PlayerState.playing));
       }
+    });
+
+    // Word audio player listeners (handles instant tap-to-pronounce slices)
+    _wordCompleteSub = _wordAudioPlayer.onPlayerComplete.listen((_) {
+      _targetStopSec = null;
+    });
+
+    _wordStateSub = _wordAudioPlayer.onPlayerStateChanged.listen((state) {
       if (state == PlayerState.playing && _pendingWordDurationMs != null) {
         _wordAudioTimer?.cancel();
         final duration = _pendingWordDurationMs!;
         _pendingWordDurationMs = null;
         _wordAudioTimer = Timer(Duration(milliseconds: duration), () async {
           try {
-            await _audioPlayer.pause();
+            await _wordAudioPlayer.pause();
           } catch (_) {}
           _targetStopSec = null;
         });
       }
     });
 
-    _positionSub = _audioPlayer.onPositionChanged.listen((pos) {
+    _wordPositionSub = _wordAudioPlayer.onPositionChanged.listen((pos) {
       if (_targetStopSec != null) {
         final currentSec = pos.inMilliseconds / 1000.0;
         if (currentSec >= _targetStopSec!) {
-          _audioPlayer.pause();
+          _wordAudioPlayer.pause();
           _targetStopSec = null;
           _wordAudioTimer?.cancel();
         }
@@ -139,11 +157,17 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   @override
   void dispose() {
     _wordAudioTimer?.cancel();
-    _playerCompleteSub?.cancel();
-    _playerStateSub?.cancel();
-    _positionSub?.cancel();
-    _audioPlayer.stop();
-    _audioPlayer.dispose();
+    _sentenceStopTimer?.cancel();
+    _sentenceCompleteSub?.cancel();
+    _sentenceStateSub?.cancel();
+    _sentencePositionSub?.cancel();
+    _wordCompleteSub?.cancel();
+    _wordStateSub?.cancel();
+    _wordPositionSub?.cancel();
+    _sentenceAudioPlayer.stop();
+    _sentenceAudioPlayer.dispose();
+    _wordAudioPlayer.stop();
+    _wordAudioPlayer.dispose();
     super.dispose();
   }
 
@@ -161,45 +185,90 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   }
 
   Future<void> _prepareListenAudio() async {
-    final rawUrl = _listenAudioUrl.isNotEmpty ? _listenAudioUrl : (widget.node?.audioUrl ?? '');
-    final url = _resolveAudioUrl(rawUrl);
-    if (url.isEmpty || url == _preparedAudioUrl) return;
+    // 1. Pre-warm sentence audio
+    final rawSentence = _listenAudioUrl.isNotEmpty ? _listenAudioUrl : (widget.node?.audioUrl ?? '');
+    final sentenceUrl = _resolveAudioUrl(rawSentence);
+    if (sentenceUrl.isNotEmpty && sentenceUrl != _preparedSentenceUrl) {
+      try {
+        _preparedSentenceUrl = sentenceUrl;
+        await _sentenceAudioPlayer.setSourceUrl(sentenceUrl);
+        _isSentenceSourcePrepared = true;
+        debugPrint('🎵 [_prepareListenAudio] Pre-warmed sentence audio: $sentenceUrl');
+      } catch (e) {
+        debugPrint('⚠️ [_prepareListenAudio] Sentence audio pre-warm error: $e');
+      }
+    }
 
-    try {
-      _preparedAudioUrl = url;
-      await _audioPlayer.setSourceUrl(url);
-      _isAudioSourcePrepared = true;
-      debugPrint('🎵 [_prepareListenAudio] Pre-warmed audio source: $url');
-    } catch (e) {
-      debugPrint('⚠️ [_prepareListenAudio] Audio pre-warm error: $e');
+    // 2. Pre-warm words audio (if different from sentence)
+    final rawWords = _listenWordsAudioUrl.isNotEmpty ? _listenWordsAudioUrl : rawSentence;
+    final wordsUrl = _resolveAudioUrl(rawWords);
+    if (wordsUrl.isNotEmpty && wordsUrl != _preparedWordUrl) {
+      try {
+        _preparedWordUrl = wordsUrl;
+        await _wordAudioPlayer.setSourceUrl(wordsUrl);
+        _isWordSourcePrepared = true;
+        debugPrint('🎵 [_prepareListenAudio] Pre-warmed words audio: $wordsUrl');
+      } catch (e) {
+        debugPrint('⚠️ [_prepareListenAudio] Words audio pre-warm error: $e');
+      }
     }
   }
 
   Future<void> _playListenAudio() async {
     _wordAudioTimer?.cancel();
+    _sentenceStopTimer?.cancel();
     _targetStopSec = null;
     _pendingWordDurationMs = null;
+
     final rawUrl = _listenAudioUrl.isNotEmpty ? _listenAudioUrl : (widget.node?.audioUrl ?? '');
     final url = _resolveAudioUrl(rawUrl);
 
     if (url.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No audio attached to this stage.'),
-          duration: Duration(seconds: 2),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No audio attached to this stage.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
       return;
     }
 
+    // Pause word audio if it was playing
+    try {
+      await _wordAudioPlayer.pause();
+    } catch (_) {}
+
     try {
       if (!mounted) return;
-      debugPrint('🔊 [_playListenAudio] Replaying full sentence audio from start: $url');
-      await _audioPlayer.stop();
-      await _audioPlayer.play(UrlSource(url));
-      _preparedAudioUrl = url;
-      _isAudioSourcePrepared = true;
+      debugPrint('🔊 [_playListenAudio] Replaying sentence audio: $url (start: ${_listenSentenceStartSec ?? 0.0}s, end: ${_listenSentenceEndSec ?? 'end'})');
+      await _sentenceAudioPlayer.stop();
+
+      final startMs = ((_listenSentenceStartSec ?? 0.0) * 1000).round();
+      if (!_isSentenceSourcePrepared || _preparedSentenceUrl != url) {
+        await _sentenceAudioPlayer.setSourceUrl(url);
+        _preparedSentenceUrl = url;
+        _isSentenceSourcePrepared = true;
+      }
+
+      if (startMs > 0) {
+        await _sentenceAudioPlayer.seek(Duration(milliseconds: startMs));
+      }
+      await _sentenceAudioPlayer.resume();
+
       if (mounted) setState(() => _isPlayingAudio = true);
+
+      // If there is an authored end cutoff (sentence finished before comma words)
+      if (_listenSentenceEndSec != null && _listenSentenceEndSec! > (_listenSentenceStartSec ?? 0.0)) {
+        final durationMs = (((_listenSentenceEndSec! - (_listenSentenceStartSec ?? 0.0))) * 1000).round();
+        _sentenceStopTimer = Timer(Duration(milliseconds: durationMs), () async {
+          try {
+            await _sentenceAudioPlayer.pause();
+          } catch (_) {}
+          if (mounted) setState(() => _isPlayingAudio = false);
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _isPlayingAudio = false);
@@ -255,8 +324,19 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       return;
     }
 
-    final rawUrl = _listenAudioUrl.isNotEmpty ? _listenAudioUrl : (widget.node?.audioUrl ?? '');
+    // Pause sentence audio if currently playing so learner clearly hears the word
+    try {
+      await _sentenceAudioPlayer.pause();
+      if (mounted) setState(() => _isPlayingAudio = false);
+    } catch (_) {}
+
+    final rawUrl = (match['audioUrl'] != null && match['audioUrl'].toString().trim().isNotEmpty)
+        ? match['audioUrl'].toString().trim()
+        : (_listenWordsAudioUrl.isNotEmpty
+            ? _listenWordsAudioUrl
+            : (_listenAudioUrl.isNotEmpty ? _listenAudioUrl : (widget.node?.audioUrl ?? '')));
     final url = _resolveAudioUrl(rawUrl);
+
     if (url.isEmpty) {
       debugPrint('⚠️ [_playWordAudio] Resolved audio URL is empty');
       return;
@@ -265,38 +345,36 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     final startSec = (match['start'] as num?)?.toDouble() ?? 0.0;
     final endSec = (match['end'] as num?)?.toDouble() ?? (startSec + 0.6);
 
-    // Add natural phonetic release buffer (+220ms) and pre-attack so the word finishes completely without clipping
-    final safeStartSec = (startSec > 0.04) ? (startSec - 0.03) : startSec;
+    // With comma-separated words having natural silence buffers, cushion gently:
+    final safeStartSec = (startSec > 0.02) ? (startSec - 0.02) : startSec;
     final rawEnd = (endSec > startSec) ? endSec : (startSec + 0.6);
-    final safeEndSec = rawEnd + 0.22;
+    final safeEndSec = rawEnd + 0.08;
 
-    debugPrint('🔊 [_playWordAudio] Pronouncing "$word" -> start: ${safeStartSec}s, end: ${safeEndSec}s (with release buffer)');
+    debugPrint('🔊 [_playWordAudio] Pronouncing "$word" -> start: ${safeStartSec}s, end: ${safeEndSec}s from $url');
 
     _wordAudioTimer?.cancel();
     _targetStopSec = safeEndSec;
-    final durationMs = (((safeEndSec - safeStartSec).abs()) * 1000).toInt().clamp(380, 5000);
+    final durationMs = (((safeEndSec - safeStartSec).abs()) * 1000).toInt().clamp(300, 8000);
     _pendingWordDurationMs = durationMs;
 
     try {
       if (!mounted) return;
-      if (!_isAudioSourcePrepared || _preparedAudioUrl != url) {
-        await _audioPlayer.setSourceUrl(url);
-        _preparedAudioUrl = url;
-        _isAudioSourcePrepared = true;
+      if (!_isWordSourcePrepared || _preparedWordUrl != url) {
+        await _wordAudioPlayer.setSourceUrl(url);
+        _preparedWordUrl = url;
+        _isWordSourcePrepared = true;
       }
 
       if (!mounted) return;
-      await _audioPlayer.seek(Duration(milliseconds: (safeStartSec * 1000).round()));
-      await _audioPlayer.resume();
+      await _wordAudioPlayer.seek(Duration(milliseconds: (safeStartSec * 1000).round()));
+      await _wordAudioPlayer.resume();
 
-      if (_isPlayingAudio) {
-        _wordAudioTimer = Timer(Duration(milliseconds: durationMs), () async {
-          try {
-            await _audioPlayer.pause();
-          } catch (_) {}
-          _targetStopSec = null;
-        });
-      }
+      _wordAudioTimer = Timer(Duration(milliseconds: durationMs), () async {
+        try {
+          await _wordAudioPlayer.pause();
+        } catch (_) {}
+        _targetStopSec = null;
+      });
     } catch (e) {
       debugPrint('⚠️ [_playWordAudio] Playback exception: $e');
     }
@@ -312,11 +390,13 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           final word = (item['word'] ?? item['text'] ?? '').toString().trim();
           final start = (item['start'] as num?)?.toDouble() ?? (item['startTime'] as num?)?.toDouble();
           final end = (item['end'] as num?)?.toDouble() ?? (item['endTime'] as num?)?.toDouble();
+          final audioUrl = item['audioUrl']?.toString().trim();
           if (word.isNotEmpty && start != null) {
             result.add({
               'word': word,
               'start': start,
               'end': end ?? (start + 0.6),
+              if (audioUrl != null && audioUrl.isNotEmpty) 'audioUrl': audioUrl,
             });
           }
         }
@@ -335,6 +415,16 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       if (raw is List) {
         parseList(raw);
       } else if (raw is Map) {
+        if (raw['wordsAudioUrl'] != null && _listenWordsAudioUrl.isEmpty) {
+          _listenWordsAudioUrl = raw['wordsAudioUrl'].toString().trim();
+        }
+        if (raw['audioUrl'] != null && _listenWordsAudioUrl.isEmpty && raw['words'] is List) {
+          _listenWordsAudioUrl = raw['audioUrl'].toString().trim();
+        }
+        if (raw['sentenceRange'] is Map && _listenSentenceEndSec == null) {
+          _listenSentenceStartSec = (raw['sentenceRange']['start'] as num?)?.toDouble() ?? 0.0;
+          _listenSentenceEndSec = (raw['sentenceRange']['end'] as num?)?.toDouble();
+        }
         if (raw['words'] is List) {
           parseList(raw['words']);
         }
@@ -434,6 +524,17 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         } else if (widget.node?.audioUrl != null && widget.node!.audioUrl!.isNotEmpty) {
           _listenAudioUrl = widget.node!.audioUrl!;
         }
+
+        final wordsAudio = stage['wordsAudioUrl']?.toString().trim();
+        if (wordsAudio != null && wordsAudio.isNotEmpty) {
+          _listenWordsAudioUrl = wordsAudio;
+        }
+
+        if (stage['sentenceRange'] is Map) {
+          _listenSentenceStartSec = (stage['sentenceRange']['start'] as num?)?.toDouble() ?? 0.0;
+          _listenSentenceEndSec = (stage['sentenceRange']['end'] as num?)?.toDouble();
+        }
+
         _listenWordTimestamps = _extractWordTimestamps(stage);
       } else if (type == 'sentence_builder') {
         final prompt = stage['prompt']?.toString().trim();
@@ -523,9 +624,11 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
   void _nextStage() {
     _wordAudioTimer?.cancel();
+    _sentenceStopTimer?.cancel();
     _targetStopSec = null;
     _pendingWordDurationMs = null;
-    _audioPlayer.pause();
+    _sentenceAudioPlayer.stop();
+    _wordAudioPlayer.stop();
     setState(() {
       _isPlayingAudio = false;
       _currentStage++;
