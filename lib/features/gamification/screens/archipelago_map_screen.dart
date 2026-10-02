@@ -193,7 +193,7 @@ class ArchipelagoMapScreen extends ConsumerWidget {
                       height: 90,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: const Color(0xFF06B6D4).withOpacity(0.2),
+                        color: const Color(0xFF06B6D4).withValues(alpha: 0.2),
                       ),
                     ),
 
@@ -292,7 +292,9 @@ class ArchipelagoMapScreen extends ConsumerWidget {
     }
 
     // Directly launch the interactive lesson challenge tasks screen based on this node
-    context.push('/lesson/${node.index}', extra: node);
+    context.push('/lesson/${node.index}', extra: node).then((_) {
+      ref.read(pathNodesProvider.notifier).loadPath();
+    });
   }
 
   void _showChestDialog(BuildContext context, PathNodeModel node) {

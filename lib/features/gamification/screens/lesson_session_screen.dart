@@ -32,8 +32,10 @@ class LessonSessionScreen extends ConsumerStatefulWidget {
 }
 
 class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
-  int _currentStage = 0; // 0: Word Match, 1: Listening, 2: Sentence Builder, 3: Sprechen, 4: Celebration
-  final int _totalStages = 4;
+  int _currentStage = 0;
+  List<String> _activeStageTypes = [];
+  int get _totalStages => _activeStageTypes.length;
+  bool get _isCelebrationStage => _currentStage >= _totalStages;
 
   late final AudioPlayer _audioPlayer;
   StreamSubscription? _playerCompleteSub;
@@ -123,7 +125,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
     _positionSub = _audioPlayer.onPositionChanged.listen((pos) {
       if (!mounted) return;
-      if (_currentStage == 3 && _isSprechenDemoPlaying && _sprechenKaraokeWords.isNotEmpty) {
+      final currentType = (!_isCelebrationStage && _currentStage < _activeStageTypes.length)
+          ? _activeStageTypes[_currentStage]
+          : null;
+      if (currentType == 'sprechen' && _isSprechenDemoPlaying && _sprechenKaraokeWords.isNotEmpty) {
         final sec = pos.inMilliseconds / 1000.0;
         int activeIdx = -1;
         for (int i = 0; i < _sprechenKaraokeWords.length; i++) {
@@ -142,10 +147,14 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     });
 
     _initStagesData();
-    _prepareListenAudio();
 
-    if (_currentStage == 3) {
-      _triggerSprechenAutoPlay();
+    if (_activeStageTypes.isNotEmpty) {
+      final firstType = _activeStageTypes.first;
+      if (firstType == 'listen_tap') {
+        _prepareListenAudio();
+      } else if (firstType == 'sprechen') {
+        _triggerSprechenAutoPlay();
+      }
     }
   }
 
@@ -228,15 +237,28 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   }
 
   void _initStagesData() {
-    final stages = widget.node?.stages;
-    if (stages == null || stages.isEmpty) {
-      if (widget.node?.audioUrl != null && widget.node!.audioUrl!.isNotEmpty) {
-        _listenAudioUrl = widget.node!.audioUrl!;
+    // Check if pathNodesProvider has a newer copy of this node
+    final nodesAsync = ref.read(pathNodesProvider);
+    PathNodeModel? activeNode = widget.node;
+    if (nodesAsync is AsyncData<List<PathNodeModel>>) {
+      final found = nodesAsync.value.where((n) => n.index == widget.nodeIndex).firstOrNull;
+      if (found != null) {
+        activeNode = found;
       }
-      debugPrint('🎧 [_initStagesData] Fallback mode: audio: $_listenAudioUrl');
+    }
+
+    final stages = activeNode?.stages;
+    final nodeAudio = activeNode?.audioUrl;
+    if (stages == null || stages.isEmpty) {
+      if (nodeAudio != null && nodeAudio.isNotEmpty) {
+        _listenAudioUrl = nodeAudio;
+      }
+      _activeStageTypes = ['word_match', 'listen_tap', 'sentence_builder', 'sprechen'];
+      debugPrint('🎧 [_initStagesData] Fallback mode (all 4 stages): audio: $_listenAudioUrl');
       return;
     }
 
+    final activeTypes = <String>[];
     for (final rawStage in stages) {
       if (rawStage is! Map) continue;
       final stage = Map<String, dynamic>.from(rawStage);
@@ -263,6 +285,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
             _germanWords = newGerman;
             _englishWords = newEnglish..shuffle();
             _solutionPairs = newPairs;
+            activeTypes.add('word_match');
           }
         }
       } else if (type == 'listen_tap') {
@@ -287,9 +310,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         final stageAudio = stage['audioUrl']?.toString().trim();
         if (stageAudio != null && stageAudio.isNotEmpty) {
           _listenAudioUrl = stageAudio;
-        } else if (widget.node?.audioUrl != null && widget.node!.audioUrl!.isNotEmpty) {
-          _listenAudioUrl = widget.node!.audioUrl!;
+        } else if (nodeAudio != null && nodeAudio.isNotEmpty) {
+          _listenAudioUrl = nodeAudio;
         }
+        activeTypes.add('listen_tap');
       } else if (type == 'sentence_builder') {
         final prompt = stage['prompt']?.toString().trim();
         if (prompt != null && prompt.isNotEmpty) {
@@ -311,6 +335,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
               .toList()
             ..shuffle();
         }
+        activeTypes.add('sentence_builder');
       } else if (type == 'sprechen') {
         final prompt = stage['prompt']?.toString().trim();
         if (prompt != null && prompt.isNotEmpty) {
@@ -346,6 +371,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
             }
           }
         }
+        activeTypes.add('sprechen');
       }
     }
 
@@ -363,18 +389,25 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           .toList();
     }
 
-    if (_sprechenAudioUrl.isEmpty && widget.node?.audioUrl != null && widget.node!.audioUrl!.isNotEmpty) {
-      _sprechenAudioUrl = widget.node!.audioUrl!;
+    if (_sprechenAudioUrl.isEmpty && nodeAudio != null && nodeAudio.isNotEmpty) {
+      _sprechenAudioUrl = nodeAudio;
     }
 
     if (_listenAudioUrl.isEmpty) {
-      if (widget.node?.audioUrl != null && widget.node!.audioUrl!.isNotEmpty) {
-        _listenAudioUrl = widget.node!.audioUrl!;
+      if (nodeAudio != null && nodeAudio.isNotEmpty) {
+        _listenAudioUrl = nodeAudio;
       } else {
         _listenAudioUrl = '/api/notes/audio/db/5';
       }
     }
-    debugPrint('🎧 [_initStagesData] Loaded sentence audio: $_listenAudioUrl | Sprechen: $_sprechenAudioUrl (${_sprechenKaraokeWords.length} words)');
+
+    if (activeTypes.isNotEmpty) {
+      _activeStageTypes = activeTypes;
+    } else {
+      _activeStageTypes = ['word_match', 'listen_tap', 'sentence_builder', 'sprechen'];
+    }
+
+    debugPrint('🎯 [_initStagesData] Active stage sequence: $_activeStageTypes (total: ${_activeStageTypes.length})');
   }
 
   void _onGermanMatchTap(String word) {
@@ -421,7 +454,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     if (_hasPlayedSprechenDemo) return;
     _sprechenAutoPlayTimer?.cancel();
     _sprechenAutoPlayTimer = Timer(const Duration(seconds: 1), () {
-      if (mounted && _currentStage == 3 && !_hasPlayedSprechenDemo) {
+      final currentType = (_currentStage < _activeStageTypes.length)
+          ? _activeStageTypes[_currentStage]
+          : null;
+      if (mounted && currentType == 'sprechen' && !_hasPlayedSprechenDemo) {
         _playSprechenDemo();
       }
     });
@@ -460,7 +496,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   List<String> _cleanWords(String text) {
     return text
         .toLowerCase()
-        .replaceAll(RegExp(r'[.,/#!$%^&*;:{}=\-_`~()?"«»„“]'), '')
+        .replaceAll(RegExp(r"[.,/#!$%^&*;:{}=\-_`~()?'«»„“”’]"), '')
         .trim()
         .split(RegExp(r'\s+'))
         .where((s) => s.isNotEmpty)
@@ -469,11 +505,14 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
   bool _isFuzzyMatch(String w1, String w2) {
     if (w1 == w2) return true;
-    if ((w1.length - w2.length).abs() <= 1) {
+    final norm1 = w1.replaceAll('ä', 'ae').replaceAll('ö', 'oe').replaceAll('ü', 'ue').replaceAll('ß', 'ss');
+    final norm2 = w2.replaceAll('ä', 'ae').replaceAll('ö', 'oe').replaceAll('ü', 'ue').replaceAll('ß', 'ss');
+    if (norm1 == norm2) return true;
+    if ((norm1.length - norm2.length).abs() <= 1) {
       int diff = 0;
-      int minLen = w1.length < w2.length ? w1.length : w2.length;
+      int minLen = norm1.length < norm2.length ? norm1.length : norm2.length;
       for (int i = 0; i < minLen; i++) {
-        if (w1[i] != w2[i]) diff++;
+        if (norm1[i] != norm2[i]) diff++;
       }
       return diff <= 1;
     }
@@ -520,7 +559,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
             if (val == 'done' || val == 'notListening') {
               if (mounted && _isSpeaking) {
                 _silenceTimer?.cancel();
-                _silenceTimer = Timer(const Duration(milliseconds: 1200), () {
+                _silenceTimer = Timer(const Duration(milliseconds: 2000), () {
                   if (mounted && _isSpeaking) {
                     setState(() => _isSpeaking = false);
                     _evaluateSpeechPronunciation();
@@ -548,6 +587,19 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         return;
       }
 
+      // Query available locales on device to find German (de-DE, de_DE, etc.)
+      String germanLocaleId = 'de_DE';
+      try {
+        final locales = await _speech.locales();
+        final match = locales.where((l) => l.localeId.toLowerCase().startsWith('de')).firstOrNull;
+        if (match != null) {
+          germanLocaleId = match.localeId;
+        }
+        debugPrint('🇩🇪 [Speech Recognition] Using German locale: $germanLocaleId');
+      } catch (e) {
+        debugPrint('⚠️ Error querying locales: $e');
+      }
+
       await _speech.listen(
         onResult: (result) {
           if (mounted) {
@@ -557,7 +609,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           }
           if (_spokenText.isNotEmpty) {
             _silenceTimer?.cancel();
-            _silenceTimer = Timer(const Duration(milliseconds: 2000), () {
+            _silenceTimer = Timer(const Duration(milliseconds: 3000), () {
               if (mounted && _isSpeaking) {
                 _speech.stop();
                 setState(() => _isSpeaking = false);
@@ -570,6 +622,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           listenMode: stt.ListenMode.dictation,
           cancelOnError: false,
           partialResults: true,
+          localeId: germanLocaleId,
+          listenFor: const Duration(seconds: 30),
+          pauseFor: const Duration(seconds: 3),
         ),
       );
     } catch (e) {
@@ -592,6 +647,8 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     final targetWords = _cleanWords(targetText);
     final spokenWords = _cleanWords(_spokenText);
 
+    debugPrint('🗣️ [_evaluateSpeechPronunciation] Target: $targetWords | Spoken: $spokenWords');
+
     int matches = 0;
     for (final tWord in targetWords) {
       if (spokenWords.any((sWord) => _isFuzzyMatch(tWord, sWord))) {
@@ -601,8 +658,8 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
     final accuracy = targetWords.isEmpty ? 100 : ((matches / targetWords.length) * 100).round();
     final threshold = _sprechenMinAccuracy > 0 ? _sprechenMinAccuracy : 75;
-    // User requirement: user speak match must be strictly greater than 75
-    final isPassed = accuracy > threshold;
+    // Parity with Web notes section: >= 75% passes
+    final isPassed = accuracy >= threshold;
 
     setState(() {
       _speechAccuracy = accuracy;
@@ -621,7 +678,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: const Color(0xFFDC2626),
-          content: Text('Match $accuracy% — Must be greater than 75% to pass. Try again!'),
+          content: Text('Match $accuracy% — Need $threshold% or higher to pass. Try again!'),
           duration: const Duration(seconds: 3),
         ),
       );
@@ -638,10 +695,13 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       _activeSprechenWordIndex = -1;
       _currentStage++;
     });
-    if (_currentStage == 1) {
-      _prepareListenAudio();
-    } else if (_currentStage == 3) {
-      _triggerSprechenAutoPlay();
+    if (_currentStage < _activeStageTypes.length) {
+      final nextType = _activeStageTypes[_currentStage];
+      if (nextType == 'listen_tap') {
+        _prepareListenAudio();
+      } else if (nextType == 'sprechen') {
+        _triggerSprechenAutoPlay();
+      }
     }
   }
 
@@ -663,11 +723,13 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final progress = (_currentStage / _totalStages).clamp(0.0, 1.0);
+    final progress = _totalStages > 0
+        ? (_currentStage / _totalStages).clamp(0.0, 1.0)
+        : 1.0;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      appBar: _currentStage < 4
+      appBar: !_isCelebrationStage
           ? AppBar(
               backgroundColor: Colors.transparent,
               elevation: 0,
@@ -716,16 +778,21 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   }
 
   Widget _buildCurrentStageView() {
-    switch (_currentStage) {
-      case 0:
+    if (_isCelebrationStage || _currentStage >= _activeStageTypes.length) {
+      return _buildCelebrationStage();
+    }
+
+    final stageType = _activeStageTypes[_currentStage];
+    switch (stageType) {
+      case 'word_match':
+      case 'match_pairs':
         return _buildWordMatchStage();
-      case 1:
+      case 'listen_tap':
         return _buildListeningStage();
-      case 2:
+      case 'sentence_builder':
         return _buildSentenceBuilderStage();
-      case 3:
+      case 'sprechen':
         return _buildSprechenStage();
-      case 4:
       default:
         return _buildCelebrationStage();
     }
@@ -736,7 +803,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   // ══════════════════════════════════════════════════════════════════
   Widget _buildWordMatchStage() {
     return Column(
-      key: const ValueKey(0),
+      key: const ValueKey('word_match'),
       children: [
         Expanded(
           child: SingleChildScrollView(
@@ -879,7 +946,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   // ══════════════════════════════════════════════════════════════════
   Widget _buildListeningStage() {
     return Column(
-      key: const ValueKey(1),
+      key: const ValueKey('listen_tap'),
       children: [
         Expanded(
           child: SingleChildScrollView(
@@ -1066,7 +1133,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   // ══════════════════════════════════════════════════════════════════
   Widget _buildSentenceBuilderStage() {
     return Column(
-      key: const ValueKey(2),
+      key: const ValueKey('sentence_builder'),
       children: [
         Expanded(
           child: SingleChildScrollView(
@@ -1244,7 +1311,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   // ══════════════════════════════════════════════════════════════════
   Widget _buildSprechenStage() {
     return Column(
-      key: const ValueKey(3),
+      key: const ValueKey('sprechen'),
       children: [
         Expanded(
           child: SingleChildScrollView(
@@ -1532,8 +1599,12 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   // ══════════════════════════════════════════════════════════════════
   Widget _buildCelebrationStage() {
     final xp = widget.node?.xpReward ?? 15;
+    final lessonTitle = (widget.node?.title != null && widget.node!.title.isNotEmpty)
+        ? widget.node!.title
+        : 'this lesson';
 
     return Padding(
+      key: const ValueKey('celebration'),
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       child: Column(
         children: [
@@ -1557,7 +1628,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'You mastered "Basics & Greetings" with flying colors!',
+            'You mastered "$lessonTitle" with flying colors!',
             textAlign: TextAlign.center,
             style: GoogleFonts.outfit(
               fontSize: 15,
