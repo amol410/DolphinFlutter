@@ -227,6 +227,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   }
 
   Future<void> _playWordAudio(String word) async {
+    if (!mounted) return;
     if (_listenWordTimestamps.isEmpty) {
       debugPrint('⚠️ [_playWordAudio] No timestamps loaded (_listenWordTimestamps is empty)');
       return;
@@ -279,12 +280,14 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     _pendingWordDurationMs = durationMs;
 
     try {
+      if (!mounted) return;
       if (!_isAudioSourcePrepared || _preparedAudioUrl != url) {
         await _audioPlayer.setSourceUrl(url);
         _preparedAudioUrl = url;
         _isAudioSourcePrepared = true;
       }
 
+      if (!mounted) return;
       await _audioPlayer.seek(Duration(milliseconds: (startSec * 1000).round()));
       await _audioPlayer.resume();
 
