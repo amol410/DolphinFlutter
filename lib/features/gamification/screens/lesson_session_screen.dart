@@ -65,8 +65,14 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   List<String> _listenTarget = ['Guten', 'Tag,', 'ich', 'bin', 'Anna'];
   final List<String> _listenSelected = [];
   bool? _listenCorrect;
-  String _listenAudioUrl = '';
-  List<Map<String, dynamic>> _listenWordTimestamps = [];
+  String _listenAudioUrl = '/api/notes/audio/db/5';
+  List<Map<String, dynamic>> _listenWordTimestamps = [
+    {'word': 'Guten', 'start': 0.12, 'end': 0.65},
+    {'word': 'Tag', 'start': 0.70, 'end': 1.15},
+    {'word': 'ich', 'start': 1.25, 'end': 1.55},
+    {'word': 'bin', 'start': 1.60, 'end': 1.90},
+    {'word': 'Anna', 'start': 1.95, 'end': 2.45},
+  ];
   Timer? _wordAudioTimer;
 
   // ── Stage 2: Sentence Builder Data ────────────────────────────────
@@ -370,6 +376,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       if (widget.node?.audioUrl != null && widget.node!.audioUrl!.isNotEmpty) {
         _listenAudioUrl = widget.node!.audioUrl!;
       }
+      debugPrint('🎧 [_initStagesData] Fallback mode: audio: $_listenAudioUrl with ${_listenWordTimestamps.length} timestamps');
       return;
     }
 
@@ -463,8 +470,12 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     if (_listenWordTimestamps.isEmpty) {
       _listenWordTimestamps = _extractWordTimestamps(const {});
     }
-    if (_listenAudioUrl.isEmpty && widget.node?.audioUrl != null && widget.node!.audioUrl!.isNotEmpty) {
-      _listenAudioUrl = widget.node!.audioUrl!;
+    if (_listenAudioUrl.isEmpty) {
+      if (widget.node?.audioUrl != null && widget.node!.audioUrl!.isNotEmpty) {
+        _listenAudioUrl = widget.node!.audioUrl!;
+      } else {
+        _listenAudioUrl = '/api/notes/audio/db/5';
+      }
     }
     debugPrint('🎧 [_initStagesData] Loaded ${_listenWordTimestamps.length} word timestamps, audio: $_listenAudioUrl');
   }

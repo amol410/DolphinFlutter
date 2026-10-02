@@ -49,6 +49,7 @@ class GamificationRepository {
         scorePct: 100,
         xpReward: 15,
         offset: 0.0,
+        audioUrl: '/api/notes/audio/db/5',
       ),
       const PathNodeModel(
         index: 1,
