@@ -60,6 +60,8 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   final List<String> _listenSelected = [];
   bool? _listenCorrect;
   String _listenAudioUrl = '';
+  List<Map<String, dynamic>> _listenWordTimestamps = [];
+  Timer? _wordAudioTimer;
 
   // ── Stage 2: Sentence Builder Data ────────────────────────────────
   String _sentencePrompt = 'Translate: "Good morning, how are you?"';
@@ -96,6 +98,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
   @override
   void dispose() {
+    _wordAudioTimer?.cancel();
     _playerCompleteSub?.cancel();
     _playerStateSub?.cancel();
     _audioPlayer.stop();
@@ -117,6 +120,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   }
 
   Future<void> _playListenAudio() async {
+    _wordAudioTimer?.cancel();
     final rawUrl = _listenAudioUrl.isNotEmpty ? _listenAudioUrl : (widget.node?.audioUrl ?? '');
     final url = _resolveAudioUrl(rawUrl);
 
@@ -152,6 +156,55 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     }
   }
 
+  Future<void> _playWordAudio(String word) async {
+    if (_listenWordTimestamps.isEmpty) return;
+
+    final targetClean = word.replaceAll(RegExp(r'[^\w\s]'), '').trim().toLowerCase();
+    if (targetClean.isEmpty) return;
+
+    Map<String, dynamic>? match;
+    for (final entry in _listenWordTimestamps) {
+      final entryWord = (entry['word'] ?? '')
+          .toString()
+          .replaceAll(RegExp(r'[^\w\s]'), '')
+          .trim()
+          .toLowerCase();
+      if (entryWord == targetClean) {
+        match = entry;
+        break;
+      }
+    }
+
+    if (match == null) return;
+
+    final rawUrl = _listenAudioUrl.isNotEmpty ? _listenAudioUrl : (widget.node?.audioUrl ?? '');
+    final url = _resolveAudioUrl(rawUrl);
+    if (url.isEmpty) return;
+
+    final startSec = (match['start'] as num?)?.toDouble() ?? 0.0;
+    final endSec = (match['end'] as num?)?.toDouble();
+
+    try {
+      _wordAudioTimer?.cancel();
+      await _audioPlayer.stop();
+      await _audioPlayer.play(
+        UrlSource(url),
+        position: Duration(milliseconds: (startSec * 1000).toInt()),
+      );
+
+      if (endSec != null && endSec > startSec) {
+        final durationMs = ((endSec - startSec) * 1000).toInt().clamp(250, 8000);
+        _wordAudioTimer = Timer(Duration(milliseconds: durationMs), () async {
+          try {
+            await _audioPlayer.pause();
+          } catch (_) {}
+        });
+      }
+    } catch (_) {
+      // Audio playback fails silently for word segment
+    }
+  }
+
   void _initStagesData() {
     final stages = widget.node?.stages;
     if (stages == null || stages.isEmpty) {
@@ -166,7 +219,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       final stage = Map<String, dynamic>.from(rawStage);
       final type = stage['type']?.toString();
 
-      if (type == 'match_pairs' && stage['pairs'] is List) {
+      if ((type == 'match_pairs' || type == 'word_match') && stage['pairs'] is List) {
         final pairsList = stage['pairs'] as List;
         if (pairsList.isNotEmpty) {
           final newGerman = <String>[];
@@ -174,8 +227,8 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           final newPairs = <String, String>{};
           for (final p in pairsList) {
             if (p is Map) {
-              final g = p['german']?.toString().trim() ?? '';
-              final e = p['english']?.toString().trim() ?? '';
+              final g = (p['target'] ?? p['german'] ?? p['word'] ?? '').toString().trim();
+              final e = (p['native'] ?? p['english'] ?? p['translation'] ?? '').toString().trim();
               if (g.isNotEmpty && e.isNotEmpty) {
                 newGerman.add(g);
                 newEnglish.add(e);
@@ -213,6 +266,18 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           _listenAudioUrl = stageAudio;
         } else if (widget.node?.audioUrl != null && widget.node!.audioUrl!.isNotEmpty) {
           _listenAudioUrl = widget.node!.audioUrl!;
+        }
+        final rawTimestamps = stage['wordTimestamps'];
+        if (rawTimestamps is List) {
+          _listenWordTimestamps = rawTimestamps
+              .whereType<Map>()
+              .map((m) => Map<String, dynamic>.from(m))
+              .toList();
+        } else if (rawTimestamps is Map && rawTimestamps['words'] is List) {
+          _listenWordTimestamps = (rawTimestamps['words'] as List)
+              .whereType<Map>()
+              .map((m) => Map<String, dynamic>.from(m))
+              .toList();
         }
       } else if (type == 'sentence_builder') {
         final prompt = stage['prompt']?.toString().trim();
@@ -289,6 +354,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   }
 
   void _nextStage() {
+    _wordAudioTimer?.cancel();
     _audioPlayer.stop();
     setState(() {
       _isPlayingAudio = false;
@@ -604,6 +670,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                     children: _listenSelected.map((word) {
                       return GestureDetector(
                         onTap: () {
+                          _playWordAudio(word);
                           setState(() {
                             _listenSelected.remove(word);
                             _listenCorrect = null;
@@ -641,6 +708,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                       onTap: isUsed
                           ? null
                           : () {
+                              _playWordAudio(word);
                               setState(() {
                                 _listenSelected.add(word);
                                 _listenCorrect = null;
@@ -1005,7 +1073,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                         boxShadow: [
                           BoxShadow(
                             color: _isSpeaking
-                                ? const Color(0xFFEF4444).withOpacity(0.4)
+                                ? const Color(0x66EF4444)
                                 : const Color(0xFF0369A1),
                             blurRadius: _isSpeaking ? 16 : 0,
                             offset: _isSpeaking ? const Offset(0, 4) : const Offset(0, 5),
