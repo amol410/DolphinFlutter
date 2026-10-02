@@ -371,8 +371,8 @@ PUT  /api/auth/password        { currentPassword, newPassword }
   - `lib/features/gamification/screens/lesson_session_screen.dart` — Multi-stage interactive challenge runner.
   - `lib/features/gamification/data/models/gamification_models.dart` — Enhanced `PathNodeModel` to parse `audioUrl` and `stages` JSON arrays dynamically from backend.
 - **Key Audio & Stage Capabilities**:
-  - **Dual Audio Architecture & Tap-to-Pronounce**: High-fidelity audio streaming with segregated `_sentenceAudioPlayer` (sentence comprehension) and `_wordAudioPlayer` (word slice playback). In `listen_tap`, words are pronounced immediately on tap using pre-buffered audio streaming, native in-memory seek, and support for comma-separated word tracks or isolated `wordsAudioUrl` with timestamps, ensuring full consonant pronunciation without abrupt clipping.
-  - **Dynamic Stage Parser (`_initStagesData`)**: Dynamically extracts `listen_tap` target sentences, tokens, `wordsAudioUrl`, `sentenceRange`, and isolated `audioUrl`, as well as `match_pairs`, `sentence_builder`, and `sprechen` prompts from `widget.node.stages`.
+  - **Full-Sentence Audio & Pure Sequencing Word Bank**: High-fidelity sentence audio streaming using dedicated `_audioPlayer` pre-buffered on stage load. In `listen_tap`, word chips function purely as responsive tactile selection tiles without individual word sound playback, allowing learners to focus cleanly on arranging the correct sentence order based on the mascot's spoken sentence.
+  - **Dynamic Stage Parser (`_initStagesData`)**: Dynamically extracts `listen_tap` target sentences, tokens, and isolated `audioUrl`, as well as `match_pairs`, `sentence_builder`, and `sprechen` prompts from `widget.node.stages`.
   - **Tactile Speaker & Mascot**: Speaker button maintains continuous `volume_up_rounded` iconography for intuitive repeat sentence listening, while Echo the Dolphin wears headphones and reacts with listening animations during active playback.
   - **Tolerant Verification**: Punctuation-insensitive and whitespace-normalized validation for listening and sentence builder tasks.
 
