@@ -193,19 +193,13 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     }
 
     try {
-      if (_isPlayingAudio) {
-        await _audioPlayer.pause();
-        if (mounted) setState(() => _isPlayingAudio = false);
-      } else {
-        if (!_isAudioSourcePrepared || _preparedAudioUrl != url) {
-          await _audioPlayer.setSourceUrl(url);
-          _preparedAudioUrl = url;
-          _isAudioSourcePrepared = true;
-        }
-        await _audioPlayer.seek(Duration.zero);
-        await _audioPlayer.resume();
-        if (mounted) setState(() => _isPlayingAudio = true);
-      }
+      if (!mounted) return;
+      debugPrint('🔊 [_playListenAudio] Replaying full sentence audio from start: $url');
+      await _audioPlayer.stop();
+      await _audioPlayer.play(UrlSource(url));
+      _preparedAudioUrl = url;
+      _isAudioSourcePrepared = true;
+      if (mounted) setState(() => _isPlayingAudio = true);
     } catch (e) {
       if (mounted) {
         setState(() => _isPlayingAudio = false);
