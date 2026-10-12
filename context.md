@@ -19,6 +19,9 @@
 
 ## ✅ VERSION HISTORY
 
+### v1.2.6 — Real-Time German Lady Voice TTS Pronunciation (COMPLETE ✅)
+**Status:** Version bumped to `1.2.6+11`. Integrated `flutter_tts` with dedicated `TtsService` (`de-DE`, female voice selection, 0.48 speech rate, 1.10 pitch). Real-time word pronunciation enabled across Word Match, Listen & Tap bank chips, and Sentence Builder word picking.
+
 ### v1.2.5 — Dynamic Stage Filtering, Native German Recognition & Release v25.0.0 (COMPLETE ✅)
 **Status:** Version bumped to `1.2.5+10` (tag: `v1.2.5-stable`, `v25.0.0`). Dynamic stage filtering (`_activeStageTypes`), native German `de_DE` speech recognition, mounted audio guards, and full offline safety nets verified.
 
@@ -407,7 +410,26 @@ PUT  /api/auth/password        { currentPassword, newPassword }
 
 ---
 
-*Last updated: 2026-10-12 | DolphinCoder LMS v1.2.5*
+### FEAT-005 — Real-Time German Lady Voice TTS Pronunciation (`TtsService`) (COMPLETE ✅)
+**Date:** 2026-10-12  
+**Status:** Built, analyzed, and integrated into mobile client (`v1.2.6+11`).  
+- **New Service (`lib/core/services/tts_service.dart`)**:
+  - Encapsulates `flutter_tts` with automatic German female voice detection (`de-DE` locale, female/frauen keywords or pitch 1.10 fallback).
+  - Configured at `speechRate: 0.48` for crystal-clear language learning pronunciation.
+  - Implements instant `stop()` before `speak()` to guarantee zero lag or utterance overlap during rapid user tapping.
+  - Strips trailing punctuation (e.g. `dir?`, `Morgen,` -> `dir`, `Morgen`) for clean, isolated word phonetics.
+- **Stage 0 Word Match Integration (`LessonSessionScreen`)**:
+  - Whenever a learner taps a German word tile (`_onGermanMatchTap`), the lady's voice speaks the German word instantly.
+- **Stage 1 Listen & Tap Bank Integration**:
+  - Whenever a learner taps/picks a word tile from `_listenBank`, the lady's voice pronounces the word in real-time.
+- **Stage 2 Sentence Builder / Fill-in-the-Blanks Integration**:
+  - Whenever a learner picks a word tile from `_builderBank` (e.g., tapping *"Wie"*, then *"geht's"*), each chosen word is articulated immediately as it is selected into the sentence tray.
+- **Match Pairs Quiz Widget Integration (`MatchPairsWidget`)**:
+  - Whenever a learner taps a prompt card in the left column (`_onLeftTap`), TTS pronounces the term in the German voice.
+
+---
+
+*Last updated: 2026-10-12 | DolphinCoder LMS v1.2.6*
 
 
 

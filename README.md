@@ -1,7 +1,7 @@
 # DolphinCoder LMS — Mobile Application 🐬
 
 The cross-platform mobile companion for DolphinCoder LMS, built with Flutter 3, Riverpod 2, and GoRouter.
-Package version: **1.2.5+10** (Git release tag: `v25.0.0` / submodule: `v1.2.5`).
+Package version: **1.2.6+11** (Git release tag: `v25.1.0` / submodule: `v1.2.6`).
 
 ---
 
@@ -16,13 +16,14 @@ Package version: **1.2.5+10** (Git release tag: `v25.0.0` / submodule: `v1.2.5`)
 
 ### 2. Multi-Stage Interactive Lesson Session (`LessonSessionScreen`)
 - **Dynamic Active Stage Filtering**: Session dynamically queues only authored curriculum stages (`_activeStageTypes`). Disabled stages are omitted cleanly.
-- **Stage 0: Word Match (`word_match`)**: Fast pair matching tiles with instant tactile feedback and dynamic JSON parsing.
-- **Stage 1: Listen & Tap (`listen_tap`)**:
+- **Real-Time German Lady Voice TTS (`TtsService`)**: Built-in speech synthesis (`flutter_tts`) configured for native German (`de-DE`) female voice, `0.48` speech rate, and `1.10` pitch:
+  - **Stage 0: Word Match (`word_match`)**: Tapping any German word card immediately articulates it in the lady's voice.
+  - **Stage 1: Listen & Tap (`listen_tap`)**: Tapping/picking chips from `_listenBank` pronounces each chosen word in real-time.
+  - **Stage 2: Sentence Builder / Fill-in-the-Blanks (`sentence_builder`)**: Picking word chips from `_builderBank` (e.g. *"Wie"*, *"geht's"*) pronounces each word on tap as it enters the sentence tray.
+- **Stage 1 Audio Engine**:
   - Full-sentence audio streaming using `audioplayers` from `/api/notes/audio/db/:id`.
   - **Tactile Speaker Button**: Re-plays the full sentence cleanly from 0:00 on every tap with permanent `volume_up_rounded` iconography.
-  - **Pure Sequencing Word Bank**: Word chips operate as tactile sequence arrangers without sound distraction, letting learners focus on the spoken sentence.
   - Attentive animated dolphin mascot (`AnimatedDolphinMascot`) wearing headphones.
-- **Stage 2: Sentence Builder (`sentence_builder`)**: Draggable/tappable word token assembly with grammar verification.
 - **Stage 3: Sprechen Lip-Sync (`sprechen`)**:
   - One-time auto-play teacher demonstration after a 1-second delay.
   - Synchronized real-time karaoke highlighting (`karaokeData.words`) in the speech bubble.

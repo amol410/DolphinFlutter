@@ -12,6 +12,7 @@ import '../../../shared/widgets/duo_feedback_sheet.dart';
 import '../../notes/data/models/karaoke_model.dart';
 import '../data/models/gamification_models.dart';
 import '../providers/gamification_provider.dart';
+import '../../../core/services/tts_service.dart';
 
 /// Interactive Lesson Session Screen
 /// Multi-stage interactive tasks based on Basics & Greetings and backend notes.
@@ -100,6 +101,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     super.initState();
     _speech = stt.SpeechToText();
     _audioPlayer = AudioPlayer();
+    TtsService().init();
 
     _playerCompleteSub = _audioPlayer.onPlayerComplete.listen((_) {
       if (mounted) {
@@ -168,6 +170,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     try {
       _speech.stop();
     } catch (_) {}
+    TtsService().stop();
     _audioPlayer.stop();
     _audioPlayer.dispose();
     super.dispose();
@@ -412,6 +415,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
   void _onGermanMatchTap(String word) {
     if (_matchedGerman.contains(word)) return;
+    TtsService().speakGerman(word);
     setState(() {
       _selectedGerman = word;
       _evaluateMatch();
@@ -1057,6 +1061,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                       onTap: isUsed
                           ? null
                           : () {
+                              TtsService().speakGerman(word);
                               setState(() {
                                 _listenSelected.add(word);
                                 _listenCorrect = null;
@@ -1236,6 +1241,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                       onTap: isUsed
                           ? null
                           : () {
+                              TtsService().speakGerman(word);
                               setState(() {
                                 _builderSelected.add(word);
                                 _builderCorrect = null;

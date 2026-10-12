@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/services/tts_service.dart';
 import '../../data/models/quiz_model.dart';
 
 class MatchPairsWidget extends StatefulWidget {
@@ -98,6 +99,7 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
 
   void _onLeftTap(String leftText) {
     if (widget.readOnly) return;
+    TtsService().speakGerman(leftText);
     setState(() {
       if (_selectedLeft == leftText) {
         _selectedLeft = null; // deselect
@@ -177,7 +179,7 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
             color: surfaceColor,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isComplete ? AppColors.success.withOpacity(0.4) : borderColor,
+              color: isComplete ? AppColors.success.withValues(alpha: 0.4) : borderColor,
             ),
           ),
           child: Row(
@@ -261,16 +263,16 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
                               color: isSelected
-                                  ? color.withOpacity(0.18)
+                                  ? color.withValues(alpha: 0.18)
                                   : isPaired
-                                      ? color.withOpacity(0.08)
+                                      ? color.withValues(alpha: 0.08)
                                       : surfaceColor,
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
                                 color: isSelected
                                     ? color
                                     : isPaired
-                                        ? color.withOpacity(0.6)
+                                        ? color.withValues(alpha: 0.6)
                                         : borderColor,
                                 width: isSelected ? 2 : 1,
                               ),
@@ -324,7 +326,7 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: color.withOpacity(0.15),
+                                      color: color.withValues(alpha: 0.15),
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
@@ -388,11 +390,11 @@ class _MatchPairsWidgetState extends State<MatchPairsWidget> {
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
                               color: isPaired
-                                  ? color.withOpacity(0.12)
+                                  ? color.withValues(alpha: 0.12)
                                   : surfaceColor,
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: isPaired ? color.withOpacity(0.7) : borderColor,
+                                color: isPaired ? color.withValues(alpha: 0.7) : borderColor,
                                 width: isPaired ? 1.5 : 1,
                               ),
                             ),
