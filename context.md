@@ -19,6 +19,12 @@
 
 ## ✅ VERSION HISTORY
 
+### v1.2.5 — Dynamic Stage Filtering, Native German Recognition & Release v25.0.0 (COMPLETE ✅)
+**Status:** Version bumped to `1.2.5+10` (tag: `v1.2.5-stable`, `v25.0.0`). Dynamic stage filtering (`_activeStageTypes`), native German `de_DE` speech recognition, mounted audio guards, and full offline safety nets verified.
+
+### v1.2.0 — Archipelago Gamification & 5-Tab Shell (COMPLETE ✅)
+**Status:** 5-tab gamified floating shell (`/home` Learn, `/leagues` Leagues, `/quests` Quests, `/shop` Shop, `/profile` Gamified Profile), Archipelago map, and multi-stage lesson sessions.
+
 ### v1.0.0 — Full App (COMPLETE ✅)
 **Status:** All 20 screens built, tested on physical Android device via APK. Backend is live in production. App connects to production API.
 
@@ -383,7 +389,25 @@ PUT  /api/auth/password        { currentPassword, newPassword }
 
 ---
 
-*Last updated: 2026-10-02 | Conversation ID: 7a93c79c-2b85-40c4-b582-c8242f31d7d6*
+### FEAT-004 — Dynamic Active Stage Filtering, Native German Recognition & Shell v1.2.5 (COMPLETE ✅)
+**Date:** 2026-10-02  
+**Status:** Built, analyzed, and verified in production submodule. Bumped to version `1.2.5+10`.  
+- **Dynamic Active Stage Filtering (`_activeStageTypes`)**:
+  - `LessonSessionScreen` evaluates `widget.node.stages` dynamically; only stages with valid configurations (`word_match`, `listen_tap`, `sentence_builder`, `sprechen`) are queued.
+  - Prevents empty stage screens or unwanted skips when lessons author a subset of stages.
+- **Native German Speech Recognition (`de_DE`)**:
+  - Re-configured `speech_to_text` to strictly initialize with German locale (`localeId: 'de_DE'`) during Sprechen Lip-Sync pronunciation checks.
+- **Continuous Full-Sentence Mascot Replay**:
+  - Tactile speaker button always retains `volume_up_rounded` iconography and re-plays the full spoken sentence cleanly from 0:00 every time it is tapped.
+- **Audio Lifecycle & Offline Robustness**:
+  - Implemented mounted guards (`if (!mounted) return;`) across all playback methods and position streams.
+  - Guaranteed fallback dummy audio tracks and timestamps so offline learners experience zero crashes.
+- **5-Tab Gamified Shell (`bottom_nav.dart`)**:
+  - Persistent bottom navigation shell: Learn (`/home`), Leagues (`/leagues`), Quests (`/quests`), Shop (`/shop`), Profile (`/profile`).
+
+---
+
+*Last updated: 2026-10-12 | DolphinCoder LMS v1.2.5*
 
 
 
