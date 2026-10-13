@@ -208,13 +208,11 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     final url = _resolveAudioUrl(rawUrl);
 
     if (url.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No audio attached to this stage.'),
-            duration: Duration(seconds: 2),
-          ),
-        );
+      if (_listenTargetSentence.isNotEmpty) {
+        debugPrint('🔊 [_playListenAudio] No recorded audio attached, falling back to TTS: $_listenTargetSentence');
+        if (mounted) setState(() => _isPlayingAudio = true);
+        await TtsService().speakGerman(_listenTargetSentence);
+        if (mounted) setState(() => _isPlayingAudio = false);
       }
       return;
     }
@@ -227,14 +225,11 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       _preparedAudioUrl = url;
       if (mounted) setState(() => _isPlayingAudio = true);
     } catch (e) {
-      if (mounted) {
-        setState(() => _isPlayingAudio = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Audio error: $e'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
+      debugPrint('⚠️ [_playListenAudio] Audio playback error: $e, falling back to TTS');
+      if (_listenTargetSentence.isNotEmpty) {
+        if (mounted) setState(() => _isPlayingAudio = true);
+        await TtsService().speakGerman(_listenTargetSentence);
+        if (mounted) setState(() => _isPlayingAudio = false);
       }
     }
   }
@@ -396,12 +391,8 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       _sprechenAudioUrl = nodeAudio;
     }
 
-    if (_listenAudioUrl.isEmpty) {
-      if (nodeAudio != null && nodeAudio.isNotEmpty) {
-        _listenAudioUrl = nodeAudio;
-      } else {
-        _listenAudioUrl = '/api/notes/audio/db/5';
-      }
+    if (_listenAudioUrl.isEmpty && nodeAudio != null && nodeAudio.isNotEmpty) {
+      _listenAudioUrl = nodeAudio;
     }
 
     if (activeTypes.isNotEmpty) {
@@ -470,12 +461,26 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   Future<void> _playSprechenDemo() async {
     _hasPlayedSprechenDemo = true;
     final rawUrl = _sprechenAudioUrl.isNotEmpty ? _sprechenAudioUrl : '';
-    if (rawUrl.isEmpty) {
-      debugPrint('ℹ️ [_playSprechenDemo] No audio URL configured for stage 3 sprechen');
+    final url = _resolveAudioUrl(rawUrl);
+
+    if (url.isEmpty) {
+      debugPrint('ℹ️ [_playSprechenDemo] No audio URL configured for sprechen, speaking with TTS');
+      if (_sprechenPrompt.isNotEmpty) {
+        if (mounted) {
+          setState(() {
+            _isSprechenDemoPlaying = true;
+            _activeSprechenWordIndex = -1;
+          });
+        }
+        await TtsService().speakGerman(_sprechenPrompt);
+        if (mounted) {
+          setState(() {
+            _isSprechenDemoPlaying = false;
+          });
+        }
+      }
       return;
     }
-    final url = _resolveAudioUrl(rawUrl);
-    if (url.isEmpty) return;
 
     try {
       if (!mounted) return;
@@ -487,7 +492,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       });
       await _audioPlayer.play(UrlSource(url));
     } catch (e) {
-      debugPrint('⚠️ [_playSprechenDemo] Audio playback error: $e');
+      debugPrint('⚠️ [_playSprechenDemo] Audio playback error: $e, falling back to TTS');
+      if (_sprechenPrompt.isNotEmpty) {
+        await TtsService().speakGerman(_sprechenPrompt);
+      }
       if (mounted) {
         setState(() {
           _isSprechenDemoPlaying = false;
