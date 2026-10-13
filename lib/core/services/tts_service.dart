@@ -21,7 +21,8 @@ class TtsService {
       await _flutterTts.setVolume(1.0);
       // Pitch: 1.10 provides a clear, bright female timbre on standard synthesizers
       await _flutterTts.setPitch(1.10);
-      await _flutterTts.awaitSpeakCompletion(true);
+      // Non-blocking asynchronous mode for instant tactile word taps
+      await _flutterTts.awaitSpeakCompletion(false);
 
       // Attempt to find and set a native female German voice
       final dynamic rawVoices = await _flutterTts.getVoices;
@@ -78,43 +79,50 @@ class TtsService {
       if (!_isInitialized) {
         await init();
       }
-      // Silent micro-synthesis to initialize audio pipeline & load German voice into RAM
+      // Prime native German acoustic engine and AudioTrack with a real German phoneme
+      await _flutterTts.awaitSpeakCompletion(true);
       await _flutterTts.setVolume(0.0);
-      await _flutterTts.speak(" ");
-      await Future.delayed(const Duration(milliseconds: 40));
+      await _flutterTts.speak("Ja");
       await _flutterTts.setVolume(1.0);
+      await _flutterTts.awaitSpeakCompletion(false);
       debugPrint('⚡ [TtsService] Engine pre-warmed & audio pipeline hot');
     } catch (e) {
       debugPrint('⚠️ [TtsService] Warmup note: $e');
       try {
         await _flutterTts.setVolume(1.0);
+        await _flutterTts.awaitSpeakCompletion(false);
       } catch (_) {}
     }
   }
 
-  /// Asynchronously pre-synthesizes a list of vocabulary words in the background.
-  /// Primes the Android/iOS TTS internal phoneme cache before the user taps them.
+  /// Asynchronously pre-synthesizes vocabulary words in the background.
+  /// Uses synthesizeToFile to compile phonemes into cache without interrupting live audio playback.
   Future<void> precacheWords(List<String> words) async {
     if (!_isInitialized) {
       await init();
     }
+    final toPrime = <String>[];
     for (final raw in words) {
       final clean = raw.replaceAll(RegExp(r'[,.!?]+$'), '').trim();
-      if (clean.isEmpty || _cachedWords.contains(clean.toLowerCase())) continue;
-      _cachedWords.add(clean.toLowerCase());
-      try {
-        final safeName = clean.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_').toLowerCase();
-        await _flutterTts.synthesizeToFile(clean, 'tts_cache_$safeName.wav');
-      } catch (_) {
-        // Fallback: If synthesizeToFile is unavailable on specific engine,
-        // the engine was already warmed up via warmUp()
+      if (clean.isNotEmpty && !_cachedWords.contains(clean.toLowerCase())) {
+        _cachedWords.add(clean.toLowerCase());
+        toPrime.add(clean);
       }
     }
-    debugPrint('⚡ [TtsService] Pre-cached ${_cachedWords.length} vocabulary words');
+    if (toPrime.isEmpty) return;
+
+    for (final word in toPrime) {
+      try {
+        final safeName = word.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_').toLowerCase();
+        await _flutterTts.synthesizeToFile(word, 'tts_cache_$safeName.wav');
+      } catch (_) {
+        break;
+      }
+    }
+    debugPrint('⚡ [TtsService] Pre-synthesized ${toPrime.length} words to cache');
   }
 
-  /// Speak a German word or phrase in lady's voice.
-  /// Stops any currently playing utterance so rapid taps do not lag or queue up.
+  /// Speak a single German word with instant non-blocking dispatch.
   Future<void> speakGerman(String text) async {
     final cleaned = text.trim();
     if (cleaned.isEmpty) return;
@@ -123,6 +131,9 @@ class TtsService {
       if (!_isInitialized) {
         await init();
       }
+      // Ensure volume is restored in case background caching was finishing
+      await _flutterTts.setVolume(1.0);
+      await _flutterTts.awaitSpeakCompletion(false);
       await _flutterTts.stop();
 
       // Clean punctuation from isolated word taps (e.g. "dir?", "Morgen," -> "dir", "Morgen")
@@ -130,6 +141,25 @@ class TtsService {
       await _flutterTts.speak(speakable);
     } catch (e) {
       debugPrint('⚠️ [TtsService] speakGerman failed: $e');
+    }
+  }
+
+  /// Speak a full sentence and optionally await its completion
+  Future<void> speakSentence(String text) async {
+    final cleaned = text.trim();
+    if (cleaned.isEmpty) return;
+
+    try {
+      if (!_isInitialized) {
+        await init();
+      }
+      await _flutterTts.setVolume(1.0);
+      await _flutterTts.stop();
+      await _flutterTts.awaitSpeakCompletion(true);
+      await _flutterTts.speak(cleaned);
+      await _flutterTts.awaitSpeakCompletion(false);
+    } catch (e) {
+      debugPrint('⚠️ [TtsService] speakSentence failed: $e');
     }
   }
 

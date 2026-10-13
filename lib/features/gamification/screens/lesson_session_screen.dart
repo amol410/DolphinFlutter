@@ -97,6 +97,38 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   int _speechAccuracy = 0;
   Timer? _silenceTimer;
 
+  // ── Stage 4: Cloze Test (Fill in the Blank) ───────────────────────
+  String _clozeSentence = 'Ich _____ aus Indien.';
+  String _clozeTranslation = 'I come from India.';
+  String _clozeBlank = 'komme';
+  List<String> _clozeOptions = ['komme', 'kommst', 'wohne'];
+  String? _clozeSelectedOption;
+  bool? _clozeCorrect;
+
+  // ── Stage 5: Type Word (Target Typing with Umlaut Buttons) ────────
+  String _typePrompt = 'Der Kaffee ist _____.';
+  String _typeTranslation = 'The coffee is hot.';
+  String _typeTarget = 'heiß';
+  String _typeHint = 'Translate "hot" into German';
+  final TextEditingController _typeWordController = TextEditingController();
+  bool? _typeCorrect;
+
+  // ── Stage 6: Dialogue Bubble (Conversational Chat) ────────────────
+  String _dialoguePartnerName = 'Florian';
+  String _dialoguePartnerMessage = 'Hallo! Wie heißt du?';
+  String _dialoguePartnerTranslation = 'Hello! What is your name?';
+  List<Map<String, dynamic>> _dialogueOptions = [];
+  int? _dialogueSelectedIdx;
+  bool? _dialogueCorrect;
+
+  // ── Stage 7: Listen Select (Comprehension MCQ) ────────────────────
+  String _listenSelectSentence = 'Zwei Kaffee und ein Wasser, bitte.';
+  String _listenSelectQuestion = 'What is the customer ordering?';
+  String _listenSelectAudioUrl = '';
+  List<Map<String, dynamic>> _listenSelectOptions = [];
+  int? _listenSelectSelectedIdx;
+  bool? _listenSelectCorrect;
+
   @override
   void initState() {
     super.initState();
@@ -162,6 +194,18 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         });
       } else if (firstType == 'sprechen') {
         _triggerSprechenAutoPlay();
+      } else if (firstType == 'dialogue_bubble') {
+        Future.delayed(const Duration(milliseconds: 400), () {
+          if (mounted && _activeStageTypes.isNotEmpty && _activeStageTypes.first == 'dialogue_bubble') {
+            TtsService().speakSentence(_dialoguePartnerMessage);
+          }
+        });
+      } else if (firstType == 'listen_select') {
+        Future.delayed(const Duration(milliseconds: 400), () {
+          if (mounted && _activeStageTypes.isNotEmpty && _activeStageTypes.first == 'listen_select') {
+            _playListenSelectAudio();
+          }
+        });
       }
     }
   }
@@ -179,6 +223,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     } catch (_) {}
     TtsService().stop();
     _audioPlayer.stop();
+    _typeWordController.dispose();
     _audioPlayer.dispose();
     super.dispose();
   }
@@ -232,7 +277,33 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     if (_listenTargetSentence.isNotEmpty) {
       debugPrint('🔊 [_playListenAudio] Smart Hybrid TTS speaking: $_listenTargetSentence');
       if (mounted) setState(() => _isPlayingAudio = true);
-      await TtsService().speakGerman(_listenTargetSentence);
+      await TtsService().speakSentence(_listenTargetSentence);
+      if (mounted) setState(() => _isPlayingAudio = false);
+    }
+  }
+
+  Future<void> _playListenSelectAudio({double speed = 1.0}) async {
+    final rawUrl = _listenSelectAudioUrl.trim();
+    final url = _resolveAudioUrl(rawUrl);
+
+    if (url.isNotEmpty) {
+      try {
+        if (!mounted) return;
+        debugPrint('🔊 [_playListenSelectAudio] Playing studio audio: $url (speed: $speed)');
+        await _audioPlayer.stop();
+        await _audioPlayer.setPlaybackRate(speed);
+        await _audioPlayer.play(UrlSource(url));
+        if (mounted) setState(() => _isPlayingAudio = true);
+        return;
+      } catch (e) {
+        debugPrint('⚠️ [_playListenSelectAudio] Studio audio failed: $e, falling back to TTS');
+      }
+    }
+
+    if (_listenSelectSentence.isNotEmpty) {
+      debugPrint('🔊 [_playListenSelectAudio] Smart Hybrid TTS speaking: $_listenSelectSentence');
+      if (mounted) setState(() => _isPlayingAudio = true);
+      await TtsService().speakSentence(_listenSelectSentence);
       if (mounted) setState(() => _isPlayingAudio = false);
     }
   }
@@ -253,8 +324,44 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     _sprechenAudioUrl = '';
 
     if (stages == null || stages.isEmpty) {
-      _activeStageTypes = ['word_match', 'listen_tap', 'sentence_builder', 'sprechen'];
-      debugPrint('🎧 [_initStagesData] Fallback mode (all 4 stages)');
+      _activeStageTypes = [
+        'word_match',
+        'listen_tap',
+        'cloze_test',
+        'sentence_builder',
+        'type_word',
+        'dialogue_bubble',
+        'listen_select',
+        'sprechen',
+      ];
+      _clozeSentence = 'Ich _____ aus Indien.';
+      _clozeTranslation = 'I come from India.';
+      _clozeBlank = 'komme';
+      _clozeOptions = ['komme', 'kommst', 'wohne'];
+
+      _typePrompt = 'Der Kaffee ist _____.';
+      _typeTranslation = 'The coffee is hot.';
+      _typeTarget = 'heiß';
+      _typeHint = 'Translate "hot" into German';
+
+      _dialoguePartnerName = 'Florian';
+      _dialoguePartnerMessage = 'Hallo! Wie heißt du?';
+      _dialoguePartnerTranslation = 'Hello! What is your name?';
+      _dialogueOptions = [
+        {'text': 'Ich heiße Alex.', 'isCorrect': true},
+        {'text': 'Auf Wiedersehen!', 'isCorrect': false},
+        {'text': 'Nein, danke.', 'isCorrect': false},
+      ];
+
+      _listenSelectSentence = 'Zwei Kaffee und ein Wasser, bitte.';
+      _listenSelectQuestion = 'What is the customer ordering?';
+      _listenSelectOptions = [
+        {'text': 'Two coffees and one water', 'isCorrect': true},
+        {'text': 'One tea and two beers', 'isCorrect': false},
+        {'text': 'A slice of chocolate cake', 'isCorrect': false},
+      ];
+      debugPrint('🎧 [_initStagesData] Fallback mode (all 8 stages active)');
+      _precacheAllVocab();
       return;
     }
 
@@ -310,6 +417,20 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         final stageAudio = stage['audioUrl']?.toString().trim();
         _listenAudioUrl = (stageAudio != null && stageAudio.isNotEmpty) ? stageAudio : '';
         activeTypes.add('listen_tap');
+      } else if (type == 'cloze_test' || type == 'cloze') {
+        final sentence = (stage['sentence'] ?? stage['prompt'] ?? '').toString().trim();
+        if (sentence.isNotEmpty) _clozeSentence = sentence;
+        final trans = (stage['translation'] ?? '').toString().trim();
+        if (trans.isNotEmpty) _clozeTranslation = trans;
+        final blank = (stage['blank'] ?? stage['target'] ?? stage['correctAnswer'] ?? '').toString().trim();
+        if (blank.isNotEmpty) _clozeBlank = blank;
+        if (stage['options'] is List && (stage['options'] as List).isNotEmpty) {
+          _clozeOptions = (stage['options'] as List)
+              .map((o) => o.toString().trim())
+              .where((o) => o.isNotEmpty)
+              .toList();
+        }
+        activeTypes.add('cloze_test');
       } else if (type == 'sentence_builder') {
         final prompt = stage['prompt']?.toString().trim();
         if (prompt != null && prompt.isNotEmpty) {
@@ -332,6 +453,44 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
             ..shuffle();
         }
         activeTypes.add('sentence_builder');
+      } else if (type == 'type_word' || type == 'type_input') {
+        final prompt = (stage['prompt'] ?? stage['sentence'] ?? '').toString().trim();
+        if (prompt.isNotEmpty) _typePrompt = prompt;
+        final trans = (stage['translation'] ?? '').toString().trim();
+        if (trans.isNotEmpty) _typeTranslation = trans;
+        final target = (stage['target'] ?? stage['word'] ?? stage['correctAnswer'] ?? '').toString().trim();
+        if (target.isNotEmpty) _typeTarget = target;
+        final hint = (stage['hint'] ?? '').toString().trim();
+        if (hint.isNotEmpty) _typeHint = hint;
+        activeTypes.add('type_word');
+      } else if (type == 'dialogue_bubble' || type == 'dialogue') {
+        final name = (stage['partnerName'] ?? stage['speaker'] ?? 'Florian').toString().trim();
+        if (name.isNotEmpty) _dialoguePartnerName = name;
+        final msg = (stage['partnerMessage'] ?? stage['message'] ?? stage['prompt'] ?? '').toString().trim();
+        if (msg.isNotEmpty) _dialoguePartnerMessage = msg;
+        final trans = (stage['translation'] ?? '').toString().trim();
+        if (trans.isNotEmpty) _dialoguePartnerTranslation = trans;
+        if (stage['options'] is List && (stage['options'] as List).isNotEmpty) {
+          _dialogueOptions = (stage['options'] as List).map((o) {
+            if (o is Map) return Map<String, dynamic>.from(o);
+            return {'text': o.toString().trim(), 'isCorrect': true};
+          }).toList();
+        }
+        activeTypes.add('dialogue_bubble');
+      } else if (type == 'listen_select' || type == 'listen_comprehension') {
+        final sentence = (stage['sentence'] ?? stage['targetSentence'] ?? '').toString().trim();
+        if (sentence.isNotEmpty) _listenSelectSentence = sentence;
+        final question = (stage['question'] ?? stage['prompt'] ?? '').toString().trim();
+        if (question.isNotEmpty) _listenSelectQuestion = question;
+        final audio = stage['audioUrl']?.toString().trim();
+        _listenSelectAudioUrl = (audio != null && audio.isNotEmpty) ? audio : '';
+        if (stage['options'] is List && (stage['options'] as List).isNotEmpty) {
+          _listenSelectOptions = (stage['options'] as List).map((o) {
+            if (o is Map) return Map<String, dynamic>.from(o);
+            return {'text': o.toString().trim(), 'isCorrect': true};
+          }).toList();
+        }
+        activeTypes.add('listen_select');
       } else if (type == 'sprechen') {
         final prompt = stage['prompt']?.toString().trim();
         if (prompt != null && prompt.isNotEmpty) {
@@ -386,11 +545,23 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     if (activeTypes.isNotEmpty) {
       _activeStageTypes = activeTypes;
     } else {
-      _activeStageTypes = ['word_match', 'listen_tap', 'sentence_builder', 'sprechen'];
+      _activeStageTypes = [
+        'word_match',
+        'listen_tap',
+        'cloze_test',
+        'sentence_builder',
+        'type_word',
+        'dialogue_bubble',
+        'listen_select',
+        'sprechen',
+      ];
     }
 
     debugPrint('🎯 [_initStagesData] Active stage sequence: $_activeStageTypes (total: ${_activeStageTypes.length})');
+    _precacheAllVocab();
+  }
 
+  void _precacheAllVocab() {
     // Pre-cache all lesson vocabulary words in the background for zero-latency instant taps
     final allVocab = <String>{};
     allVocab.addAll(_germanWords);
@@ -398,6 +569,14 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     allVocab.addAll(_listenBank);
     allVocab.addAll(_builderTarget);
     allVocab.addAll(_builderBank);
+    allVocab.addAll(_clozeOptions);
+    if (_clozeBlank.isNotEmpty) allVocab.add(_clozeBlank);
+    if (_typeTarget.isNotEmpty) allVocab.add(_typeTarget);
+    for (final opt in _dialogueOptions) {
+      if (opt['text'] != null) {
+        allVocab.addAll(opt['text'].toString().split(RegExp(r'\s+')));
+      }
+    }
     for (final w in _sprechenKaraokeWords) {
       allVocab.add(w.word);
     }
@@ -445,6 +624,96 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         });
       }
     }
+  }
+
+  // ── Stage: Cloze Test Handlers ────────────────────────────────────
+  void _onClozeOptionTap(String option) {
+    TtsService().speakGerman(option);
+    setState(() {
+      _clozeSelectedOption = option;
+      _clozeCorrect = null;
+    });
+  }
+
+  void _evaluateCloze() {
+    if (_clozeSelectedOption == null) return;
+    final isCorrect = _clozeSelectedOption!.trim().toLowerCase() == _clozeBlank.trim().toLowerCase();
+    setState(() {
+      _clozeCorrect = isCorrect;
+    });
+  }
+
+  // ── Stage: Type Word Handlers ─────────────────────────────────────
+  void _addUmlautToInput(String char) {
+    final text = _typeWordController.text;
+    final selection = _typeWordController.selection;
+    final newText = (selection.start >= 0 && selection.end >= 0)
+        ? text.replaceRange(selection.start, selection.end, char)
+        : text + char;
+    final newCursorPos = (selection.start >= 0) ? selection.start + char.length : newText.length;
+    _typeWordController.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newCursorPos),
+    );
+    setState(() => _typeCorrect = null);
+  }
+
+  void _evaluateTypeWord() {
+    final typed = _typeWordController.text.trim().toLowerCase();
+    if (typed.isEmpty) return;
+    final target = _typeTarget.trim().toLowerCase();
+
+    // Support standard digraph equivalents (ä -> ae, ö -> oe, ü -> ue, ß -> ss)
+    final normTyped = typed.replaceAll('ä', 'ae').replaceAll('ö', 'oe').replaceAll('ü', 'ue').replaceAll('ß', 'ss');
+    final normTarget = target.replaceAll('ä', 'ae').replaceAll('ö', 'oe').replaceAll('ü', 'ue').replaceAll('ß', 'ss');
+
+    final isCorrect = (typed == target) || (normTyped == normTarget);
+    if (isCorrect) {
+      TtsService().speakGerman(_typeTarget);
+    }
+    setState(() {
+      _typeCorrect = isCorrect;
+    });
+  }
+
+  // ── Stage: Dialogue Bubble Handlers ───────────────────────────────
+  void _onDialogueOptionTap(int index) {
+    if (index >= _dialogueOptions.length) return;
+    final opt = _dialogueOptions[index];
+    final text = (opt['text'] ?? '').toString();
+    if (text.isNotEmpty) {
+      TtsService().speakSentence(text);
+    }
+    setState(() {
+      _dialogueSelectedIdx = index;
+      _dialogueCorrect = null;
+    });
+  }
+
+  void _evaluateDialogue() {
+    if (_dialogueSelectedIdx == null || _dialogueSelectedIdx! >= _dialogueOptions.length) return;
+    final opt = _dialogueOptions[_dialogueSelectedIdx!];
+    final isCorrect = (opt['isCorrect'] != null) ? (opt['isCorrect'] == true) : (_dialogueSelectedIdx == 0);
+    setState(() {
+      _dialogueCorrect = isCorrect;
+    });
+  }
+
+  // ── Stage: Listen Select Handlers ─────────────────────────────────
+  void _onListenSelectOptionTap(int index) {
+    setState(() {
+      _listenSelectSelectedIdx = index;
+      _listenSelectCorrect = null;
+    });
+  }
+
+  void _evaluateListenSelect() {
+    if (_listenSelectSelectedIdx == null || _listenSelectSelectedIdx! >= _listenSelectOptions.length) return;
+    final opt = _listenSelectOptions[_listenSelectSelectedIdx!];
+    final isCorrect = (opt['isCorrect'] != null) ? (opt['isCorrect'] == true) : (_listenSelectSelectedIdx == 0);
+    setState(() {
+      _listenSelectCorrect = isCorrect;
+    });
   }
 
   void _triggerSprechenAutoPlay() {
@@ -516,7 +785,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         }
       });
 
-      await TtsService().speakGerman(_sprechenPrompt);
+      await TtsService().speakSentence(_sprechenPrompt);
     }
   }
 
@@ -738,6 +1007,18 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         });
       } else if (nextType == 'sprechen') {
         _triggerSprechenAutoPlay();
+      } else if (nextType == 'dialogue_bubble') {
+        Future.delayed(const Duration(milliseconds: 350), () {
+          if (mounted && _currentStage < _activeStageTypes.length && _activeStageTypes[_currentStage] == 'dialogue_bubble') {
+            TtsService().speakSentence(_dialoguePartnerMessage);
+          }
+        });
+      } else if (nextType == 'listen_select') {
+        Future.delayed(const Duration(milliseconds: 350), () {
+          if (mounted && _currentStage < _activeStageTypes.length && _activeStageTypes[_currentStage] == 'listen_select') {
+            _playListenSelectAudio();
+          }
+        });
       }
     }
   }
@@ -826,8 +1107,20 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         return _buildWordMatchStage();
       case 'listen_tap':
         return _buildListeningStage();
+      case 'cloze_test':
+      case 'cloze':
+        return _buildClozeStage();
       case 'sentence_builder':
         return _buildSentenceBuilderStage();
+      case 'type_word':
+      case 'type_input':
+        return _buildTypeWordStage();
+      case 'dialogue_bubble':
+      case 'dialogue':
+        return _buildDialogueBubbleStage();
+      case 'listen_select':
+      case 'listen_comprehension':
+        return _buildListenSelectStage();
       case 'sprechen':
         return _buildSprechenStage();
       default:
@@ -1167,6 +1460,243 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   }
 
   // ══════════════════════════════════════════════════════════════════
+  // STAGE: Cloze Test (Fill in the Blank)
+  // ══════════════════════════════════════════════════════════════════
+  Widget _buildClozeStage() {
+    final parts = _clozeSentence.split(RegExp(r'_+'));
+    final before = parts.isNotEmpty ? parts[0] : '';
+    final after = parts.length > 1 ? parts.sublist(1).join('') : '';
+
+    return Column(
+      key: const ValueKey('cloze_test'),
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Fill in the blank',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF1E293B),
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Tap the correct German word to complete the sentence.',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Sentence Card with underlined blank
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0xFFE2E8F0),
+                        blurRadius: 0,
+                        offset: Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.volume_up_rounded, color: Color(0xFF0284C7), size: 28),
+                            onPressed: () {
+                              final fullSentence = _clozeSelectedOption != null
+                                  ? _clozeSentence.replaceAll(RegExp(r'_+'), _clozeSelectedOption!)
+                                  : _clozeSentence.replaceAll(RegExp(r'_+'), _clozeBlank);
+                              TtsService().speakSentence(fullSentence);
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 6,
+                              runSpacing: 8,
+                              children: [
+                                if (before.trim().isNotEmpty)
+                                  Text(
+                                    before.trim(),
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w800,
+                                      color: const Color(0xFF1E293B),
+                                    ),
+                                  ),
+                                // Blank pill
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: _clozeSelectedOption != null
+                                        ? (_clozeCorrect == true
+                                            ? const Color(0xFFDCFCE7)
+                                            : (_clozeCorrect == false
+                                                ? const Color(0xFFFEE2E2)
+                                                : const Color(0xFFE0F2FE)))
+                                        : const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: _clozeSelectedOption != null
+                                          ? (_clozeCorrect == true
+                                              ? const Color(0xFF10B981)
+                                              : (_clozeCorrect == false
+                                                  ? const Color(0xFFEF4444)
+                                                  : const Color(0xFF0284C7)))
+                                          : const Color(0xFF94A3B8),
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    _clozeSelectedOption ?? '_______',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w900,
+                                      color: _clozeSelectedOption != null
+                                          ? (_clozeCorrect == true
+                                              ? const Color(0xFF15803D)
+                                              : (_clozeCorrect == false
+                                                  ? const Color(0xFFDC2626)
+                                                  : const Color(0xFF0284C7)))
+                                          : const Color(0xFF94A3B8),
+                                    ),
+                                  ),
+                                ),
+                                if (after.trim().isNotEmpty)
+                                  Text(
+                                    after.trim(),
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w800,
+                                      color: const Color(0xFF1E293B),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_clozeTranslation.isNotEmpty) ...[
+                        const SizedBox(height: 14),
+                        const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                        const SizedBox(height: 10),
+                        Text(
+                          _clozeTranslation,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF64748B),
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 32),
+
+                Text(
+                  'CHOOSE THE CORRECT WORD:',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF94A3B8),
+                    letterSpacing: 1.0,
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Option chips
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: _clozeOptions.map((opt) {
+                    final isSelected = _clozeSelectedOption == opt;
+                    return GestureDetector(
+                      onTap: () => _onClozeOptionTap(opt),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: isSelected ? const Color(0xFFE0F2FE) : Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: isSelected ? const Color(0xFF0284C7) : const Color(0xFFE2E8F0),
+                            width: isSelected ? 2.0 : 1.5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: isSelected ? const Color(0xFFBAE6FD) : const Color(0xFFE2E8F0),
+                              blurRadius: 0,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.volume_up_outlined, size: 18, color: Color(0xFF0284C7)),
+                            const SizedBox(width: 8),
+                            Text(
+                              opt,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: isSelected ? const Color(0xFF0369A1) : const Color(0xFF1E293B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // Bottom Action Bar
+        if (_clozeCorrect == null)
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: TactileGameButton(
+              text: 'CHECK ANSWER',
+              variant: GameButtonVariant.success,
+              height: 52,
+              onPressed: _clozeSelectedOption == null ? null : _evaluateCloze,
+            ),
+          )
+        else
+          DuoFeedbackSheet(
+            isSuccess: _clozeCorrect == true,
+            title: _clozeCorrect == true ? 'Hervorragend! Correct word!' : 'Not quite right!',
+            subtitle: 'Complete: "${_clozeSentence.replaceAll(RegExp(r'_+'), _clozeBlank)}"',
+            buttonText: 'CONTINUE →',
+            onContinue: _nextStage,
+          ),
+      ],
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════
   // STAGE 2: Sentence Builder
   // ══════════════════════════════════════════════════════════════════
   Widget _buildSentenceBuilderStage() {
@@ -1339,6 +1869,738 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
             title: _builderCorrect == true ? 'Hervorragend! Outstanding!' : 'Check punctuation and order',
             subtitle: 'German: "${_builderTargetSentence.isNotEmpty ? _builderTargetSentence : _builderTarget.join(' ')}"',
             buttonText: 'NEXT TASK →',
+            onContinue: _nextStage,
+          ),
+      ],
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // STAGE: Type Word (German Spelling with Quick Umlaut Buttons)
+  // ══════════════════════════════════════════════════════════════════
+  Widget _buildTypeWordStage() {
+    return Column(
+      key: const ValueKey('type_word'),
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Type the German word',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF1E293B),
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _typeHint.isNotEmpty ? _typeHint : 'Translate and spell the missing word correctly.',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Prompt Card
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0xFFE2E8F0),
+                        blurRadius: 0,
+                        offset: Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.volume_up_rounded, color: Color(0xFF0284C7), size: 26),
+                            onPressed: () {
+                              final textToSpeak = _typePrompt.replaceAll(RegExp(r'_+'), _typeTarget);
+                              TtsService().speakSentence(textToSpeak);
+                            },
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              _typePrompt,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF1E293B),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_typeTranslation.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          _typeTranslation,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF64748B),
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Text Input Field
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: _typeCorrect == true
+                          ? const Color(0xFF10B981)
+                          : (_typeCorrect == false ? const Color(0xFFEF4444) : const Color(0xFF0284C7)),
+                      width: 2.0,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0xFFE2E8F0),
+                        blurRadius: 0,
+                        offset: Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _typeWordController,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF1E293B),
+                          ),
+                          decoration: InputDecoration(
+                            hintText: 'Type German word here...',
+                            hintStyle: GoogleFonts.plusJakartaSans(
+                              fontSize: 16,
+                              color: const Color(0xFF94A3B8),
+                            ),
+                            border: InputBorder.none,
+                          ),
+                          onChanged: (_) {
+                            if (_typeCorrect != null) {
+                              setState(() => _typeCorrect = null);
+                            }
+                          },
+                          onSubmitted: (_) => _evaluateTypeWord(),
+                        ),
+                      ),
+                      if (_typeWordController.text.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(Icons.clear_rounded, color: Color(0xFF94A3B8), size: 20),
+                          onPressed: () {
+                            _typeWordController.clear();
+                            setState(() => _typeCorrect = null);
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+
+                // German Umlauts Quick-Tap Bar
+                Text(
+                  'QUICK GERMAN UMLAUTS:',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF94A3B8),
+                    letterSpacing: 1.0,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: ['ä', 'ö', 'ü', 'ß', 'Ä', 'Ö', 'Ü'].map((umlaut) {
+                    return Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: GestureDetector(
+                          onTap: () => _addUmlautToInput(umlaut),
+                          child: Container(
+                            height: 44,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFCBD5E1), width: 1.5),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0xFFE2E8F0),
+                                  blurRadius: 0,
+                                  offset: Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Text(
+                              umlaut,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                                color: const Color(0xFF0F172A),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // Bottom Action Bar
+        if (_typeCorrect == null)
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: TactileGameButton(
+              text: 'CHECK SPELLING',
+              variant: GameButtonVariant.success,
+              height: 52,
+              onPressed: _typeWordController.text.trim().isEmpty ? null : _evaluateTypeWord,
+            ),
+          )
+        else
+          DuoFeedbackSheet(
+            isSuccess: _typeCorrect == true,
+            title: _typeCorrect == true ? 'Ausgezeichnet! Perfect German spelling!' : 'Check the spelling!',
+            subtitle: 'Target word: "$_typeTarget"',
+            buttonText: 'CONTINUE →',
+            onContinue: _nextStage,
+          ),
+      ],
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // STAGE: Dialogue Bubble (Conversational Chat Messenger)
+  // ══════════════════════════════════════════════════════════════════
+  Widget _buildDialogueBubbleStage() {
+    return Column(
+      key: const ValueKey('dialogue_bubble'),
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Conversation with $_dialoguePartnerName',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF1E293B),
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Choose the most natural reply to continue the conversation.',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Chat Messages Container
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    children: [
+                      // Partner Bubble (Left)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          CircleAvatar(
+                            radius: 20,
+                            backgroundColor: const Color(0xFF0284C7),
+                            child: Text(
+                              _dialoguePartnerName.isNotEmpty ? _dialoguePartnerName[0] : 'F',
+                              style: GoogleFonts.plusJakartaSans(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _dialoguePartnerName,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    color: const Color(0xFF64748B),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                  decoration: const BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.only(
+                                      topRight: Radius.circular(16),
+                                      bottomLeft: Radius.circular(16),
+                                      bottomRight: Radius.circular(16),
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Color(0xFFE2E8F0),
+                                        blurRadius: 0,
+                                        offset: Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      IconButton(
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                        icon: const Icon(Icons.volume_up_rounded, color: Color(0xFF0284C7), size: 24),
+                                        onPressed: () => TtsService().speakSentence(_dialoguePartnerMessage),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          _dialoguePartnerMessage,
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w800,
+                                            color: const Color(0xFF1E293B),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (_dialoguePartnerTranslation.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 4),
+                                    child: Text(
+                                      _dialoguePartnerTranslation,
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 12,
+                                        color: const Color(0xFF64748B),
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // User Reply Bubble (Right)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              decoration: BoxDecoration(
+                                gradient: _dialogueSelectedIdx != null
+                                    ? const LinearGradient(
+                                        colors: [Color(0xFF0284C7), Color(0xFF0369A1)],
+                                      )
+                                    : null,
+                                color: _dialogueSelectedIdx == null ? Colors.white : null,
+                                borderRadius: const BorderRadius.only(
+                                  topLeft: Radius.circular(16),
+                                  bottomLeft: Radius.circular(16),
+                                  bottomRight: Radius.circular(16),
+                                ),
+                                border: _dialogueSelectedIdx == null
+                                    ? Border.all(color: const Color(0xFFCBD5E1), style: BorderStyle.solid)
+                                    : null,
+                              ),
+                              child: Text(
+                                _dialogueSelectedIdx != null
+                                    ? (_dialogueOptions[_dialogueSelectedIdx!]['text'] ?? '')
+                                    : 'Tap your reply below...',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: _dialogueSelectedIdx != null ? Colors.white : const Color(0xFF94A3B8),
+                                  fontStyle: _dialogueSelectedIdx == null ? FontStyle.italic : FontStyle.normal,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const CircleAvatar(
+                            radius: 16,
+                            backgroundColor: Color(0xFF10B981),
+                            child: Icon(Icons.person, color: Colors.white, size: 18),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                Text(
+                  'CHOOSE YOUR REPLY:',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF94A3B8),
+                    letterSpacing: 1.0,
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Reply Option Cards
+                ..._dialogueOptions.asMap().entries.map((entry) {
+                  final idx = entry.key;
+                  final opt = entry.value;
+                  final text = (opt['text'] ?? '').toString();
+                  final isSelected = _dialogueSelectedIdx == idx;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: GestureDetector(
+                      onTap: () => _onDialogueOptionTap(idx),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: isSelected ? const Color(0xFFE0F2FE) : Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: isSelected ? const Color(0xFF0284C7) : const Color(0xFFE2E8F0),
+                            width: isSelected ? 2.0 : 1.5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: isSelected ? const Color(0xFFBAE6FD) : const Color(0xFFE2E8F0),
+                              blurRadius: 0,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 28,
+                              height: 28,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: isSelected ? const Color(0xFF0284C7) : const Color(0xFFF1F5F9),
+                              ),
+                              child: Text(
+                                '${idx + 1}',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 13,
+                                  color: isSelected ? Colors.white : const Color(0xFF64748B),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                text,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: isSelected ? const Color(0xFF0369A1) : const Color(0xFF1E293B),
+                                ),
+                              ),
+                            ),
+                            const Icon(Icons.volume_up_outlined, size: 20, color: Color(0xFF0284C7)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
+
+        // Bottom Action Bar
+        if (_dialogueCorrect == null)
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: TactileGameButton(
+              text: 'SEND REPLY',
+              variant: GameButtonVariant.success,
+              height: 52,
+              onPressed: _dialogueSelectedIdx == null ? null : _evaluateDialogue,
+            ),
+          )
+        else
+          DuoFeedbackSheet(
+            isSuccess: _dialogueCorrect == true,
+            title: _dialogueCorrect == true ? 'Perfekt! Great conversational choice!' : 'Try a different reply!',
+            subtitle: 'You continued the conversation with $_dialoguePartnerName!',
+            buttonText: 'CONTINUE →',
+            onContinue: _nextStage,
+          ),
+      ],
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // STAGE: Listen Select (Comprehension MCQ)
+  // ══════════════════════════════════════════════════════════════════
+  Widget _buildListenSelectStage() {
+    return Column(
+      key: const ValueKey('listen_select'),
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Listen & Comprehend',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF1E293B),
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _listenSelectQuestion.isNotEmpty
+                      ? _listenSelectQuestion
+                      : 'Listen carefully to the audio and select the right option.',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Audio Mascot Player Card
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0xFFE2E8F0),
+                        blurRadius: 0,
+                        offset: Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // Normal Speed Play Button
+                          GestureDetector(
+                            onTap: () => _playListenSelectAudio(speed: 1.0),
+                            child: Container(
+                              width: 72,
+                              height: 72,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Color(0xFF0284C7),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Color(0xFF0369A1),
+                                    blurRadius: 0,
+                                    offset: Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(Icons.volume_up_rounded, color: Colors.white, size: 38),
+                            ),
+                          ),
+                          const SizedBox(width: 20),
+                          // Slow (Turtle) Play Button
+                          GestureDetector(
+                            onTap: () => _playListenSelectAudio(speed: 0.75),
+                            child: Container(
+                              width: 52,
+                              height: 52,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: const Color(0xFFF1F5F9),
+                                border: Border.all(color: const Color(0xFFCBD5E1), width: 1.5),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0xFFCBD5E1),
+                                    blurRadius: 0,
+                                    offset: Offset(0, 3),
+                                  ),
+                                ],
+                              ),
+                              child: const Center(
+                                child: Text('🐢', style: TextStyle(fontSize: 24)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        'Tap speaker to listen',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF94A3B8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 28),
+
+                Text(
+                  'SELECT THE MATCHING MEANING:',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF94A3B8),
+                    letterSpacing: 1.0,
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Option Cards
+                ..._listenSelectOptions.asMap().entries.map((entry) {
+                  final idx = entry.key;
+                  final opt = entry.value;
+                  final text = (opt['text'] ?? '').toString();
+                  final isSelected = _listenSelectSelectedIdx == idx;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: GestureDetector(
+                      onTap: () => _onListenSelectOptionTap(idx),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                        decoration: BoxDecoration(
+                          color: isSelected ? const Color(0xFFE0F2FE) : Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: isSelected ? const Color(0xFF0284C7) : const Color(0xFFE2E8F0),
+                            width: isSelected ? 2.0 : 1.5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: isSelected ? const Color(0xFFBAE6FD) : const Color(0xFFE2E8F0),
+                              blurRadius: 0,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 24,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: isSelected ? const Color(0xFF0284C7) : const Color(0xFFCBD5E1),
+                                  width: 2,
+                                ),
+                                color: isSelected ? const Color(0xFF0284C7) : Colors.transparent,
+                              ),
+                              child: isSelected
+                                  ? const Icon(Icons.check, size: 14, color: Colors.white)
+                                  : null,
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Text(
+                                text,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: isSelected ? const Color(0xFF0369A1) : const Color(0xFF1E293B),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
+
+        // Bottom Action Bar
+        if (_listenSelectCorrect == null)
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: TactileGameButton(
+              text: 'CHECK ANSWER',
+              variant: GameButtonVariant.success,
+              height: 52,
+              onPressed: _listenSelectSelectedIdx == null ? null : _evaluateListenSelect,
+            ),
+          )
+        else
+          DuoFeedbackSheet(
+            isSuccess: _listenSelectCorrect == true,
+            title: _listenSelectCorrect == true ? 'Hervorragend! Correct comprehension!' : 'Almost there!',
+            subtitle: 'Sentence heard: "$_listenSelectSentence"',
+            buttonText: 'CONTINUE →',
             onContinue: _nextStage,
           ),
       ],
