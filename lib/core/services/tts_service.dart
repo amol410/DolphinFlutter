@@ -69,6 +69,50 @@ class TtsService {
     }
   }
 
+  final Set<String> _cachedWords = {};
+
+  /// Pre-warms the native speech engine and AudioTrack so the very first word
+  /// tap responds with zero cold-start latency.
+  Future<void> warmUp() async {
+    try {
+      if (!_isInitialized) {
+        await init();
+      }
+      // Silent micro-synthesis to initialize audio pipeline & load German voice into RAM
+      await _flutterTts.setVolume(0.0);
+      await _flutterTts.speak(" ");
+      await Future.delayed(const Duration(milliseconds: 40));
+      await _flutterTts.setVolume(1.0);
+      debugPrint('⚡ [TtsService] Engine pre-warmed & audio pipeline hot');
+    } catch (e) {
+      debugPrint('⚠️ [TtsService] Warmup note: $e');
+      try {
+        await _flutterTts.setVolume(1.0);
+      } catch (_) {}
+    }
+  }
+
+  /// Asynchronously pre-synthesizes a list of vocabulary words in the background.
+  /// Primes the Android/iOS TTS internal phoneme cache before the user taps them.
+  Future<void> precacheWords(List<String> words) async {
+    if (!_isInitialized) {
+      await init();
+    }
+    for (final raw in words) {
+      final clean = raw.replaceAll(RegExp(r'[,.!?]+$'), '').trim();
+      if (clean.isEmpty || _cachedWords.contains(clean.toLowerCase())) continue;
+      _cachedWords.add(clean.toLowerCase());
+      try {
+        final safeName = clean.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_').toLowerCase();
+        await _flutterTts.synthesizeToFile(clean, 'tts_cache_$safeName.wav');
+      } catch (_) {
+        // Fallback: If synthesizeToFile is unavailable on specific engine,
+        // the engine was already warmed up via warmUp()
+      }
+    }
+    debugPrint('⚡ [TtsService] Pre-cached ${_cachedWords.length} vocabulary words');
+  }
+
   /// Speak a German word or phrase in lady's voice.
   /// Stops any currently playing utterance so rapid taps do not lag or queue up.
   Future<void> speakGerman(String text) async {

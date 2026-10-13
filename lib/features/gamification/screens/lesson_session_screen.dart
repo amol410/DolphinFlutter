@@ -102,7 +102,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     super.initState();
     _speech = stt.SpeechToText();
     _audioPlayer = AudioPlayer();
-    TtsService().init();
+    TtsService().warmUp();
 
     _playerCompleteSub = _audioPlayer.onPlayerComplete.listen((_) {
       if (mounted) {
@@ -390,6 +390,20 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     }
 
     debugPrint('🎯 [_initStagesData] Active stage sequence: $_activeStageTypes (total: ${_activeStageTypes.length})');
+
+    // Pre-cache all lesson vocabulary words in the background for zero-latency instant taps
+    final allVocab = <String>{};
+    allVocab.addAll(_germanWords);
+    allVocab.addAll(_listenTarget);
+    allVocab.addAll(_listenBank);
+    allVocab.addAll(_builderTarget);
+    allVocab.addAll(_builderBank);
+    for (final w in _sprechenKaraokeWords) {
+      allVocab.add(w.word);
+    }
+    if (allVocab.isNotEmpty) {
+      TtsService().precacheWords(allVocab.toList());
+    }
   }
 
   void _onGermanMatchTap(String word) {
@@ -712,6 +726,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       _activeSprechenWordIndex = -1;
       _currentStage++;
     });
+    TtsService().warmUp();
     if (_currentStage < _activeStageTypes.length) {
       final nextType = _activeStageTypes[_currentStage];
       if (nextType == 'listen_tap') {
