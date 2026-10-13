@@ -51,6 +51,13 @@ class PathNodeModel {
   final double offset;
   final String? audioUrl;
   final List<dynamic>? stages;
+  final int unitNumber;
+  final String unitTitle;
+  final String unitDescription;
+  final int sectionNumber;
+  final String sectionTitle;
+  final int sectionUnitNumber;
+  final String colorHex;
 
   const PathNodeModel({
     required this.index,
@@ -67,9 +74,26 @@ class PathNodeModel {
     this.offset = 0.0,
     this.audioUrl,
     this.stages,
+    this.unitNumber = 1,
+    this.unitTitle = 'Erste Schritte',
+    this.unitDescription = 'Basic Greetings & Introductions',
+    this.sectionNumber = 1,
+    this.sectionTitle = 'Rookie',
+    this.sectionUnitNumber = 1,
+    this.colorHex = '#1CB0F6',
   });
 
   factory PathNodeModel.fromJson(Map<String, dynamic> json) {
+    final uNum = json['unitNumber'] is num ? (json['unitNumber'] as num).toInt() : 1;
+    final secNum = json['sectionNumber'] is num
+        ? (json['sectionNumber'] as num).toInt()
+        : (uNum <= 35 ? 1 : (uNum <= 70 ? 2 : 3));
+    final secUnit = json['sectionUnitNumber'] is num
+        ? (json['sectionUnitNumber'] as num).toInt()
+        : (secNum == 1 ? uNum : (secNum == 2 ? uNum - 35 : uNum - 70));
+    final secTitle = json['sectionTitle']?.toString() ??
+        (secNum == 1 ? 'Rookie' : (secNum == 2 ? 'Explorer' : 'Traveler'));
+
     return PathNodeModel(
       index: json['index'] ?? 0,
       title: json['title'] ?? '',
@@ -85,6 +109,13 @@ class PathNodeModel {
       offset: (json['offset'] as num?)?.toDouble() ?? 0.0,
       audioUrl: json['audioUrl']?.toString(),
       stages: json['stages'] as List<dynamic>?,
+      unitNumber: uNum,
+      unitTitle: json['unitTitle']?.toString() ?? 'Erste Schritte',
+      unitDescription: json['unitDescription']?.toString() ?? '',
+      sectionNumber: secNum,
+      sectionTitle: secTitle,
+      sectionUnitNumber: secUnit,
+      colorHex: json['colorHex']?.toString() ?? '#1CB0F6',
     );
   }
 }

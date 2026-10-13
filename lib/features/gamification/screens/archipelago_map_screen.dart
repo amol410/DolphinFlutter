@@ -7,16 +7,99 @@ import '../../../shared/widgets/animated_dolphin_mascot.dart';
 import '../providers/gamification_provider.dart';
 import '../data/models/gamification_models.dart';
 
-class ArchipelagoMapScreen extends ConsumerWidget {
+class ArchipelagoMapScreen extends ConsumerStatefulWidget {
   const ArchipelagoMapScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ArchipelagoMapScreen> createState() => _ArchipelagoMapScreenState();
+}
+
+class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
+  final ScrollController _scrollController = ScrollController();
+
+  int _visibleUnitNumber = 1;
+  String _visibleUnitTitle = 'Erste Begrüßungen';
+  String _visibleUnitDescription = 'Greet and introduce yourself';
+  int _visibleSectionNumber = 1;
+  String _visibleSectionTitle = 'Rookie';
+  int _visibleSectionUnitNumber = 1;
+  Color _visibleUnitColor = const Color(0xFF1CB0F6);
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    final pathAsync = ref.read(pathNodesProvider);
+    pathAsync.whenData((nodes) {
+      if (nodes.isEmpty) return;
+
+      // Approximate item height: ~130 pixels per node
+      final offset = _scrollController.offset.clamp(0.0, double.infinity);
+      final estimatedIndex = (offset / 130.0).floor().clamp(0, nodes.length - 1);
+      final currentNode = nodes[estimatedIndex];
+
+      if (currentNode.unitNumber != _visibleUnitNumber) {
+        setState(() {
+          _visibleUnitNumber = currentNode.unitNumber;
+          _visibleUnitTitle = currentNode.unitTitle;
+          _visibleUnitDescription = currentNode.unitDescription;
+          _visibleSectionNumber = currentNode.sectionNumber;
+          _visibleSectionTitle = currentNode.sectionTitle;
+          _visibleSectionUnitNumber = currentNode.sectionUnitNumber;
+          _visibleUnitColor = _parseColor(currentNode.colorHex);
+        });
+      }
+    });
+  }
+
+  Color _parseColor(String hex) {
+    try {
+      final clean = hex.replaceFirst('#', '');
+      return Color(int.parse('FF$clean', radix: 16));
+    } catch (_) {
+      return const Color(0xFF1CB0F6);
+    }
+  }
+
+  void _scrollToActiveNode(List<PathNodeModel> nodes) {
+    int activeIndex = nodes.indexWhere((n) => n.status == 'available');
+    if (activeIndex == -1) activeIndex = 0;
+    final targetOffset = (activeIndex * 130.0).clamp(0.0, _scrollController.position.maxScrollExtent);
+    _scrollController.animateTo(
+      targetOffset,
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _scrollToUnit(List<PathNodeModel> nodes, int targetUnit) {
+    int unitIndex = nodes.indexWhere((n) => n.unitNumber == targetUnit);
+    if (unitIndex == -1) return;
+    final targetOffset = (unitIndex * 130.0).clamp(0.0, _scrollController.position.maxScrollExtent);
+    _scrollController.animateTo(
+      targetOffset,
+      duration: const Duration(milliseconds: 700),
+      curve: Curves.easeInOutCubic,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final statusAsync = ref.watch(gamificationStatusProvider);
     final pathAsync = ref.watch(pathNodesProvider);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF1F5F9),
+      backgroundColor: const Color(0xFF131F24), // Sleek Duolingo-dark background
       body: SafeArea(
         child: Column(
           children: [
@@ -46,46 +129,108 @@ class ArchipelagoMapScreen extends ConsumerWidget {
               ),
             ),
 
-            // 2. Main Scrollable Archipelago Path
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: () async {
-                  ref.read(gamificationStatusProvider.notifier).refresh();
-                  ref.read(pathNodesProvider.notifier).loadPath();
-                },
-                child: pathAsync.when(
-                  data: (nodes) {
-                    if (nodes.isEmpty) {
-                      return const Center(child: Text('Loading islands...'));
+            // 2. Dynamic Sticky Section & Unit Banner (Changes Color & Unit on Scroll)
+            pathAsync.maybeWhen(
+              data: (nodes) {
+                if (nodes.isNotEmpty && _visibleUnitTitle == 'Erste Begrüßungen' && nodes[0].unitTitle != _visibleUnitTitle) {
+                  // Initialize with first node
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) {
+                      setState(() {
+                        _visibleUnitNumber = nodes[0].unitNumber;
+                        _visibleUnitTitle = nodes[0].unitTitle;
+                        _visibleUnitDescription = nodes[0].unitDescription;
+                        _visibleSectionNumber = nodes[0].sectionNumber;
+                        _visibleSectionTitle = nodes[0].sectionTitle;
+                        _visibleSectionUnitNumber = nodes[0].sectionUnitNumber;
+                        _visibleUnitColor = _parseColor(nodes[0].colorHex);
+                      });
                     }
-                    return ListView(
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-                      children: [
-                        _buildUnitBanner(),
-                        const SizedBox(height: 32),
-                        for (int i = 0; i < nodes.length; i++)
-                          _buildPathNode(context, ref, index: i, node: nodes[i]),
-                      ],
-                    );
-                  },
-                  loading: () => const Center(
-                    child: CircularProgressIndicator(color: Color(0xFF0284C7)),
-                  ),
-                  error: (e, _) => Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text('Unable to load path'),
-                        const SizedBox(height: 10),
-                        ElevatedButton(
-                          onPressed: () => ref.read(pathNodesProvider.notifier).loadPath(),
-                          child: const Text('Retry'),
+                  });
+                }
+                return _buildDynamicUnitBanner(context, nodes);
+              },
+              orElse: () => _buildDynamicUnitBanner(context, []),
+            ),
+
+            // 3. Main Scrollable Archipelago Path
+            Expanded(
+              child: Stack(
+                children: [
+                  RefreshIndicator(
+                    onRefresh: () async {
+                      ref.read(gamificationStatusProvider.notifier).refresh();
+                      ref.read(pathNodesProvider.notifier).loadPath();
+                    },
+                    child: pathAsync.when(
+                      data: (nodes) {
+                        if (nodes.isEmpty) {
+                          return const Center(
+                            child: Text(
+                              'Loading curriculum islands...',
+                              style: TextStyle(color: Colors.white70),
+                            ),
+                          );
+                        }
+                        return ListView.builder(
+                          controller: _scrollController,
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
+                          itemCount: nodes.length,
+                          itemBuilder: (context, index) {
+                            final node = nodes[index];
+                            final isFirstOfUnit = index == 0 || nodes[index - 1].unitNumber != node.unitNumber;
+
+                            return Column(
+                              children: [
+                                // Duolingo-style Unit Transition Divider
+                                if (isFirstOfUnit && index > 0)
+                                  _buildUnitDivider(node, () => _scrollToUnit(nodes, node.unitNumber)),
+                                _buildPathNode(context, index: index, node: node),
+                              ],
+                            );
+                          },
+                        );
+                      },
+                      loading: () => const Center(
+                        child: CircularProgressIndicator(color: Color(0xFF0284C7)),
+                      ),
+                      error: (e, _) => Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Text('Unable to load path', style: TextStyle(color: Colors.white)),
+                            const SizedBox(height: 10),
+                            ElevatedButton(
+                              onPressed: () => ref.read(pathNodesProvider.notifier).loadPath(),
+                              child: const Text('Retry'),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
+
+                  // Floating Return Button (Scroll to Current Active Node)
+                  Positioned(
+                    bottom: 24,
+                    right: 20,
+                    child: pathAsync.maybeWhen(
+                      data: (nodes) => FloatingActionButton.small(
+                        backgroundColor: const Color(0xFF202F36),
+                        foregroundColor: const Color(0xFF49C0F8),
+                        elevation: 4,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: const BorderSide(color: Color(0xFF37464F), width: 2),
+                        ),
+                        onPressed: () => _scrollToActiveNode(nodes),
+                        child: const Icon(Icons.arrow_upward_rounded, size: 22),
+                      ),
+                      orElse: () => const SizedBox.shrink(),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -94,67 +239,153 @@ class ArchipelagoMapScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildUnitBanner() {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF0284C7), Color(0xFF0369A1)],
+  // Sticky Duolingo Banner with Animated Color & Section/Unit Headings
+  Widget _buildDynamicUnitBanner(BuildContext context, List<PathNodeModel> nodes) {
+    return GestureDetector(
+      onTap: () => _showSectionSelectorSheet(context, nodes),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        decoration: BoxDecoration(
+          color: _visibleUnitColor,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: _visibleUnitColor.withValues(alpha: 0.5),
+              blurRadius: 0,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0xFF0284C7),
-            blurRadius: 0,
-            offset: Offset(0, 4),
-          ),
-        ],
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'SECTION $_visibleSectionNumber (${_visibleSectionTitle.toUpperCase()}), UNIT $_visibleSectionUnitNumber',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white.withValues(alpha: 0.85),
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white.withValues(alpha: 0.85), size: 18),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _visibleUnitTitle,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (_visibleUnitDescription.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      _visibleUnitDescription,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.menu_book_rounded, color: Colors.white, size: 26),
+              tooltip: 'Unit Guidebook',
+              onPressed: () => _showGuidebookSheet(context),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  // Unit Divider with optional 'JUMP HERE?' button
+  Widget _buildUnitDivider(PathNodeModel node, VoidCallback onJump) {
+    final unitColor = _parseColor(node.colorHex);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'UNIT 1 • CORAL REEF',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                  color: const Color(0xFFBAE6FD),
-                  letterSpacing: 1.0,
+              const Expanded(child: Divider(color: Color(0xFF273840), thickness: 2)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Text(
+                  '— ${node.unitTitle} —',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF94A3B8),
+                  ),
                 ),
               ),
-              const Icon(Icons.menu_book_rounded, color: Colors.white, size: 20),
+              const Expanded(child: Divider(color: Color(0xFF273840), thickness: 2)),
             ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            'Introductions & Daily Greetings',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: Colors.white,
+          if (node.status == 'locked') ...[
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: onJump,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                decoration: BoxDecoration(
+                  color: unitColor,
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                      color: unitColor.withValues(alpha: 0.4),
+                      blurRadius: 0,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.fast_forward_rounded, color: Colors.white, size: 20),
+                    const SizedBox(width: 6),
+                    Text(
+                      'JUMP HERE?',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(9999),
-            child: const LinearProgressIndicator(
-              value: 0.65,
-              minHeight: 10,
-              backgroundColor: Color(0xFF0369A1),
-              valueColor: AlwaysStoppedAnimation(Color(0xFFF59E0B)),
-            ),
-          ),
+          ],
         ],
       ),
     );
   }
 
+  // Stepping Stone Node Button
   Widget _buildPathNode(
-    BuildContext context,
-    WidgetRef ref, {
+    BuildContext context, {
     required int index,
     required PathNodeModel node,
   }) {
@@ -164,6 +395,7 @@ class ArchipelagoMapScreen extends ConsumerWidget {
     final isCompleted = status == 'completed';
     final isChest = node.type == 'chest';
     final isLocked = status == 'locked';
+    final nodeColor = _parseColor(node.colorHex);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -182,7 +414,7 @@ class ArchipelagoMapScreen extends ConsumerWidget {
 
             // Stepping Stone Node Button
             GestureDetector(
-              onTap: () => _handleNodeTap(context, ref, node),
+              onTap: () => _handleNodeTap(context, node),
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -193,7 +425,7 @@ class ArchipelagoMapScreen extends ConsumerWidget {
                       height: 90,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: const Color(0xFF06B6D4).withValues(alpha: 0.2),
+                        color: nodeColor.withValues(alpha: 0.25),
                       ),
                     ),
 
@@ -204,21 +436,21 @@ class ArchipelagoMapScreen extends ConsumerWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: isCompleted
-                          ? const Color(0xFF10B981)
+                          ? const Color(0xFF58CC02)
                           : isActive
-                              ? const Color(0xFF06B6D4)
+                              ? nodeColor
                               : isChest
-                                  ? const Color(0xFFF59E0B)
-                                  : const Color(0xFFE2E8F0),
+                                  ? const Color(0xFFFF9600)
+                                  : const Color(0xFF273840),
                       boxShadow: [
                         BoxShadow(
                           color: isCompleted
-                              ? const Color(0xFF059669)
+                              ? const Color(0xFF46A302)
                               : isActive
-                                  ? const Color(0xFF0891B2)
+                                  ? nodeColor.withValues(alpha: 0.7)
                                   : isChest
-                                      ? const Color(0xFFD97706)
-                                      : const Color(0xFFCBD5E1),
+                                      ? const Color(0xFFCC7800)
+                                      : const Color(0xFF1B272C),
                           blurRadius: 0,
                           offset: const Offset(0, 5),
                         ),
@@ -231,7 +463,7 @@ class ArchipelagoMapScreen extends ConsumerWidget {
                               ? const Text('🎁', style: TextStyle(fontSize: 32))
                               : Icon(
                                   isLocked ? Icons.lock_rounded : Icons.star_rounded,
-                                  color: isLocked ? const Color(0xFF94A3B8) : Colors.white,
+                                  color: isLocked ? const Color(0xFF52656D) : Colors.white,
                                   size: 34,
                                 ),
                     ),
@@ -239,16 +471,16 @@ class ArchipelagoMapScreen extends ConsumerWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
 
             // Node Title Pill
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: const Color(0xFF1B272C),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isActive ? const Color(0xFF06B6D4) : const Color(0xFFCBD5E1),
+                  color: isActive ? nodeColor : const Color(0xFF37464F),
                   width: 1.5,
                 ),
               ),
@@ -257,7 +489,7 @@ class ArchipelagoMapScreen extends ConsumerWidget {
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
-                  color: isActive ? const Color(0xFF0891B2) : const Color(0xFF475569),
+                  color: isActive ? Colors.white : const Color(0xFF94A3B8),
                 ),
               ),
             ),
@@ -267,7 +499,7 @@ class ArchipelagoMapScreen extends ConsumerWidget {
     );
   }
 
-  void _handleNodeTap(BuildContext context, WidgetRef ref, PathNodeModel node) {
+  void _handleNodeTap(BuildContext context, PathNodeModel node) {
     if (node.status == 'locked') {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -279,7 +511,6 @@ class ArchipelagoMapScreen extends ConsumerWidget {
     }
 
     if (node.type == 'chest') {
-      // Claim chest bonus
       ref.read(pathNodesProvider.notifier).completeNode(
         node.index,
         stars: 3,
@@ -291,16 +522,247 @@ class ArchipelagoMapScreen extends ConsumerWidget {
       return;
     }
 
-    // Directly launch the interactive lesson challenge tasks screen based on this node
     context.push('/lesson/${node.index}', extra: node).then((_) {
       ref.read(pathNodesProvider.notifier).loadPath();
     });
+  }
+
+  // Section Selector Modal Sheet (Section 1: Rookie, Section 2: Explorer, Section 3: Traveler)
+  void _showSectionSelectorSheet(BuildContext context, List<PathNodeModel> nodes) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1B272C),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 48,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF37464F),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'German A1 Course Sections',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '3 Sections • 105 Units • 1,680 Lessons',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF94A3B8),
+              ),
+            ),
+            const SizedBox(height: 20),
+            _buildSectionTile(
+              sectionNum: 1,
+              title: 'Section 1: Rookie',
+              subtitle: 'Units 1–35 • First Steps & Foundations',
+              color: const Color(0xFF1CB0F6),
+              isCurrent: _visibleSectionNumber == 1,
+              onTap: () {
+                Navigator.pop(ctx);
+                _scrollToUnit(nodes, 1);
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildSectionTile(
+              sectionNum: 2,
+              title: 'Section 2: Explorer',
+              subtitle: 'Units 1–35 (36–70) • Daily Life & Travel',
+              color: const Color(0xFF58CC02),
+              isCurrent: _visibleSectionNumber == 2,
+              onTap: () {
+                Navigator.pop(ctx);
+                _scrollToUnit(nodes, 36);
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildSectionTile(
+              sectionNum: 3,
+              title: 'Section 3: Traveler',
+              subtitle: 'Units 1–35 (71–105) • Fluency & Goethe A1 Exam',
+              color: const Color(0xFFFF9600),
+              isCurrent: _visibleSectionNumber == 3,
+              onTap: () {
+                Navigator.pop(ctx);
+                _scrollToUnit(nodes, 71);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionTile({
+    required int sectionNum,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required bool isCurrent,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isCurrent ? color.withValues(alpha: 0.15) : const Color(0xFF273840),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: isCurrent ? color : const Color(0xFF37464F),
+            width: isCurrent ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  '$sectionNum',
+                  style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white),
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isCurrent)
+              Icon(Icons.check_circle_rounded, color: color, size: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Unit Guidebook Modal Sheet
+  void _showGuidebookSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1B272C),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 48,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF37464F),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                const Icon(Icons.menu_book_rounded, color: Color(0xFF1CB0F6), size: 26),
+                const SizedBox(width: 10),
+                Text(
+                  'Unit $_visibleUnitNumber Guidebook',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _visibleUnitTitle,
+              style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.bold, color: _visibleUnitColor),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF273840),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '💡 Key German Concepts',
+                    style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'In this unit, practice essential phrases and grammar patterns. Pay close attention to word order and verb endings.',
+                    style: GoogleFonts.plusJakartaSans(fontSize: 13, color: const Color(0xFF94A3B8)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _visibleUnitColor,
+                minimumSize: const Size(double.infinity, 48),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text('GOT IT', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showChestDialog(BuildContext context, PathNodeModel node) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1B272C),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -309,11 +771,11 @@ class ArchipelagoMapScreen extends ConsumerWidget {
             const SizedBox(height: 12),
             Text(
               'Sunken Treasure Unlocked!',
-              style: GoogleFonts.plusJakartaSans(fontSize: 20, fontWeight: FontWeight.w900),
+              style: GoogleFonts.plusJakartaSans(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white),
             ),
             const SizedBox(height: 8),
             Text(
-              '+30 Pearls 💎  +20 XP 🔥',
+              '+${node.pearlsReward} Pearls 💎  +${node.xpReward} XP 🔥',
               style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF0284C7)),
             ),
             const SizedBox(height: 18),
@@ -334,6 +796,7 @@ class ArchipelagoMapScreen extends ConsumerWidget {
   void _showLanguageSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
+      backgroundColor: const Color(0xFF1B272C),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) => Padding(
         padding: const EdgeInsets.all(24),
@@ -341,11 +804,11 @@ class ArchipelagoMapScreen extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Switch Language Course', style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text('Switch Language Course', style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
             const SizedBox(height: 16),
             ListTile(
               leading: const Text('🇩🇪', style: TextStyle(fontSize: 28)),
-              title: const Text('German (Active)'),
+              title: const Text('German (Active)', style: TextStyle(color: Colors.white)),
               trailing: const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981)),
               onTap: () => Navigator.pop(ctx),
             ),
