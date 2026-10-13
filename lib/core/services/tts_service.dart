@@ -21,6 +21,7 @@ class TtsService {
       await _flutterTts.setVolume(1.0);
       // Pitch: 1.10 provides a clear, bright female timbre on standard synthesizers
       await _flutterTts.setPitch(1.10);
+      await _flutterTts.awaitSpeakCompletion(true);
 
       // Attempt to find and set a native female German voice
       final dynamic rawVoices = await _flutterTts.getVoices;
