@@ -252,7 +252,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: Column(
               children: [
                 ListTile(
-                  leading: const Icon(Icons.person_outline_rounded, color: AppColors.primary),
+                  leading: Icon(Icons.person_outline_rounded, color: AppColors.primary),
                   title: Text(
                     'Edit Profile',
                     style: GoogleFonts.inter(fontSize: 15, color: onSurface),
@@ -313,7 +313,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
                 overflow: TextOverflow.ellipsis,
               ),
-              trailing: const Icon(Icons.edit_outlined, color: AppColors.textMuted, size: 18),
+              trailing: Icon(Icons.edit_outlined, color: AppColors.textMuted, size: 18),
               onTap: _editApiUrl,
             ),
           ),
