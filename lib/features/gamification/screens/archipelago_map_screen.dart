@@ -133,8 +133,8 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
             // 2. Dynamic Sticky Section & Unit Banner (Changes Color & Unit on Scroll)
             pathAsync.maybeWhen(
               data: (nodes) {
-                if (nodes.isNotEmpty && _visibleUnitTitle == 'Greet and introduce yourself' && nodes[0].unitTitle != _visibleUnitTitle) {
-                  // Initialize with first node
+                if (nodes.isNotEmpty && nodes[0].unitTitle != _visibleUnitTitle) {
+                  // Initialize or update with first node whenever course track changes
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (mounted) {
                       setState(() {
@@ -146,6 +146,9 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
                         _visibleSectionUnitNumber = nodes[0].sectionUnitNumber;
                         _visibleUnitColor = _parseColor(nodes[0].colorHex);
                       });
+                      if (_scrollController.hasClients) {
+                        _scrollController.jumpTo(0.0);
+                      }
                     }
                   });
                 }
@@ -193,8 +196,37 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
                           },
                         );
                       },
-                      loading: () => const Center(
-                        child: CircularProgressIndicator(color: Color(0xFF0284C7)),
+                      loading: () => Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(
+                              width: 44,
+                              height: 44,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 3.5,
+                                valueColor: AlwaysStoppedAnimation(Color(0xFF1CB0F6)),
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                            Text(
+                              'Switching course track...',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Loading stepping stones & lessons',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                color: const Color(0xFF94A3B8),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       error: (e, _) => Center(
                         child: Column(

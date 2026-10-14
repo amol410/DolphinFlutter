@@ -44,12 +44,29 @@ class DioClient {
     // In release mode this is skipped to prevent JWT tokens from
     // being logged to the console.
     if (!kReleaseMode) {
-      _dio!.interceptors.add(PrettyDioLogger(
+      final logger = PrettyDioLogger(
         requestHeader: false,
         requestBody: true,
         responseBody: true,
         error: true,
         compact: true,
+      );
+      _dio!.interceptors.add(InterceptorsWrapper(
+        onRequest: (options, handler) {
+          logger.onRequest(options, handler);
+        },
+        onResponse: (response, handler) {
+          // Skip dumping thousands of lines for heavy path responses to prevent USB logcat freezing
+          if (response.requestOptions.path.contains('/gamification/path')) {
+            final nodeCount = response.data is Map ? (response.data['nodes'] as List?)?.length ?? 0 : 0;
+            debugPrint('⚡ [DIO] ${response.requestOptions.method} ${response.requestOptions.path} => ${response.statusCode} ($nodeCount nodes loaded, body dump suppressed for speed)');
+            return handler.next(response);
+          }
+          logger.onResponse(response, handler);
+        },
+        onError: (error, handler) {
+          logger.onError(error, handler);
+        },
       ));
     }
 

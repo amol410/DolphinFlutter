@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -135,24 +136,26 @@ class _CourseSelectionContent extends ConsumerWidget {
 
                     Navigator.pop(context);
 
-                    // Switch course on backend and update local status
-                    final ok = await statusNotifier.switchCourse(
+                    // 1. Voice setup runs quietly in background without blocking UI
+                    unawaited(TtsService().setLanguage(course.targetLanguage).catchError((_) {}));
+
+                    // 2. Fire course switch AND path loading at the exact same time in parallel
+                    final switchFuture = statusNotifier.switchCourse(
                       targetLanguage: course.targetLanguage,
                       nativeLanguage: course.nativeLanguage,
                       level: course.level,
                     );
 
+                    final pathFuture = pathNotifier.loadPath(
+                      targetLanguage: course.targetLanguage,
+                      nativeLanguage: course.nativeLanguage,
+                      level: course.level,
+                    );
+
+                    final results = await Future.wait([switchFuture, pathFuture]);
+                    final ok = results[0] as bool;
+
                     if (ok) {
-                      // Update TTS engine language
-                      await TtsService().setLanguage(course.targetLanguage);
-
-                      // Reload path nodes for the new track
-                      await pathNotifier.loadPath(
-                        targetLanguage: course.targetLanguage,
-                        nativeLanguage: course.nativeLanguage,
-                        level: course.level,
-                      );
-
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
