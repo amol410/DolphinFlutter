@@ -18,8 +18,8 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
   final ScrollController _scrollController = ScrollController();
 
   int _visibleUnitNumber = 1;
-  String _visibleUnitTitle = 'Erste Begrüßungen';
-  String _visibleUnitDescription = 'Greet and introduce yourself';
+  String _visibleUnitTitle = 'Greet and introduce yourself';
+  String _visibleUnitDescription = 'Erste Begrüßungen';
   int _visibleSectionNumber = 1;
   String _visibleSectionTitle = 'Rookie';
   int _visibleSectionUnitNumber = 1;
@@ -132,7 +132,7 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
             // 2. Dynamic Sticky Section & Unit Banner (Changes Color & Unit on Scroll)
             pathAsync.maybeWhen(
               data: (nodes) {
-                if (nodes.isNotEmpty && _visibleUnitTitle == 'Erste Begrüßungen' && nodes[0].unitTitle != _visibleUnitTitle) {
+                if (nodes.isNotEmpty && _visibleUnitTitle == 'Greet and introduce yourself' && nodes[0].unitTitle != _visibleUnitTitle) {
                   // Initialize with first node
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (mounted) {
