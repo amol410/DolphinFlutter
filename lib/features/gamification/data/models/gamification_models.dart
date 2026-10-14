@@ -43,6 +43,7 @@ class GamificationStatusModel {
 }
 
 class PathNodeModel {
+  final dynamic id;
   final int index;
   final String title;
   final String subtitle;
@@ -66,6 +67,7 @@ class PathNodeModel {
   final String colorHex;
 
   const PathNodeModel({
+    this.id,
     required this.index,
     required this.title,
     required this.subtitle,
@@ -101,6 +103,7 @@ class PathNodeModel {
         (secNum == 1 ? 'Rookie' : (secNum == 2 ? 'Explorer' : 'Traveler'));
 
     return PathNodeModel(
+      id: json['id'] ?? json['sourceId'],
       index: json['index'] ?? 0,
       title: json['title'] ?? '',
       subtitle: json['subtitle'] ?? '',

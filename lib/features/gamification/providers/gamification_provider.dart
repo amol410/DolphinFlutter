@@ -67,12 +67,13 @@ class PathNodesNotifier extends StateNotifier<AsyncValue<List<PathNodeModel>>> {
     loadPath();
   }
 
-  Future<void> loadPath({String? targetLanguage, String? nativeLanguage, String? level}) async {
+  Future<void> loadPath({String? targetLanguage, String? nativeLanguage, String? level, int? section}) async {
     try {
       final nodes = await _repo.getPath(
         targetLanguage: targetLanguage,
         nativeLanguage: nativeLanguage,
         level: level,
+        section: section,
       );
       state = AsyncValue.data(nodes);
     } catch (e, st) {

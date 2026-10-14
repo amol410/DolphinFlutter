@@ -45,6 +45,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
   bool _isPlayingAudio = false;
   String _preparedAudioUrl = '';
+  bool _isLoadingLessonDetails = false;
 
   // ── Stage 0: Word Match Data ──────────────────────────────────────
   List<String> _germanWords = ['Guten Tag', 'Danke', 'Bitte', 'Tschüss'];
@@ -183,30 +184,8 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
     _initStagesData();
 
-    if (_activeStageTypes.isNotEmpty) {
-      final firstType = _activeStageTypes.first;
-      if (firstType == 'listen_tap') {
-        _prepareListenAudio();
-        Future.delayed(const Duration(milliseconds: 350), () {
-          if (mounted && _activeStageTypes.isNotEmpty && _activeStageTypes.first == 'listen_tap') {
-            _playListenAudio();
-          }
-        });
-      } else if (firstType == 'sprechen') {
-        _triggerSprechenAutoPlay();
-      } else if (firstType == 'dialogue_bubble') {
-        Future.delayed(const Duration(milliseconds: 400), () {
-          if (mounted && _activeStageTypes.isNotEmpty && _activeStageTypes.first == 'dialogue_bubble') {
-            TtsService().speakSentence(_dialoguePartnerMessage);
-          }
-        });
-      } else if (firstType == 'listen_select') {
-        Future.delayed(const Duration(milliseconds: 400), () {
-          if (mounted && _activeStageTypes.isNotEmpty && _activeStageTypes.first == 'listen_select') {
-            _playListenSelectAudio();
-          }
-        });
-      }
+    if (!_isLoadingLessonDetails) {
+      _startFirstStage();
     }
   }
 
@@ -308,6 +287,33 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     }
   }
 
+  void _startFirstStage() {
+    if (_activeStageTypes.isEmpty) return;
+    final firstType = _activeStageTypes.first;
+    if (firstType == 'listen_tap') {
+      _prepareListenAudio();
+      Future.delayed(const Duration(milliseconds: 350), () {
+        if (mounted && _activeStageTypes.isNotEmpty && _activeStageTypes.first == 'listen_tap') {
+          _playListenAudio();
+        }
+      });
+    } else if (firstType == 'sprechen') {
+      _triggerSprechenAutoPlay();
+    } else if (firstType == 'dialogue_bubble') {
+      Future.delayed(const Duration(milliseconds: 400), () {
+        if (mounted && _activeStageTypes.isNotEmpty && _activeStageTypes.first == 'dialogue_bubble') {
+          TtsService().speakSentence(_dialoguePartnerMessage);
+        }
+      });
+    } else if (firstType == 'listen_select') {
+      Future.delayed(const Duration(milliseconds: 400), () {
+        if (mounted && _activeStageTypes.isNotEmpty && _activeStageTypes.first == 'listen_select') {
+          _playListenSelectAudio();
+        }
+      });
+    }
+  }
+
   void _initStagesData() {
     // Check if pathNodesProvider has a newer copy of this node
     final nodesAsync = ref.read(pathNodesProvider);
@@ -328,47 +334,88 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     _sprechenAudioUrl = '';
 
     if (stages == null || stages.isEmpty) {
-      _activeStageTypes = [
-        'word_match',
-        'listen_tap',
-        'cloze_test',
-        'sentence_builder',
-        'type_word',
-        'dialogue_bubble',
-        'listen_select',
-        'sprechen',
-      ];
-      _clozeSentence = 'Ich _____ aus Indien.';
-      _clozeTranslation = 'I come from India.';
-      _clozeBlank = 'komme';
-      _clozeOptions = ['komme', 'kommst', 'wohne'];
-
-      _typePrompt = 'Der Kaffee ist _____.';
-      _typeTranslation = 'The coffee is hot.';
-      _typeTarget = 'heiß';
-      _typeHint = 'Translate "hot" into German';
-
-      _dialoguePartnerName = 'Florian';
-      _dialoguePartnerMessage = 'Hallo! Wie heißt du?';
-      _dialoguePartnerTranslation = 'Hello! What is your name?';
-      _dialogueOptions = [
-        {'text': 'Ich heiße Alex.', 'isCorrect': true},
-        {'text': 'Auf Wiedersehen!', 'isCorrect': false},
-        {'text': 'Nein, danke.', 'isCorrect': false},
-      ];
-
-      _listenSelectSentence = 'Zwei Kaffee und ein Wasser, bitte.';
-      _listenSelectQuestion = 'What is the customer ordering?';
-      _listenSelectOptions = [
-        {'text': 'Two coffees and one water', 'isCorrect': true},
-        {'text': 'One tea and two beers', 'isCorrect': false},
-        {'text': 'A slice of chocolate cake', 'isCorrect': false},
-      ];
-      debugPrint('🎧 [_initStagesData] Fallback mode (all 8 stages active)');
-      _precacheAllVocab();
+      if (activeNode?.id != null) {
+        _isLoadingLessonDetails = true;
+        _fetchLessonDetails(activeNode!.id);
+        return;
+      }
+      _applyFallbackStages();
       return;
     }
 
+    _applyStages(stages);
+  }
+
+  Future<void> _fetchLessonDetails(dynamic lessonId) async {
+    try {
+      final lessonData = await ref.read(gamificationRepositoryProvider).getLessonDetails(lessonId);
+      if (!mounted) return;
+      if (lessonData != null && lessonData['stages'] is List && (lessonData['stages'] as List).isNotEmpty) {
+        final stages = lessonData['stages'] as List;
+        _applyStages(stages);
+        if (mounted) {
+          setState(() {
+            _isLoadingLessonDetails = false;
+          });
+          _startFirstStage();
+        }
+        return;
+      }
+    } catch (e) {
+      debugPrint('⚠️ [_fetchLessonDetails] Error fetching details: $e');
+    }
+
+    if (mounted) {
+      _applyFallbackStages();
+      setState(() {
+        _isLoadingLessonDetails = false;
+      });
+      _startFirstStage();
+    }
+  }
+
+  void _applyFallbackStages() {
+    _activeStageTypes = [
+      'word_match',
+      'listen_tap',
+      'cloze_test',
+      'sentence_builder',
+      'type_word',
+      'dialogue_bubble',
+      'listen_select',
+      'sprechen',
+    ];
+    _clozeSentence = 'Ich _____ aus Indien.';
+    _clozeTranslation = 'I come from India.';
+    _clozeBlank = 'komme';
+    _clozeOptions = ['komme', 'kommst', 'wohne'];
+
+    _typePrompt = 'Der Kaffee ist _____.';
+    _typeTranslation = 'The coffee is hot.';
+    _typeTarget = 'heiß';
+    _typeHint = 'Translate "hot" into German';
+
+    _dialoguePartnerName = 'Florian';
+    _dialoguePartnerMessage = 'Hallo! Wie heißt du?';
+    _dialoguePartnerTranslation = 'Hello! What is your name?';
+    _dialogueOptions = [
+      {'text': 'Ich heiße Alex.', 'isCorrect': true},
+      {'text': 'Auf Wiedersehen!', 'isCorrect': false},
+      {'text': 'Nein, danke.', 'isCorrect': false},
+    ];
+
+    _listenSelectSentence = 'Zwei Kaffee und ein Wasser, bitte.';
+    _listenSelectQuestion = 'What is the customer ordering?';
+    _listenSelectOptions = [
+      {'text': 'Two coffees and one water', 'isCorrect': true},
+      {'text': 'One tea and two beers', 'isCorrect': false},
+      {'text': 'A slice of chocolate cake', 'isCorrect': false},
+    ];
+    debugPrint('🎧 [_initStagesData] Fallback mode (all 8 stages active)');
+    _precacheAllVocab();
+  }
+
+  void _applyStages(List<dynamic> stages) {
     final activeTypes = <String>[];
     for (final rawStage in stages) {
       if (rawStage is! Map) continue;
@@ -573,7 +620,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       ];
     }
 
-    debugPrint('🎯 [_initStagesData] Active stage sequence: $_activeStageTypes (total: ${_activeStageTypes.length})');
+    debugPrint('🎯 [_applyStages] Active stage sequence: $_activeStageTypes (total: ${_activeStageTypes.length})');
     _precacheAllVocab();
     _triggerPrewarmForStage(0);
     _triggerPrewarmForStage(1);
@@ -1125,6 +1172,52 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoadingLessonDetails) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.close_rounded, color: Color(0xFF64748B), size: 26),
+            onPressed: () => context.go('/home'),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 44,
+                height: 44,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3.5,
+                  valueColor: AlwaysStoppedAnimation(Color(0xFF10B981)),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Preparing Lesson...',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF1E293B),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Loading interactive challenges',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  color: const Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final progress = _totalStages > 0
         ? (_currentStage / _totalStages).clamp(0.0, 1.0)
         : 1.0;

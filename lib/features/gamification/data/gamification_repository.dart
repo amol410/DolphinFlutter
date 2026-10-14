@@ -29,6 +29,7 @@ class GamificationRepository {
     String? targetLanguage,
     String? nativeLanguage,
     String? level,
+    int? section,
   }) async {
     try {
       final dio = await DioClient.getInstance();
@@ -36,6 +37,7 @@ class GamificationRepository {
       if (targetLanguage != null) queryParams['targetLanguage'] = targetLanguage;
       if (nativeLanguage != null) queryParams['nativeLanguage'] = nativeLanguage;
       if (level != null) queryParams['level'] = level;
+      if (section != null) queryParams['section'] = section;
 
       final response = await dio.get(
         ApiConstants.gamificationPath,
@@ -206,6 +208,19 @@ class GamificationRepository {
     } catch (_) {
       return false;
     }
+  }
+
+  Future<Map<String, dynamic>?> getLessonDetails(dynamic lessonId) async {
+    try {
+      final dio = await DioClient.getInstance();
+      final response = await dio.get('${ApiConstants.gamificationLesson}/$lessonId');
+      if (response.data is Map<String, dynamic> &&
+          response.data['success'] == true &&
+          response.data['lesson'] != null) {
+        return response.data['lesson'] as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return null;
   }
 }
 
