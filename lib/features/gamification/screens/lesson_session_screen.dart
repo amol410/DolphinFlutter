@@ -319,6 +319,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       }
     }
 
+    final currentStatus = ref.read(gamificationStatusProvider).value;
+    final currentTarget = currentStatus?.targetLanguage ?? 'de';
+    TtsService().setLanguage(currentTarget);
+
     final stages = activeNode?.stages;
     _listenAudioUrl = '';
     _sprechenAudioUrl = '';
@@ -953,15 +957,26 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         return;
       }
 
-      // Query available locales on device to find German (de-DE, de_DE, etc.)
-      String germanLocaleId = 'de_DE';
+      final currentTarget = ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
+      final isEnglish = currentTarget == 'en';
+      String targetLocaleId = isEnglish ? 'en_GB' : 'de_DE';
       try {
         final locales = await _speech.locales();
-        final match = locales.where((l) => l.localeId.toLowerCase().startsWith('de')).firstOrNull;
-        if (match != null) {
-          germanLocaleId = match.localeId;
+        if (isEnglish) {
+          final gbMatch = locales.where((l) => l.localeId.toLowerCase().contains('en_gb') || l.localeId.toLowerCase().contains('en-gb')).firstOrNull;
+          final anyEn = locales.where((l) => l.localeId.toLowerCase().startsWith('en')).firstOrNull;
+          if (gbMatch != null) {
+            targetLocaleId = gbMatch.localeId;
+          } else if (anyEn != null) {
+            targetLocaleId = anyEn.localeId;
+          }
+        } else {
+          final deMatch = locales.where((l) => l.localeId.toLowerCase().startsWith('de')).firstOrNull;
+          if (deMatch != null) {
+            targetLocaleId = deMatch.localeId;
+          }
         }
-        debugPrint('🇩🇪 [Speech Recognition] Using German locale: $germanLocaleId');
+        debugPrint('🗣️ [Speech Recognition] Using target locale: $targetLocaleId (isEnglish: $isEnglish)');
       } catch (e) {
         debugPrint('⚠️ Error querying locales: $e');
       }
@@ -988,7 +1003,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           listenMode: stt.ListenMode.dictation,
           cancelOnError: false,
           partialResults: true,
-          localeId: germanLocaleId,
+          localeId: targetLocaleId,
           listenFor: const Duration(seconds: 30),
           pauseFor: const Duration(seconds: 3),
         ),
