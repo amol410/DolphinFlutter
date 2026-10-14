@@ -571,6 +571,57 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
     debugPrint('🎯 [_initStagesData] Active stage sequence: $_activeStageTypes (total: ${_activeStageTypes.length})');
     _precacheAllVocab();
+    _triggerPrewarmForStage(0);
+    _triggerPrewarmForStage(1);
+  }
+
+  void _triggerPrewarmForNext() {
+    _triggerPrewarmForStage(_currentStage + 1);
+  }
+
+  void _triggerPrewarmForStage(int index) {
+    if (index < 0 || index >= _activeStageTypes.length) return;
+    final stageType = _activeStageTypes[index];
+    final words = <String>[];
+
+    switch (stageType) {
+      case 'sentence_builder':
+        words.addAll(_builderBank);
+        if (_builderTargetSentence.isNotEmpty) {
+          words.add(_builderTargetSentence);
+        }
+        break;
+      case 'cloze_test':
+        words.addAll(_clozeOptions);
+        if (_clozeBlank.isNotEmpty) words.add(_clozeBlank);
+        if (_clozeSentence.isNotEmpty) words.add(_clozeSentence);
+        break;
+      case 'type_word':
+        if (_typeTarget.isNotEmpty) words.add(_typeTarget);
+        if (_typePrompt.isNotEmpty) words.add(_typePrompt);
+        break;
+      case 'dialogue_bubble':
+        if (_dialoguePartnerMessage.isNotEmpty) words.add(_dialoguePartnerMessage);
+        for (final opt in _dialogueOptions) {
+          if (opt['text'] != null) words.add(opt['text'].toString());
+        }
+        break;
+      case 'listen_select':
+        if (_listenSelectSentence.isNotEmpty) words.add(_listenSelectSentence);
+        break;
+      case 'listen_tap':
+        words.addAll(_listenBank);
+        if (_listenTargetSentence.isNotEmpty) words.add(_listenTargetSentence);
+        break;
+      case 'word_match':
+        words.addAll(_germanWords);
+        break;
+      case 'sprechen':
+        if (_sprechenPrompt.isNotEmpty) words.add(_sprechenPrompt);
+        break;
+    }
+
+    TtsService().prewarmForStage(stageType, words);
   }
 
   void _precacheAllVocab() {
@@ -624,6 +675,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
         if (_matchedGerman.length == _germanWords.length) {
           _matchFinished = true;
+          _triggerPrewarmForNext();
         }
       } else {
         Future.delayed(const Duration(milliseconds: 350), () {
@@ -653,6 +705,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     setState(() {
       _clozeCorrect = isCorrect;
     });
+    _triggerPrewarmForNext();
   }
 
   // ── Stage: Type Word Handlers ─────────────────────────────────────
@@ -686,6 +739,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     setState(() {
       _typeCorrect = isCorrect;
     });
+    _triggerPrewarmForNext();
   }
 
   // ── Stage: Dialogue Bubble Handlers ───────────────────────────────
@@ -709,6 +763,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     setState(() {
       _dialogueCorrect = isCorrect;
     });
+    _triggerPrewarmForNext();
   }
 
   // ── Stage: Listen Select Handlers ─────────────────────────────────
@@ -726,6 +781,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     setState(() {
       _listenSelectCorrect = isCorrect;
     });
+    _triggerPrewarmForNext();
   }
 
   void _triggerSprechenAutoPlay() {
@@ -975,6 +1031,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       _speechAccuracy = accuracy;
       _speechPassed = isPassed;
     });
+    _triggerPrewarmForNext();
 
     if (isPassed) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1456,6 +1513,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                       final targetClean = _listenTarget.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
                       final isMatch = selectedClean == targetClean || _listenSelected.join(' ') == _listenTarget.join(' ');
                       setState(() => _listenCorrect = isMatch);
+                      _triggerPrewarmForNext();
                     },
             ),
           )
@@ -1872,6 +1930,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                       final tgtClean = _builderTarget.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
                       final isMatch = selClean == tgtClean || _builderSelected.join(' ') == _builderTarget.join(' ');
                       setState(() => _builderCorrect = isMatch);
+                      _triggerPrewarmForNext();
                     },
             ),
           )
