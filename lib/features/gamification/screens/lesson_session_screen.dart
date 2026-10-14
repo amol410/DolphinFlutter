@@ -422,11 +422,11 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         if (sentence.isNotEmpty) _clozeSentence = sentence;
         final trans = (stage['translation'] ?? '').toString().trim();
         if (trans.isNotEmpty) _clozeTranslation = trans;
-        final blank = (stage['blank'] ?? stage['target'] ?? stage['correctAnswer'] ?? '').toString().trim();
+        final blank = (stage['blank'] ?? stage['target'] ?? stage['correctOption'] ?? stage['correctAnswer'] ?? stage['answer'] ?? '').toString().trim();
         if (blank.isNotEmpty) _clozeBlank = blank;
         if (stage['options'] is List && (stage['options'] as List).isNotEmpty) {
           _clozeOptions = (stage['options'] as List)
-              .map((o) => o.toString().trim())
+              .map((o) => (o is Map ? (o['text'] ?? '') : o).toString().trim())
               .where((o) => o.isNotEmpty)
               .toList();
         }
@@ -456,9 +456,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       } else if (type == 'type_word' || type == 'type_input') {
         final prompt = (stage['prompt'] ?? stage['sentence'] ?? '').toString().trim();
         if (prompt.isNotEmpty) _typePrompt = prompt;
-        final trans = (stage['translation'] ?? '').toString().trim();
+        final trans = (stage['translation'] ?? stage['nativeMeaning'] ?? '').toString().trim();
         if (trans.isNotEmpty) _typeTranslation = trans;
-        final target = (stage['target'] ?? stage['word'] ?? stage['correctAnswer'] ?? '').toString().trim();
+        final target = (stage['target'] ?? stage['targetWord'] ?? stage['word'] ?? stage['correctAnswer'] ?? '').toString().trim();
         if (target.isNotEmpty) _typeTarget = target;
         final hint = (stage['hint'] ?? '').toString().trim();
         if (hint.isNotEmpty) _typeHint = hint;
@@ -471,23 +471,35 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         final trans = (stage['translation'] ?? '').toString().trim();
         if (trans.isNotEmpty) _dialoguePartnerTranslation = trans;
         if (stage['options'] is List && (stage['options'] as List).isNotEmpty) {
-          _dialogueOptions = (stage['options'] as List).map((o) {
+          final correctOpt = (stage['correctOption'] ?? stage['correctAnswer'] ?? '').toString().trim();
+          _dialogueOptions = (stage['options'] as List).asMap().entries.map((entry) {
+            final o = entry.value;
             if (o is Map) return Map<String, dynamic>.from(o);
-            return {'text': o.toString().trim(), 'isCorrect': true};
+            final optText = o.toString().trim();
+            final isCorrect = correctOpt.isNotEmpty
+                ? optText.toLowerCase() == correctOpt.toLowerCase()
+                : (entry.key == 0);
+            return {'text': optText, 'isCorrect': isCorrect};
           }).toList();
         }
         activeTypes.add('dialogue_bubble');
       } else if (type == 'listen_select' || type == 'listen_comprehension') {
-        final sentence = (stage['sentence'] ?? stage['targetSentence'] ?? '').toString().trim();
+        final sentence = (stage['spokenGerman'] ?? stage['sentence'] ?? stage['targetSentence'] ?? '').toString().trim();
         if (sentence.isNotEmpty) _listenSelectSentence = sentence;
         final question = (stage['question'] ?? stage['prompt'] ?? '').toString().trim();
         if (question.isNotEmpty) _listenSelectQuestion = question;
         final audio = stage['audioUrl']?.toString().trim();
         _listenSelectAudioUrl = (audio != null && audio.isNotEmpty) ? audio : '';
         if (stage['options'] is List && (stage['options'] as List).isNotEmpty) {
-          _listenSelectOptions = (stage['options'] as List).map((o) {
+          final correctOpt = (stage['correctOption'] ?? stage['correctAnswer'] ?? '').toString().trim();
+          _listenSelectOptions = (stage['options'] as List).asMap().entries.map((entry) {
+            final o = entry.value;
             if (o is Map) return Map<String, dynamic>.from(o);
-            return {'text': o.toString().trim(), 'isCorrect': true};
+            final optText = o.toString().trim();
+            final isCorrect = correctOpt.isNotEmpty
+                ? optText.toLowerCase() == correctOpt.toLowerCase()
+                : (entry.key == 0);
+            return {'text': optText, 'isCorrect': isCorrect};
           }).toList();
         }
         activeTypes.add('listen_select');
