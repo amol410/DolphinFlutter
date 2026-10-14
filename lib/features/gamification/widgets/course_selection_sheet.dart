@@ -130,27 +130,28 @@ class _CourseSelectionContent extends ConsumerWidget {
                       return;
                     }
 
+                    final statusNotifier = ref.read(gamificationStatusProvider.notifier);
+                    final pathNotifier = ref.read(pathNodesProvider.notifier);
+
                     Navigator.pop(context);
 
                     // Switch course on backend and update local status
-                    final ok = await ref
-                        .read(gamificationStatusProvider.notifier)
-                        .switchCourse(
-                          targetLanguage: course.targetLanguage,
-                          nativeLanguage: course.nativeLanguage,
-                          level: course.level,
-                        );
+                    final ok = await statusNotifier.switchCourse(
+                      targetLanguage: course.targetLanguage,
+                      nativeLanguage: course.nativeLanguage,
+                      level: course.level,
+                    );
 
                     if (ok) {
                       // Update TTS engine language
                       await TtsService().setLanguage(course.targetLanguage);
 
                       // Reload path nodes for the new track
-                      await ref.read(pathNodesProvider.notifier).loadPath(
-                            targetLanguage: course.targetLanguage,
-                            nativeLanguage: course.nativeLanguage,
-                            level: course.level,
-                          );
+                      await pathNotifier.loadPath(
+                        targetLanguage: course.targetLanguage,
+                        nativeLanguage: course.nativeLanguage,
+                        level: course.level,
+                      );
 
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
