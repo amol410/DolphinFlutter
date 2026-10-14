@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shimmer/shimmer.dart';
 import '../../../shared/widgets/ocean_status_bar.dart';
 import '../../../shared/widgets/animated_dolphin_mascot.dart';
 import '../providers/gamification_provider.dart';
@@ -196,38 +197,7 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
                           },
                         );
                       },
-                      loading: () => Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const SizedBox(
-                              width: 44,
-                              height: 44,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 3.5,
-                                valueColor: AlwaysStoppedAnimation(Color(0xFF1CB0F6)),
-                              ),
-                            ),
-                            const SizedBox(height: 18),
-                            Text(
-                              'Switching course track...',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Loading stepping stones & lessons',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 13,
-                                color: const Color(0xFF94A3B8),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      loading: () => _buildPathShimmerSkeleton(),
                       error: (e, _) => Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -268,6 +238,62 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // Shimmer Skeleton for Archipelago Map Loading
+  Widget _buildPathShimmerSkeleton() {
+    final shimmerOffsets = [0.0, 45.0, -40.0, 20.0, -45.0, 35.0, 0.0];
+
+    return Shimmer.fromColors(
+      baseColor: const Color(0xFF1E2B31),
+      highlightColor: const Color(0xFF2C3E47),
+      child: ListView.builder(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
+        itemCount: 8,
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            // Shimmer Unit Header pill
+            return Center(
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 24),
+                width: 180,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E2B31),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            );
+          }
+
+          final offset = shimmerOffsets[(index - 1) % shimmerOffsets.length];
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Transform.translate(
+              offset: Offset(offset, 0),
+              child: Center(
+                child: Container(
+                  width: 72,
+                  height: 72,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(0xFF1E2B31),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Color(0xFF151E22),
+                        blurRadius: 0,
+                        offset: Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
