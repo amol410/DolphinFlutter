@@ -4,6 +4,8 @@ class GamificationStatusModel {
   final String? lastActiveDate;
   final int dailyTargetXp;
   final String targetLanguage;
+  final String nativeLanguage;
+  final String currentLevel;
   final int pearls;
   final int oxygen;
   final int totalXp;
@@ -15,6 +17,8 @@ class GamificationStatusModel {
     this.lastActiveDate,
     this.dailyTargetXp = 20,
     this.targetLanguage = 'de',
+    this.nativeLanguage = 'en',
+    this.currentLevel = 'A1',
     this.pearls = 100,
     this.oxygen = 5,
     this.totalXp = 0,
@@ -28,6 +32,8 @@ class GamificationStatusModel {
       lastActiveDate: json['lastActiveDate']?.toString(),
       dailyTargetXp: json['dailyTargetXp'] ?? 20,
       targetLanguage: json['targetLanguage'] ?? 'de',
+      nativeLanguage: json['nativeLanguage'] ?? (json['targetLanguage'] == 'en' ? 'mr' : 'en'),
+      currentLevel: json['currentLevel'] ?? 'A1',
       pearls: json['pearls'] ?? 100,
       oxygen: json['oxygen'] ?? 5,
       totalXp: json['totalXp'] ?? 0,

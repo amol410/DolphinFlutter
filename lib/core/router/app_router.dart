@@ -90,6 +90,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(path: 'edit', builder: (_, __) => const EditProfileScreen()),
               GoRoute(path: 'password', builder: (_, __) => const ChangePasswordScreen()),
+              GoRoute(path: 'settings', builder: (_, __) => const SettingsScreen()),
             ],
           ),
           GoRoute(

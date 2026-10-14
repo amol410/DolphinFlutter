@@ -26,6 +26,7 @@ class ApiConstants {
   static const String gamificationCompleteNode = '/gamification/complete-node';
   static const String gamificationLeaderboard = '/gamification/leaderboard';
   static const String gamificationRefillOxygen = '/gamification/shop/refill-oxygen';
+  static const String gamificationSwitchCourse = '/gamification/switch-course';
 
   static Future<String> getBaseUrl() async {
     // Ignore any cached local IPs from previous builds to prevent connection timeouts

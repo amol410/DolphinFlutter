@@ -6,6 +6,7 @@ import '../../../shared/widgets/ocean_status_bar.dart';
 import '../../../shared/widgets/animated_dolphin_mascot.dart';
 import '../providers/gamification_provider.dart';
 import '../data/models/gamification_models.dart';
+import '../widgets/course_selection_sheet.dart';
 
 class ArchipelagoMapScreen extends ConsumerStatefulWidget {
   const ArchipelagoMapScreen({super.key});
@@ -106,12 +107,12 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
             // 1. Top Gamified Status Bar with Live User Economy
             statusAsync.when(
               data: (status) => OceanStatusBar(
-                flagEmoji: status.targetLanguage == 'de' ? '🇩🇪' : '🇪🇸',
+                flagEmoji: status.targetLanguage == 'en' ? '🇬🇧' : (status.targetLanguage == 'de' ? '🇩🇪' : '🇪🇸'),
                 streakCount: status.streakCount,
                 oxygen: status.oxygen,
                 maxOxygen: 5,
                 pearls: status.pearls,
-                onFlagTap: () => _showLanguageSheet(context),
+                onFlagTap: () => showCourseSelectionSheet(context),
                 onOxygenTap: () => context.go('/shop'),
                 onPearlsTap: () => context.go('/shop'),
               ),
@@ -786,31 +787,6 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
               child: const Text('AWESOME!', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showLanguageSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1B272C),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Switch Language Course', style: GoogleFonts.plusJakartaSans(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-            const SizedBox(height: 16),
-            ListTile(
-              leading: const Text('🇩🇪', style: TextStyle(fontSize: 28)),
-              title: const Text('German (Active)', style: TextStyle(color: Colors.white)),
-              trailing: const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981)),
-              onTap: () => Navigator.pop(ctx),
             ),
           ],
         ),

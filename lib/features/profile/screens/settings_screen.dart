@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -6,15 +8,18 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../shared/widgets/glass_card.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../../gamification/providers/gamification_provider.dart';
+import '../../gamification/widgets/course_selection_sheet.dart';
 
-class SettingsScreen extends StatefulWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   String _apiBaseUrl = ApiConstants.defaultBaseUrl;
 
   @override
@@ -25,10 +30,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _apiBaseUrl = prefs.getString(AppConstants.apiBaseUrlKey) ??
-          ApiConstants.defaultBaseUrl;
-    });
+    if (mounted) {
+      setState(() {
+        _apiBaseUrl = prefs.getString(AppConstants.apiBaseUrlKey) ??
+            ApiConstants.defaultBaseUrl;
+      });
+    }
   }
 
   Future<void> _editApiUrl() async {
@@ -96,7 +103,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           style: GoogleFonts.plusJakartaSans(color: onSurface, fontWeight: FontWeight.w600),
         ),
         content: Text(
-          'This will clear cached images. Continue?',
+          'This will clear cached images and temporary files. Continue?',
           style: GoogleFonts.inter(color: textSecondary),
         ),
         actions: [
@@ -119,7 +126,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Cache cleared'),
+            content: Text('Cache cleared successfully'),
             backgroundColor: AppColors.success,
           ),
         );
@@ -127,14 +134,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _openUrl(String url) async {
+    try {
+      final uri = Uri.parse(url);
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open link: $url')),
+        );
+      }
+    }
+  }
+
   Widget _sectionLabel(String text) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 0, 0, 8),
+      padding: const EdgeInsets.fromLTRB(4, 12, 0, 8),
       child: Text(
         text.toUpperCase(),
         style: GoogleFonts.inter(
           fontSize: 12,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
           color: AppColors.primary,
           letterSpacing: 0.8,
         ),
@@ -149,6 +169,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final textSecondary = isDark ? AppColors.pitchBlackTextSecondary : AppColors.lightTextSecondary;
     final dividerColor = isDark ? const Color(0x1FFFFFFF) : AppColors.lightBorder;
 
+    final statusAsync = ref.watch(gamificationStatusProvider);
+    final targetLang = statusAsync.value?.targetLanguage ?? 'de';
+    final nativeLang = statusAsync.value?.nativeLanguage ?? (targetLang == 'en' ? 'mr' : 'en');
+
+    String courseLabel = 'German A1 (English)';
+    String courseFlag = '🇩🇪';
+    if (targetLang == 'en') {
+      if (nativeLang == 'hi') {
+        courseLabel = 'English A1 (हिन्दी)';
+        courseFlag = '🇬🇧';
+      } else {
+        courseLabel = 'English A1 (मराठी)';
+        courseFlag = '🇬🇧';
+      }
+    }
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
@@ -156,19 +192,88 @@ class _SettingsScreenState extends State<SettingsScreen> {
           'Settings',
           style: GoogleFonts.plusJakartaSans(
             fontSize: 20,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
             color: onSurface,
           ),
         ),
         backgroundColor: Colors.transparent,
+        elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: onSurface),
-          onPressed: () => Navigator.of(context).pop(),
+          icon: Icon(Icons.arrow_back_rounded, color: onSurface),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/profile');
+            }
+          },
         ),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
+          // Course & Language Section
+          _sectionLabel('Learning & Curriculum'),
+          GlassCard(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Container(
+                    width: 36,
+                    height: 36,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1CB0F6).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(courseFlag, style: const TextStyle(fontSize: 20)),
+                  ),
+                  title: Text(
+                    'Active Course',
+                    style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: onSurface),
+                  ),
+                  subtitle: Text(
+                    courseLabel,
+                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w500),
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
+                  onTap: () => showCourseSelectionSheet(context),
+                ),
+              ],
+            ),
+          ),
+
+          // Account & Security
+          _sectionLabel('Account'),
+          GlassCard(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.person_outline_rounded, color: AppColors.primary),
+                  title: Text(
+                    'Edit Profile',
+                    style: GoogleFonts.inter(fontSize: 15, color: onSurface),
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
+                  onTap: () => context.push('/profile/edit'),
+                ),
+                Divider(color: dividerColor, height: 1),
+                ListTile(
+                  leading: const Icon(Icons.lock_outline_rounded, color: Color(0xFF64748B)),
+                  title: Text(
+                    'Change Password',
+                    style: GoogleFonts.inter(fontSize: 15, color: onSurface),
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
+                  onTap: () => context.push('/profile/password'),
+                ),
+              ],
+            ),
+          ),
+
           // General
           _sectionLabel('General'),
           GlassCard(
@@ -176,39 +281,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               children: [
                 SwitchListTile(
+                  secondary: const Icon(Icons.notifications_none_rounded, color: Color(0xFF64748B)),
                   title: Text(
                     'Push Notifications',
                     style: GoogleFonts.inter(fontSize: 15, color: onSurface),
                   ),
                   subtitle: Text(
-                    'Coming soon',
+                    'Daily streak reminders',
                     style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
                   ),
                   value: false,
                   onChanged: null,
                   activeColor: AppColors.primary,
                 ),
-                Divider(color: dividerColor, height: 1),
-                ListTile(
-                  title: Text(
-                    'Language',
-                    style: GoogleFonts.inter(fontSize: 15, color: onSurface),
-                  ),
-                  trailing: Text(
-                    'English',
-                    style: GoogleFonts.inter(fontSize: 14, color: textSecondary),
-                  ),
-                ),
               ],
             ),
           ),
-          const SizedBox(height: 20),
 
           // Developer
           _sectionLabel('Developer'),
           GlassCard(
             padding: EdgeInsets.zero,
             child: ListTile(
+              leading: const Icon(Icons.dns_outlined, color: Color(0xFF64748B)),
               title: Text(
                 'API Base URL',
                 style: GoogleFonts.inter(fontSize: 15, color: onSurface),
@@ -218,14 +313,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
                 overflow: TextOverflow.ellipsis,
               ),
-              trailing: Icon(Icons.edit_outlined, color: AppColors.textMuted, size: 18),
+              trailing: const Icon(Icons.edit_outlined, color: AppColors.textMuted, size: 18),
               onTap: _editApiUrl,
             ),
           ),
-          const SizedBox(height: 20),
 
           // Cache
-          _sectionLabel('Cache'),
+          _sectionLabel('Storage'),
           GlassCard(
             padding: EdgeInsets.zero,
             child: ListTile(
@@ -238,10 +332,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   color: AppColors.error,
                 ),
               ),
+              trailing: const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
               onTap: _clearCache,
             ),
           ),
-          const SizedBox(height: 20),
 
           // About
           _sectionLabel('About'),
@@ -250,44 +344,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               children: [
                 ListTile(
+                  leading: const Icon(Icons.info_outline_rounded, color: Color(0xFF64748B)),
                   title: Text(
                     'App Version',
                     style: GoogleFonts.inter(fontSize: 15, color: onSurface),
                   ),
                   trailing: Text(
                     AppConstants.appVersion,
-                    style: GoogleFonts.inter(fontSize: 14, color: textSecondary),
+                    style: GoogleFonts.inter(fontSize: 14, color: textSecondary, fontWeight: FontWeight.w600),
                   ),
                 ),
                 Divider(color: dividerColor, height: 1),
                 ListTile(
-                  leading: const Icon(Icons.star_outline, color: AppColors.warning),
+                  leading: const Icon(Icons.star_outline_rounded, color: AppColors.warning),
                   title: Text(
                     'Rate App',
                     style: GoogleFonts.inter(fontSize: 15, color: onSurface),
                   ),
-                  onTap: () => launchUrl(Uri.parse('https://play.google.com/store')),
+                  onTap: () => _openUrl('https://play.google.com/store'),
                 ),
                 Divider(color: dividerColor, height: 1),
                 ListTile(
+                  leading: const Icon(Icons.privacy_tip_outlined, color: Color(0xFF64748B)),
                   title: Text(
                     'Privacy Policy',
                     style: GoogleFonts.inter(fontSize: 15, color: onSurface),
                   ),
-                  onTap: () => launchUrl(Uri.parse('https://dolphincoder.com/privacy')),
+                  onTap: () => _openUrl('https://dolphincoder.com/privacy'),
                 ),
                 Divider(color: dividerColor, height: 1),
                 ListTile(
+                  leading: const Icon(Icons.description_outlined, color: Color(0xFF64748B)),
                   title: Text(
                     'Terms of Service',
                     style: GoogleFonts.inter(fontSize: 15, color: onSurface),
                   ),
-                  onTap: () => launchUrl(Uri.parse('https://dolphincoder.com/terms')),
+                  onTap: () => _openUrl('https://dolphincoder.com/terms'),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
+
+          // Log Out Button
+          OutlinedButton.icon(
+            onPressed: () async {
+              await ref.read(authProvider.notifier).logout();
+              if (context.mounted) context.go('/login');
+            },
+            icon: const Icon(Icons.logout_rounded, color: Color(0xFFEF4444)),
+            label: const Text('Log Out', style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold)),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Color(0xFFFCA5A5)),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+          ),
+          const SizedBox(height: 40),
         ],
       ),
     );

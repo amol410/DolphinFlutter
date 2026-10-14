@@ -25,10 +25,22 @@ class GamificationRepository {
     );
   }
 
-  Future<List<PathNodeModel>> getPath() async {
+  Future<List<PathNodeModel>> getPath({
+    String? targetLanguage,
+    String? nativeLanguage,
+    String? level,
+  }) async {
     try {
       final dio = await DioClient.getInstance();
-      final response = await dio.get(ApiConstants.gamificationPath);
+      final queryParams = <String, dynamic>{};
+      if (targetLanguage != null) queryParams['targetLanguage'] = targetLanguage;
+      if (nativeLanguage != null) queryParams['nativeLanguage'] = nativeLanguage;
+      if (level != null) queryParams['level'] = level;
+
+      final response = await dio.get(
+        ApiConstants.gamificationPath,
+        queryParameters: queryParams.isNotEmpty ? queryParams : null,
+      );
       if (response.data is Map<String, dynamic> &&
           response.data['success'] == true &&
           response.data['nodes'] != null) {
@@ -171,6 +183,28 @@ class GamificationRepository {
       return response.data['success'] == true;
     } catch (_) {
       return true;
+    }
+  }
+
+  Future<bool> switchCourse({
+    required String targetLanguage,
+    required String nativeLanguage,
+    String level = 'A1',
+  }) async {
+    try {
+      final dio = await DioClient.getInstance();
+      final response = await dio.post(
+        ApiConstants.gamificationSwitchCourse,
+        data: {
+          'targetLanguage': targetLanguage,
+          'nativeLanguage': nativeLanguage,
+          'level': level,
+        },
+      );
+      return response.data is Map<String, dynamic> &&
+          response.data['success'] == true;
+    } catch (_) {
+      return false;
     }
   }
 }

@@ -13,6 +13,17 @@ class TtsService {
   final FlutterTts _flutterTts = FlutterTts();
   bool _isInitialized = false;
   Future<void>? _initFuture;
+  String _currentLanguageCode = 'de';
+  String get currentLanguageCode => _currentLanguageCode;
+
+  /// Update active learning language for speech synthesis ('de' or 'en')
+  Future<void> setLanguage(String langCode) async {
+    _currentLanguageCode = langCode.toLowerCase().trim();
+    final locale = _currentLanguageCode == 'en' ? 'en-US' : 'de-DE';
+    try {
+      await _flutterTts.setLanguage(locale);
+    } catch (_) {}
+  }
 
   /// Thread-safe initialization. Ensures speech parameters, voice selection,
   /// and native engine binding run once without race conditions.
@@ -24,7 +35,8 @@ class TtsService {
   Future<void> _doInit() async {
     if (_isInitialized) return;
     try {
-      await _flutterTts.setLanguage("de-DE");
+      final locale = _currentLanguageCode == 'en' ? 'en-US' : 'de-DE';
+      await _flutterTts.setLanguage(locale);
       // Speaking rate: 0.48 for crystal-clear language learning pronunciation
       await _flutterTts.setSpeechRate(0.48);
       await _flutterTts.setVolume(1.0);

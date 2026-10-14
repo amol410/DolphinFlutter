@@ -33,6 +33,25 @@ class GamificationStatusNotifier extends StateNotifier<AsyncValue<GamificationSt
       return false;
     }
   }
+  Future<bool> switchCourse({
+    required String targetLanguage,
+    required String nativeLanguage,
+    String level = 'A1',
+  }) async {
+    try {
+      final ok = await _repo.switchCourse(
+        targetLanguage: targetLanguage,
+        nativeLanguage: nativeLanguage,
+        level: level,
+      );
+      if (ok) {
+        await refresh();
+      }
+      return ok;
+    } catch (_) {
+      return false;
+    }
+  }
 }
 
 final gamificationStatusProvider = StateNotifierProvider<GamificationStatusNotifier, AsyncValue<GamificationStatusModel>>((ref) {
@@ -48,9 +67,13 @@ class PathNodesNotifier extends StateNotifier<AsyncValue<List<PathNodeModel>>> {
     loadPath();
   }
 
-  Future<void> loadPath() async {
+  Future<void> loadPath({String? targetLanguage, String? nativeLanguage, String? level}) async {
     try {
-      final nodes = await _repo.getPath();
+      final nodes = await _repo.getPath(
+        targetLanguage: targetLanguage,
+        nativeLanguage: nativeLanguage,
+        level: level,
+      );
       state = AsyncValue.data(nodes);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
