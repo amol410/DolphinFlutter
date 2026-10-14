@@ -26,6 +26,7 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
   String _visibleSectionTitle = 'Rookie';
   int _visibleSectionUnitNumber = 1;
   Color _visibleUnitColor = const Color(0xFF1CB0F6);
+  dynamic _currentTrackId;
 
   @override
   void initState() {
@@ -134,8 +135,10 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
             // 2. Dynamic Sticky Section & Unit Banner (Changes Color & Unit on Scroll)
             pathAsync.maybeWhen(
               data: (nodes) {
-                if (nodes.isNotEmpty && nodes[0].unitTitle != _visibleUnitTitle) {
-                  // Initialize or update with first node whenever course track changes
+                final trackId = nodes.isNotEmpty ? (nodes[0].id ?? nodes[0].title) : null;
+                if (trackId != null && trackId != _currentTrackId) {
+                  _currentTrackId = trackId;
+                  // Initialize or update with first node ONLY when course track actually changes
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (mounted) {
                       setState(() {
