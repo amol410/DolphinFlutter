@@ -233,13 +233,6 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
             isLoading: _isSpendingPearls,
             onPressed: _isSpendingPearls ? null : _refillWithPearls,
           ),
-            icon: Icons.diamond_rounded,
-            variant: pearls >= 50 ? GameButtonVariant.primary : GameButtonVariant.outline,
-            height: 48,
-            fontSize: 14,
-            isLoading: _isSpendingPearls,
-            onPressed: _isSpendingPearls ? null : _refillWithPearls,
-          ),
           const SizedBox(height: 12),
 
           // DISMISS: Later

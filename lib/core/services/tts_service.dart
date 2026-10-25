@@ -77,6 +77,15 @@ class TtsService {
         .trim();
   }
 
+  @visibleForTesting
+  String normalizeWordForTesting(String word) => _normalizeWord(word);
+
+  @visibleForTesting
+  String getCacheKeyForTesting(String word, String locale) => _getCacheKey(word, locale);
+
+  @visibleForTesting
+  String getFileNameForWordForTesting(String word, String locale) => _getFileNameForWord(word, locale);
+
   /// Unique memory/disk cache key based on locale and word.
   String _getCacheKey(String word, String locale) {
     return '${locale.toLowerCase()}_${word.toLowerCase()}';
