@@ -42,7 +42,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         _emailController.text.trim(),
         _passwordController.text,
       );
-      if (mounted) context.go('/home');
+      if (mounted) context.go('/language-select');
     } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -126,11 +126,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     Text(
                       'Create Account',
                       style: GoogleFonts.plusJakartaSans(
-                        fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
+                        fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Join DolphinCoder and start learning',
+                      'Join LingoDolphy and start learning',
                       style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary),
                     ),
                   ],

@@ -71,13 +71,18 @@ class AuthRepository {
   }
 
   Future<void> logout() async {
-    await _storage.delete(key: AppConstants.tokenKey);
+    DioClient.clearToken();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(AppConstants.userDataKey);
     DioClient.reset();
   }
 
-  Future<String?> getToken() => _storage.read(key: AppConstants.tokenKey);
+  Future<String?> getToken() async {
+    if (DioClient.cachedToken != null) return DioClient.cachedToken;
+    final token = await _storage.read(key: AppConstants.tokenKey);
+    DioClient.setToken(token);
+    return token;
+  }
 
   Future<UserModel?> getCachedUser() async {
     final prefs = await SharedPreferences.getInstance();
@@ -87,6 +92,7 @@ class AuthRepository {
   }
 
   Future<void> _saveSession(String token, UserModel user) async {
+    DioClient.setToken(token);
     await _storage.write(key: AppConstants.tokenKey, value: token);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(AppConstants.userDataKey, user.toJsonString());

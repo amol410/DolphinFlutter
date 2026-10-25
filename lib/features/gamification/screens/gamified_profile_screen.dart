@@ -5,6 +5,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../shared/widgets/animated_dolphin_mascot.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../providers/gamification_provider.dart';
+import '../data/models/gamification_models.dart';
+import '../widgets/course_selection_sheet.dart';
 
 class GamifiedProfileScreen extends ConsumerWidget {
   const GamifiedProfileScreen({super.key});
@@ -77,7 +79,7 @@ class GamifiedProfileScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '🇩🇪 German Learner • ${user?.email ?? ""}',
+                    '${status?.targetLanguage == "en" ? "🇬🇧 English" : "🇩🇪 German"} Learner • ${user?.email ?? ""}',
                     style: GoogleFonts.outfit(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -133,6 +135,10 @@ class GamifiedProfileScreen extends ConsumerWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 20),
+
+            // Active Course & Language Card
+            _buildActiveCourseCard(context, status),
             const SizedBox(height: 24),
 
             // Achievements Section Header
@@ -316,4 +322,123 @@ class GamifiedProfileScreen extends ConsumerWidget {
       ),
     );
   }
+
+  Widget _buildActiveCourseCard(BuildContext context, GamificationStatusModel? status) {
+    final targetLang = status?.targetLanguage ?? 'de';
+    final nativeLang = status?.nativeLanguage ?? (targetLang == 'en' ? 'hi' : 'en');
+    
+    final flag = targetLang == 'en' ? '🇬🇧' : '🇩🇪';
+    final courseTitle = targetLang == 'en' ? 'English A1' : 'German A1 (Deutsch)';
+    String instructionDesc = 'English instruction • 105 Units';
+    if (targetLang == 'en') {
+      instructionDesc = nativeLang == 'mr'
+          ? 'मराठी माध्यमातून शिका • 35 Units'
+          : 'हिन्दी माध्यम से सीखें • 35 Units';
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFCBD5E1)),
+            ),
+            child: Text(flag, style: const TextStyle(fontSize: 24)),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        courseTitle,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF1E293B),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE0F2FE),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'ACTIVE',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF0284C7),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  instructionDesc,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: const Color(0xFF64748B),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          ElevatedButton(
+            onPressed: () => showCourseSelectionSheet(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1CB0F6),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: Text(
+              'Switch',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
+

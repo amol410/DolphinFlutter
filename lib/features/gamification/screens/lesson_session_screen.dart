@@ -9,10 +9,14 @@ import '../../../core/constants/api_constants.dart';
 import '../../../shared/widgets/animated_dolphin_mascot.dart';
 import '../../../shared/widgets/tactile_game_button.dart';
 import '../../../shared/widgets/duo_feedback_sheet.dart';
+import '../../../shared/widgets/out_of_oxygen_dialog.dart';
 import '../../notes/data/models/karaoke_model.dart';
 import '../data/models/gamification_models.dart';
 import '../providers/gamification_provider.dart';
 import '../../../core/services/tts_service.dart';
+import '../../../core/services/cache_service.dart';
+import '../../../core/services/prefetch_service.dart';
+import '../../../core/services/ad_service.dart';
 
 /// Interactive Lesson Session Screen
 /// Multi-stage interactive tasks based on Basics & Greetings and backend notes.
@@ -37,6 +41,34 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   List<String> _activeStageTypes = [];
   int get _totalStages => _activeStageTypes.length;
   bool get _isCelebrationStage => _currentStage >= _totalStages;
+  bool _currentStageReEnqueued = false;
+
+  // Economy & Accuracy Tracking
+  int _initialTotalStages = 0;
+  int _mistakesCount = 0;
+
+  int get _calculatedAccuracy {
+    final baseCount = _initialTotalStages > 0 ? _initialTotalStages : (_totalStages > 0 ? _totalStages : 1);
+    final totalAttempts = baseCount + _mistakesCount;
+    if (totalAttempts <= 0 || _mistakesCount == 0) return 100;
+    final pct = ((baseCount / totalAttempts) * 100).round();
+    return pct.clamp(0, 100);
+  }
+
+  int get _earnedXp {
+    const baseXp = 10;
+    final acc = _calculatedAccuracy;
+    final bonus = acc == 100 ? 2 : (acc >= 80 ? 1 : 0);
+    return baseXp + bonus;
+  }
+
+  int get _earnedPearls {
+    return _calculatedAccuracy == 100 ? 1 : 0;
+  }
+
+  // Rewarded Ad Bonus XP state
+  bool _hasClaimedDoubleXp = false;
+  bool _isLoadingDoubleXpAd = false;
 
   late final AudioPlayer _audioPlayer;
   StreamSubscription? _playerCompleteSub;
@@ -61,12 +93,14 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   String? _selectedGerman;
   String? _selectedEnglish;
   bool _matchFinished = false;
+  bool _isEvaluatingMatch = false;
 
   // ── Stage 1: Listening Data ───────────────────────────────────────
   String _listenTargetSentence = 'Guten Tag, ich bin Anna';
   List<String> _listenBank = ['Kaffee', 'Guten', 'Tag,', 'ich', 'bin', 'Anna'];
   List<String> _listenTarget = ['Guten', 'Tag,', 'ich', 'bin', 'Anna'];
-  final List<String> _listenSelected = [];
+  final List<int> _listenSelectedIndices = [];
+  List<String> get _listenSelected => _listenSelectedIndices.map((i) => _listenBank[i]).toList();
   bool? _listenCorrect;
   String _listenAudioUrl = '';
 
@@ -75,7 +109,8 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   String _builderTargetSentence = 'Guten Morgen, wie geht es dir?';
   List<String> _builderBank = ['Guten', 'Morgen,', 'wie', 'geht', 'es', 'dir?', 'schlafe', 'Kalt'];
   List<String> _builderTarget = ['Guten', 'Morgen,', 'wie', 'geht', 'es', 'dir?'];
-  final List<String> _builderSelected = [];
+  final List<int> _builderSelectedIndices = [];
+  List<String> get _builderSelected => _builderSelectedIndices.map((i) => _builderBank[i]).toList();
   bool? _builderCorrect;
 
   // ── Stage 3: Sprechen Voice & Lip-Sync Karaoke Data ───────────────
@@ -241,9 +276,19 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     if (url.isNotEmpty) {
       try {
         if (!mounted) return;
-        debugPrint('🔊 [_playListenAudio] Playing studio audio: $url');
+        final cachedFile = await CacheService().getCachedAudioFile(url);
+        if (!mounted) return;
         await _audioPlayer.stop();
-        await _audioPlayer.play(UrlSource(url));
+        if (!mounted) return;
+        if (cachedFile != null) {
+          debugPrint('🔊 [_playListenAudio] Playing from Tier-2 disk audio cache: ${cachedFile.path}');
+          await _audioPlayer.play(DeviceFileSource(cachedFile.path));
+        } else {
+          debugPrint('🔊 [_playListenAudio] Playing studio audio: $url');
+          await _audioPlayer.play(UrlSource(url));
+          PrefetchService().prefetchAudioUrl(url);
+        }
+        if (!mounted) return;
         _preparedAudioUrl = url;
         if (mounted) setState(() => _isPlayingAudio = true);
         return;
@@ -255,8 +300,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     // Smart Hybrid Fallback: Native German TTS for this specific lesson!
     if (_listenTargetSentence.isNotEmpty) {
       debugPrint('🔊 [_playListenAudio] Smart Hybrid TTS speaking: $_listenTargetSentence');
+      if (!mounted) return;
       if (mounted) setState(() => _isPlayingAudio = true);
       await TtsService().speakSentence(_listenTargetSentence);
+      if (!mounted) return;
       if (mounted) setState(() => _isPlayingAudio = false);
     }
   }
@@ -268,10 +315,21 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     if (url.isNotEmpty) {
       try {
         if (!mounted) return;
-        debugPrint('🔊 [_playListenSelectAudio] Playing studio audio: $url (speed: $speed)');
+        final cachedFile = await CacheService().getCachedAudioFile(url);
+        if (!mounted) return;
         await _audioPlayer.stop();
+        if (!mounted) return;
         await _audioPlayer.setPlaybackRate(speed);
-        await _audioPlayer.play(UrlSource(url));
+        if (!mounted) return;
+        if (cachedFile != null) {
+          debugPrint('🔊 [_playListenSelectAudio] Playing from Tier-2 disk audio cache: ${cachedFile.path}');
+          await _audioPlayer.play(DeviceFileSource(cachedFile.path));
+        } else {
+          debugPrint('🔊 [_playListenSelectAudio] Playing studio audio: $url (speed: $speed)');
+          await _audioPlayer.play(UrlSource(url));
+          PrefetchService().prefetchAudioUrl(url);
+        }
+        if (!mounted) return;
         if (mounted) setState(() => _isPlayingAudio = true);
         return;
       } catch (e) {
@@ -281,8 +339,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
     if (_listenSelectSentence.isNotEmpty) {
       debugPrint('🔊 [_playListenSelectAudio] Smart Hybrid TTS speaking: $_listenSelectSentence');
+      if (!mounted) return;
       if (mounted) setState(() => _isPlayingAudio = true);
       await TtsService().speakSentence(_listenSelectSentence);
+      if (!mounted) return;
       if (mounted) setState(() => _isPlayingAudio = false);
     }
   }
@@ -335,8 +395,25 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
     if (stages == null || stages.isEmpty) {
       if (activeNode?.id != null) {
-        _isLoadingLessonDetails = true;
-        _fetchLessonDetails(activeNode!.id);
+        final lessonId = activeNode!.id;
+        // Check Tier-2 cache for instant 0ms launch
+        CacheService().getCachedLessonDetails(lessonId).then((cachedData) {
+          if (!mounted) return;
+          if (cachedData != null &&
+              cachedData['stages'] is List &&
+              (cachedData['stages'] as List).isNotEmpty) {
+            debugPrint('⚡ [_initStagesData] Instant 0ms launch from Tier-2 cache for lesson $lessonId');
+            _applyStages(cachedData['stages'] as List);
+            setState(() {
+              _isLoadingLessonDetails = false;
+            });
+            _startFirstStage();
+            return;
+          }
+          // If not in cache, fallback to background fetch
+          _isLoadingLessonDetails = true;
+          _fetchLessonDetails(lessonId);
+        });
         return;
       }
       _applyFallbackStages();
@@ -385,6 +462,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       'listen_select',
       'sprechen',
     ];
+    if (_initialTotalStages == 0) {
+      _initialTotalStages = _activeStageTypes.length;
+    }
     _clozeSentence = 'Ich _____ aus Indien.';
     _clozeTranslation = 'I come from India.';
     _clozeBlank = 'komme';
@@ -459,7 +539,6 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           _listenBank = (stage['tokens'] as List)
               .map((e) => e.toString().trim())
               .where((e) => e.isNotEmpty)
-              .toSet()
               .toList()
             ..shuffle();
         } else if (_listenTarget.isNotEmpty) {
@@ -499,9 +578,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           _builderBank = (stage['tokens'] as List)
               .map((e) => e.toString().trim())
               .where((e) => e.isNotEmpty)
-              .toSet()
               .toList()
             ..shuffle();
+        } else if (_builderTarget.isNotEmpty) {
+          _builderBank = List<String>.from(_builderTarget)..shuffle();
         }
         activeTypes.add('sentence_builder');
       } else if (type == 'type_word' || type == 'type_input') {
@@ -619,6 +699,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         'sprechen',
       ];
     }
+    if (_initialTotalStages == 0) {
+      _initialTotalStages = _activeStageTypes.length;
+    }
 
     debugPrint('🎯 [_applyStages] Active stage sequence: $_activeStageTypes (total: ${_activeStageTypes.length})');
     _precacheAllVocab();
@@ -700,6 +783,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   }
 
   void _onGermanMatchTap(String word) {
+    if (_isEvaluatingMatch) return;
     if (_matchedGerman.contains(word)) return;
     TtsService().speakGerman(word);
     setState(() {
@@ -709,6 +793,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   }
 
   void _onEnglishMatchTap(String word) {
+    if (_isEvaluatingMatch) return;
     if (_matchedEnglish.contains(word)) return;
     setState(() {
       _selectedEnglish = word;
@@ -718,22 +803,26 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
   void _evaluateMatch() {
     if (_selectedGerman != null && _selectedEnglish != null) {
+      _isEvaluatingMatch = true;
       if (_solutionPairs[_selectedGerman] == _selectedEnglish) {
         _matchedGerman.add(_selectedGerman!);
         _matchedEnglish.add(_selectedEnglish!);
         _selectedGerman = null;
         _selectedEnglish = null;
+        _isEvaluatingMatch = false;
 
         if (_matchedGerman.length == _germanWords.length) {
           _matchFinished = true;
           _triggerPrewarmForNext();
         }
       } else {
+        _handleIncorrectAnswer();
         Future.delayed(const Duration(milliseconds: 350), () {
           if (mounted) {
             setState(() {
               _selectedGerman = null;
               _selectedEnglish = null;
+              _isEvaluatingMatch = false;
             });
           }
         });
@@ -757,6 +846,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       _clozeCorrect = isCorrect;
     });
     _triggerPrewarmForNext();
+    if (!isCorrect) {
+      _handleIncorrectAnswer();
+    }
   }
 
   // ── Stage: Type Word Handlers ─────────────────────────────────────
@@ -777,6 +869,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   void _evaluateTypeWord() {
     final typed = _typeWordController.text.trim().toLowerCase();
     if (typed.isEmpty) return;
+    FocusScope.of(context).unfocus();
+    _typeWordController.clear();
+
     final target = _typeTarget.trim().toLowerCase();
 
     // Support standard digraph equivalents (ä -> ae, ö -> oe, ü -> ue, ß -> ss)
@@ -791,6 +886,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       _typeCorrect = isCorrect;
     });
     _triggerPrewarmForNext();
+    if (!isCorrect) {
+      _handleIncorrectAnswer();
+    }
   }
 
   // ── Stage: Dialogue Bubble Handlers ───────────────────────────────
@@ -815,6 +913,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       _dialogueCorrect = isCorrect;
     });
     _triggerPrewarmForNext();
+    if (!isCorrect) {
+      _handleIncorrectAnswer();
+    }
   }
 
   // ── Stage: Listen Select Handlers ─────────────────────────────────
@@ -833,6 +934,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       _listenSelectCorrect = isCorrect;
     });
     _triggerPrewarmForNext();
+    if (!isCorrect) {
+      _handleIncorrectAnswer();
+    }
   }
 
   void _triggerSprechenAutoPlay() {
@@ -857,13 +961,23 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     if (url.isNotEmpty) {
       try {
         if (!mounted) return;
-        debugPrint('🔊 [_playSprechenDemo] Starting studio reference playback: $url');
+        final cachedFile = await CacheService().getCachedAudioFile(url);
+        if (!mounted) return;
         await _audioPlayer.stop();
+        if (!mounted) return;
         setState(() {
           _isSprechenDemoPlaying = true;
           _activeSprechenWordIndex = -1;
         });
-        await _audioPlayer.play(UrlSource(url));
+        if (!mounted) return;
+        if (cachedFile != null) {
+          debugPrint('🔊 [_playSprechenDemo] Playing from Tier-2 disk audio cache: ${cachedFile.path}');
+          await _audioPlayer.play(DeviceFileSource(cachedFile.path));
+        } else {
+          debugPrint('🔊 [_playSprechenDemo] Starting studio reference playback: $url');
+          await _audioPlayer.play(UrlSource(url));
+          PrefetchService().prefetchAudioUrl(url);
+        }
         return;
       } catch (e) {
         debugPrint('⚠️ [_playSprechenDemo] Studio audio error: $e, falling back to TTS');
@@ -872,12 +986,11 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
     // Smart Hybrid TTS demo with word-by-word karaoke highlighting
     if (_sprechenPrompt.isNotEmpty) {
-      if (mounted) {
-        setState(() {
-          _isSprechenDemoPlaying = true;
-          _activeSprechenWordIndex = 0;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _isSprechenDemoPlaying = true;
+        _activeSprechenWordIndex = 0;
+      });
 
       final wordCount = _sprechenKaraokeWords.length;
       int currentWord = 0;
@@ -890,6 +1003,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         }
         currentWord++;
         if (currentWord < wordCount) {
+          if (!mounted) {
+            timer.cancel();
+            return;
+          }
           setState(() {
             _activeSprechenWordIndex = currentWord;
           });
@@ -908,8 +1025,101 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     }
   }
 
+  String _normalizeNumbers(String text) {
+    final currentTarget = ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
+    final isEnglish = currentTarget == 'en';
+
+    final germanDigits = const {
+      '0': 'null',
+      '1': 'eins',
+      '2': 'zwei',
+      '3': 'drei',
+      '4': 'vier',
+      '5': 'fünf',
+      '6': 'sechs',
+      '7': 'sieben',
+      '8': 'acht',
+      '9': 'neun',
+    };
+
+    final englishDigits = const {
+      '0': 'zero',
+      '1': 'one',
+      '2': 'two',
+      '3': 'three',
+      '4': 'four',
+      '5': 'five',
+      '6': 'six',
+      '7': 'seven',
+      '8': 'eight',
+      '9': 'nine',
+    };
+
+    final digitMap = isEnglish ? englishDigits : germanDigits;
+
+    final germanCompounds = const {
+      '10': 'zehn',
+      '11': 'elf',
+      '12': 'zwölf',
+      '13': 'dreizehn',
+      '14': 'vierzehn',
+      '15': 'fünfzehn',
+      '16': 'sechzehn',
+      '17': 'siebzehn',
+      '18': 'achtzehn',
+      '19': 'neunzehn',
+      '20': 'zwanzig',
+      '30': 'dreißig',
+      '40': 'vierzig',
+      '50': 'fünfzig',
+      '60': 'sechzig',
+      '70': 'siebzig',
+      '80': 'achtzig',
+      '90': 'neunzig',
+      '100': 'hundert',
+    };
+
+    final englishCompounds = const {
+      '10': 'ten',
+      '11': 'eleven',
+      '12': 'twelve',
+      '13': 'thirteen',
+      '14': 'fourteen',
+      '15': 'fifteen',
+      '16': 'sixteen',
+      '17': 'seventeen',
+      '18': 'eighteen',
+      '19': 'nineteen',
+      '20': 'twenty',
+      '30': 'thirty',
+      '40': 'forty',
+      '50': 'fifty',
+      '60': 'sixty',
+      '70': 'seventy',
+      '80': 'eighty',
+      '90': 'ninety',
+      '100': 'hundred',
+    };
+
+    final compoundMap = isEnglish ? englishCompounds : germanCompounds;
+
+    return text.replaceAllMapped(RegExp(r'\d+'), (match) {
+      final numStr = match.group(0)!;
+      // If recognized as known compound word (e.g., 10 -> zehn), provide both compound and single digits
+      if (compoundMap.containsKey(numStr)) {
+        final comp = compoundMap[numStr]!;
+        final single = numStr.split('').map((d) => digitMap[d] ?? d).join(' ');
+        return ' $comp $single ';
+      }
+      // For phone numbers, codes, or digit sequences (e.g. 0172 -> null eins sieben zwei)
+      final expanded = numStr.split('').map((d) => digitMap[d] ?? d).join(' ');
+      return ' $expanded ';
+    });
+  }
+
   List<String> _cleanWords(String text) {
-    return text
+    final normalized = _normalizeNumbers(text);
+    return normalized
         .toLowerCase()
         .replaceAll(RegExp(r"[.,/#!$%^&*;:{}=\-_`~()?'«»„“”’]"), '')
         .trim()
@@ -920,6 +1130,14 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
   bool _isFuzzyMatch(String w1, String w2) {
     if (w1 == w2) return true;
+    // Spoken number variants
+    if ((w1 == 'zwei' && w2 == 'zwo') || (w1 == 'zwo' && w2 == 'zwei')) return true;
+    if ((w1 == 'eins' && w2 == 'ein') || (w1 == 'ein' && w2 == 'eins')) return true;
+    // Gender/inflection lenient matches
+    if ((w1 == 'meine' && w2 == 'mein') || (w1 == 'mein' && w2 == 'meine')) return true;
+    if ((w1 == 'deine' && w2 == 'dein') || (w1 == 'dein' && w2 == 'deine')) return true;
+    if ((w1 == 'seine' && w2 == 'sein') || (w1 == 'sein' && w2 == 'seine')) return true;
+
     final norm1 = w1.replaceAll('ä', 'ae').replaceAll('ö', 'oe').replaceAll('ü', 'ue').replaceAll('ß', 'ss');
     final norm2 = w2.replaceAll('ä', 'ae').replaceAll('ö', 'oe').replaceAll('ü', 'ue').replaceAll('ß', 'ss');
     if (norm1 == norm2) return true;
@@ -1114,18 +1332,112 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     }
   }
 
+  void _handleIncorrectAnswer() {
+    _mistakesCount++;
+    // 1. Mistakes Review Loop: re-enqueue stage at end of active stages (Objective 3)
+    if (!_currentStageReEnqueued && _currentStage < _activeStageTypes.length) {
+      _currentStageReEnqueued = true;
+      final currentType = _activeStageTypes[_currentStage];
+      _activeStageTypes.add(currentType);
+      debugPrint('🔁 [Mistakes Review] Re-enqueued $currentType at end of stages. Total stages: ${_activeStageTypes.length}');
+    }
+
+    // 2. Connect Hearts/Oxygen Deduction (Objective 2)
+    ref.read(gamificationStatusProvider.notifier).deductOxygen();
+
+    // 3. If oxygen depleted, pause and prompt refill modal
+    final currentOxygen = ref.read(gamificationStatusProvider).value?.oxygen ?? 0;
+    if (currentOxygen <= 0) {
+      _showOutOfOxygenDialog();
+    }
+  }
+
+  void _showOutOfOxygenDialog() {
+    _audioPlayer.pause();
+    TtsService().stop();
+    if (mounted) {
+      setState(() {
+        _isPlayingAudio = false;
+        _isSprechenDemoPlaying = false;
+      });
+    }
+
+    OutOfOxygenSheet.show(
+      context,
+      onRefilled: () {
+        if (mounted) {
+          setState(() {});
+        }
+      },
+    );
+  }
+
+  void _resetStageStateForType(String stageType) {
+    switch (stageType) {
+      case 'word_match':
+      case 'match_pairs':
+        _matchedGerman.clear();
+        _matchedEnglish.clear();
+        _selectedGerman = null;
+        _selectedEnglish = null;
+        _matchFinished = false;
+        _isEvaluatingMatch = false;
+        break;
+      case 'listen_tap':
+        _listenSelectedIndices.clear();
+        _listenCorrect = null;
+        break;
+      case 'cloze_test':
+      case 'cloze':
+        _clozeSelectedOption = null;
+        _clozeCorrect = null;
+        break;
+      case 'sentence_builder':
+        _builderSelectedIndices.clear();
+        _builderCorrect = null;
+        break;
+      case 'type_word':
+      case 'type_input':
+        _typeWordController.clear();
+        _typeCorrect = null;
+        break;
+      case 'dialogue_bubble':
+      case 'dialogue':
+        _dialogueSelectedIdx = null;
+        _dialogueCorrect = null;
+        break;
+      case 'listen_select':
+      case 'listen_comprehension':
+        _listenSelectSelectedIdx = null;
+        _listenSelectCorrect = null;
+        break;
+      case 'sprechen':
+        _spokenText = '';
+        _speechAccuracy = 0;
+        _speechPassed = null;
+        _isSpeaking = false;
+        _hasPlayedSprechenDemo = false;
+        _activeSprechenWordIndex = -1;
+        break;
+    }
+  }
+
   void _nextStage() {
     _ttsHighlightTimer?.cancel();
     _sprechenAutoPlayTimer?.cancel();
     _silenceTimer?.cancel();
     _audioPlayer.pause();
     TtsService().stop();
+    _currentStageReEnqueued = false;
     setState(() {
       _isPlayingAudio = false;
       _isSprechenDemoPlaying = false;
       _activeSprechenWordIndex = -1;
       _currentStage++;
     });
+    if (_currentStage < _activeStageTypes.length) {
+      _resetStageStateForType(_activeStageTypes[_currentStage]);
+    }
     TtsService().warmUp();
     if (_currentStage < _activeStageTypes.length) {
       final nextType = _activeStageTypes[_currentStage];
@@ -1154,20 +1466,33 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     }
   }
 
-  void _finishLesson() {
-    final xp = widget.node?.xpReward ?? 15;
-    final pearls = widget.node?.pearlsReward ?? 20;
+  Future<void> _finishLesson() async {
+    final xp = _earnedXp;
+    final pearls = _earnedPearls;
+    final accuracy = _calculatedAccuracy;
 
     // Complete node on archipelago map and save gamification stats to backend
-    ref.read(pathNodesProvider.notifier).completeNode(
+    await ref.read(pathNodesProvider.notifier).completeNode(
       widget.nodeIndex,
-      stars: 3,
-      scorePct: 100,
+      stars: accuracy == 100 ? 3 : (accuracy >= 80 ? 2 : 1),
+      scorePct: accuracy,
       xp: xp,
       pearls: pearls,
     );
 
-    context.go('/home');
+    await AdService().incrementLessonCount();
+    if (!mounted) return;
+    await AdService().showInterstitialIfEligible(
+      onDone: () {
+        if (mounted) {
+          if (context.canPop()) {
+            context.pop(true);
+          } else {
+            context.go('/home');
+          }
+        }
+      },
+    );
   }
 
   @override
@@ -1250,7 +1575,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                     const Icon(Icons.favorite_rounded, color: Color(0xFFFF4B4B), size: 20),
                     const SizedBox(width: 4),
                     Text(
-                      '5',
+                      '${ref.watch(gamificationStatusProvider).value?.oxygen ?? 5}',
                       style: GoogleFonts.plusJakartaSans(
                         fontWeight: FontWeight.w900,
                         fontSize: 14,
@@ -1524,11 +1849,12 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                   child: Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: _listenSelected.map((word) {
+                    children: _listenSelectedIndices.map((bankIndex) {
+                      final word = _listenBank[bankIndex];
                       return GestureDetector(
                         onTap: () {
                           setState(() {
-                            _listenSelected.remove(word);
+                            _listenSelectedIndices.remove(bankIndex);
                             _listenCorrect = null;
                           });
                         },
@@ -1558,15 +1884,17 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                 Wrap(
                   spacing: 10,
                   runSpacing: 10,
-                  children: _listenBank.map((word) {
-                    final isUsed = _listenSelected.contains(word);
+                  children: _listenBank.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final word = entry.value;
+                    final isUsed = _listenSelectedIndices.contains(index);
                     return GestureDetector(
                       onTap: isUsed
                           ? null
                           : () {
                               TtsService().speakGerman(word);
                               setState(() {
-                                _listenSelected.add(word);
+                                _listenSelectedIndices.add(index);
                                 _listenCorrect = null;
                               });
                             },
@@ -1614,14 +1942,18 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
               text: 'CHECK ANSWER',
               variant: GameButtonVariant.success,
               height: 52,
-              onPressed: _listenSelected.isEmpty
+              onPressed: _listenSelectedIndices.isEmpty
                   ? null
                   : () {
-                      final selectedClean = _listenSelected.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
+                      final selectedWords = _listenSelectedIndices.map((i) => _listenBank[i]).toList();
+                      final selectedClean = selectedWords.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
                       final targetClean = _listenTarget.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
-                      final isMatch = selectedClean == targetClean || _listenSelected.join(' ') == _listenTarget.join(' ');
+                      final isMatch = selectedClean == targetClean || selectedWords.join(' ') == _listenTarget.join(' ');
                       setState(() => _listenCorrect = isMatch);
                       _triggerPrewarmForNext();
+                      if (!isMatch) {
+                        _handleIncorrectAnswer();
+                      }
                     },
             ),
           )
@@ -1942,11 +2274,12 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                   child: Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: _builderSelected.map((word) {
+                    children: _builderSelectedIndices.map((bankIndex) {
+                      final word = _builderBank[bankIndex];
                       return GestureDetector(
                         onTap: () {
                           setState(() {
-                            _builderSelected.remove(word);
+                            _builderSelectedIndices.remove(bankIndex);
                             _builderCorrect = null;
                           });
                         },
@@ -1976,15 +2309,17 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                 Wrap(
                   spacing: 10,
                   runSpacing: 10,
-                  children: _builderBank.map((word) {
-                    final isUsed = _builderSelected.contains(word);
+                  children: _builderBank.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final word = entry.value;
+                    final isUsed = _builderSelectedIndices.contains(index);
                     return GestureDetector(
                       onTap: isUsed
                           ? null
                           : () {
                               TtsService().speakGerman(word);
                               setState(() {
-                                _builderSelected.add(word);
+                                _builderSelectedIndices.add(index);
                                 _builderCorrect = null;
                               });
                             },
@@ -2031,14 +2366,18 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
               text: 'VERIFY SENTENCE',
               variant: GameButtonVariant.success,
               height: 52,
-              onPressed: _builderSelected.isEmpty
+              onPressed: _builderSelectedIndices.isEmpty
                   ? null
                   : () {
-                      final selClean = _builderSelected.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
+                      final selectedWords = _builderSelectedIndices.map((i) => _builderBank[i]).toList();
+                      final selClean = selectedWords.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
                       final tgtClean = _builderTarget.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
-                      final isMatch = selClean == tgtClean || _builderSelected.join(' ') == _builderTarget.join(' ');
+                      final isMatch = selClean == tgtClean || selectedWords.join(' ') == _builderTarget.join(' ');
                       setState(() => _builderCorrect = isMatch);
                       _triggerPrewarmForNext();
+                      if (!isMatch) {
+                        _handleIncorrectAnswer();
+                      }
                     },
             ),
           )
@@ -2185,9 +2524,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                             border: InputBorder.none,
                           ),
                           onChanged: (_) {
-                            if (_typeCorrect != null) {
-                              setState(() => _typeCorrect = null);
-                            }
+                            setState(() {
+                              _typeCorrect = null;
+                            });
                           },
                           onSubmitted: (_) => _evaluateTypeWord(),
                         ),
@@ -3124,6 +3463,29 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                       ),
                     ),
                 ],
+
+                const SizedBox(height: 24),
+                Center(
+                  child: TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _speechAccuracy = 100;
+                        _speechPassed = true;
+                      });
+                      _nextStage();
+                    },
+                    icon: const Icon(Icons.volume_off_rounded, size: 16, color: Color(0xFF94A3B8)),
+                    label: Text(
+                      "CAN'T SPEAK RIGHT NOW",
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF94A3B8),
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -3145,7 +3507,8 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   // STAGE 4: Dopamine Celebration & Rewards
   // ══════════════════════════════════════════════════════════════════
   Widget _buildCelebrationStage() {
-    final xp = widget.node?.xpReward ?? 15;
+    final xp = _earnedXp;
+    final accuracy = _calculatedAccuracy;
     final lessonTitle = (widget.node?.title != null && widget.node!.title.isNotEmpty)
         ? widget.node!.title
         : 'this lesson';
@@ -3200,7 +3563,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
               Expanded(
                 child: _buildMetricCard(
                   label: 'ACCURACY',
-                  value: '98%',
+                  value: '$accuracy%',
                   color: const Color(0xFF10B981),
                   icon: Icons.track_changes_rounded,
                 ),
@@ -3219,6 +3582,45 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
           const Spacer(),
 
+          // Duolingo-styled 2X Bonus XP Rewarded Ad Option
+          if (!_hasClaimedDoubleXp) ...[
+            TactileGameButton(
+              text: '🎬 2X BONUS XP (Watch Video)',
+              icon: Icons.bolt_rounded,
+              variant: GameButtonVariant.secondary,
+              height: 52,
+              fontSize: 15,
+              isLoading: _isLoadingDoubleXpAd,
+              onPressed: _isLoadingDoubleXpAd ? null : _claimDoubleXpReward,
+            ),
+            const SizedBox(height: 12),
+          ] else ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withOpacity(0.12),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFF10B981).withOpacity(0.4)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    '2X XP CLAIMED! (+${_earnedXp * 2} XP)',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      color: const Color(0xFF10B981),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           TactileGameButton(
             text: 'CONTINUE TO MAP',
             variant: GameButtonVariant.success,
@@ -3228,6 +3630,40 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  void _claimDoubleXpReward() {
+    setState(() => _isLoadingDoubleXpAd = true);
+    final bonusXp = _earnedXp;
+
+    AdService().showRewardedAd(
+      onUserEarnedReward: () async {
+        if (!mounted) return;
+        setState(() {
+          _isLoadingDoubleXpAd = false;
+          _hasClaimedDoubleXp = true;
+        });
+        await ref.read(gamificationStatusProvider.notifier).claimAdReward('double_xp', bonusXp);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('🎉 2X Double XP activated! (+$bonusXp XP bonus!)'),
+            backgroundColor: const Color(0xFF059669),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      },
+      onAdFailed: (error) {
+        if (!mounted) return;
+        setState(() => _isLoadingDoubleXpAd = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), behavior: SnackBarBehavior.floating),
+        );
+      },
+      onAdDismissed: (_) {
+        if (mounted) setState(() => _isLoadingDoubleXpAd = false);
+      },
     );
   }
 

@@ -1,18 +1,34 @@
+import 'package:flutter/foundation.dart';
 import '../../../../core/constants/api_constants.dart';
 import '../../../../core/network/dio_client.dart';
+import '../../../../core/services/cache_service.dart';
+import '../../../../core/services/prefetch_service.dart';
 import 'models/gamification_models.dart';
 
 class GamificationRepository {
+  final CacheService _cache = CacheService();
+  final PrefetchService _prefetch = PrefetchService();
+
   Future<GamificationStatusModel> getStatus() async {
+    // 1. Check local Tier-2 cache
+    final cached = await _cache.getCachedStatus();
+
     try {
       final dio = await DioClient.getInstance();
       final response = await dio.get(ApiConstants.gamificationStatus);
       if (response.data is Map<String, dynamic> &&
           response.data['success'] == true &&
           response.data['status'] != null) {
-        return GamificationStatusModel.fromJson(response.data['status']);
+        final status = GamificationStatusModel.fromJson(response.data['status']);
+        await _cache.saveStatus(status);
+        return status;
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('⚠️ [GamificationRepository] getStatus network error: $e');
+    }
+
+    if (cached != null) return cached;
+
     return const GamificationStatusModel(
       streakCount: 1,
       longestStreak: 1,
@@ -31,6 +47,17 @@ class GamificationRepository {
     String? level,
     int? section,
   }) async {
+    final tLang = targetLanguage ?? 'de';
+    final nLang = nativeLanguage ?? (tLang == 'en' ? 'mr' : 'en');
+    final lvl = level ?? 'A1';
+
+    // 1. Check Tier-2 cache for instant offline-first display
+    final cachedNodes = await _cache.getCachedPathNodes(
+      targetLanguage: tLang,
+      nativeLanguage: nLang,
+      level: lvl,
+    );
+
     try {
       final dio = await DioClient.getInstance();
       final queryParams = <String, dynamic>{};
@@ -47,9 +74,31 @@ class GamificationRepository {
           response.data['success'] == true &&
           response.data['nodes'] != null) {
         final list = response.data['nodes'] as List;
-        return list.map((json) => PathNodeModel.fromJson(json)).toList();
+        final nodes = list.map((json) => PathNodeModel.fromJson(json)).toList();
+
+        // Save fresh path to local disk
+        await _cache.savePathNodes(
+          targetLanguage: tLang,
+          nativeLanguage: nLang,
+          level: lvl,
+          nodes: nodes,
+        );
+
+        // Predictive background prefetch for upcoming unfinished nodes & voice clips
+        _prefetch.prefetchUpcomingLessons(nodes);
+
+        return nodes;
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('⚠️ [GamificationRepository] getPath network error: $e');
+    }
+
+    // Return cached path if network fails (offline support)
+    if (cachedNodes != null && cachedNodes.isNotEmpty) {
+      debugPrint('⚡ [GamificationRepository] Serving course path from Tier-2 local cache (${cachedNodes.length} nodes)');
+      _prefetch.prefetchUpcomingLessons(cachedNodes);
+      return cachedNodes;
+    }
 
     // Fallback to complete 7-island Archipelago
     return [
@@ -134,24 +183,50 @@ class GamificationRepository {
     int scorePct = 100,
     int xpEarned = 20,
     int pearlsEarned = 10,
+    String? targetLanguage,
+    String? nativeLanguage,
+    String? level,
   }) async {
+    final payload = <String, dynamic>{
+      'nodeIndex': nodeIndex,
+      'stars': stars,
+      'scorePct': scorePct,
+      'xpEarned': xpEarned,
+      'pearlsEarned': pearlsEarned,
+      if (targetLanguage != null) 'targetLanguage': targetLanguage,
+      if (nativeLanguage != null) 'nativeLanguage': nativeLanguage,
+      if (level != null) 'level': level,
+    };
+
     try {
       final dio = await DioClient.getInstance();
       final response = await dio.post(
         ApiConstants.gamificationCompleteNode,
-        data: {
-          'nodeIndex': nodeIndex,
-          'stars': stars,
-          'scorePct': scorePct,
-          'xpEarned': xpEarned,
-          'pearlsEarned': pearlsEarned,
-        },
+        data: payload,
       );
       if (response.data is Map<String, dynamic>) {
+        _replayOfflineCompletions();
         return response.data as Map<String, dynamic>;
       }
+    } catch (e) {
+      debugPrint('⚠️ [GamificationRepository] completeNode network error, queueing offline: $e');
+      await _cache.queueOfflineCompletion(payload);
+    }
+    return {'success': true, 'offlineQueued': true};
+  }
+
+  void _replayOfflineCompletions() async {
+    try {
+      final queue = await _cache.getPendingOfflineCompletions();
+      if (queue.isEmpty) return;
+      debugPrint('🔄 [GamificationRepository] Replaying ${queue.length} offline completions...');
+      final dio = await DioClient.getInstance();
+      for (final item in queue) {
+        await dio.post(ApiConstants.gamificationCompleteNode, data: item);
+      }
+      await _cache.clearPendingOfflineCompletions();
+      debugPrint('✅ [GamificationRepository] Offline queue synchronized successfully.');
     } catch (_) {}
-    return {'success': true};
   }
 
   Future<List<LeaderboardEntryModel>> getLeaderboard({String? league}) async {
@@ -188,6 +263,21 @@ class GamificationRepository {
     }
   }
 
+  Future<bool> claimAdReward(String rewardType, int amount) async {
+    try {
+      final dio = await DioClient.getInstance();
+      final response = await dio.post(
+        ApiConstants.gamificationClaimAdReward,
+        data: {'rewardType': rewardType, 'amount': amount},
+      );
+      return response.data is Map<String, dynamic> &&
+          response.data['success'] == true;
+    } catch (e) {
+      debugPrint('⚠️ [GamificationRepository] claimAdReward network error: $e');
+      return true;
+    }
+  }
+
   Future<bool> switchCourse({
     required String targetLanguage,
     required String nativeLanguage,
@@ -211,15 +301,28 @@ class GamificationRepository {
   }
 
   Future<Map<String, dynamic>?> getLessonDetails(dynamic lessonId) async {
+    if (lessonId == null) return null;
+
+    // 1. Check local Tier-2 cache first (0ms latency!)
+    final cached = await _cache.getCachedLessonDetails(lessonId);
+    if (cached != null) {
+      debugPrint('⚡ [GamificationRepository] Serving lesson $lessonId from Tier-2 cache (0ms instant play)');
+      return cached;
+    }
+
     try {
       final dio = await DioClient.getInstance();
       final response = await dio.get('${ApiConstants.gamificationLesson}/$lessonId');
       if (response.data is Map<String, dynamic> &&
           response.data['success'] == true &&
           response.data['lesson'] != null) {
-        return response.data['lesson'] as Map<String, dynamic>;
+        final lesson = response.data['lesson'] as Map<String, dynamic>;
+        await _cache.saveLessonDetails(lessonId, lesson);
+        return lesson;
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('⚠️ [GamificationRepository] getLessonDetails network error: $e');
+    }
     return null;
   }
 }

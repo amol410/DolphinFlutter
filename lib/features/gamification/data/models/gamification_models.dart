@@ -40,6 +40,50 @@ class GamificationStatusModel {
       currentLeague: json['currentLeague'] ?? 'Coral Reef',
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'streakCount': streakCount,
+      'longestStreak': longestStreak,
+      'lastActiveDate': lastActiveDate,
+      'dailyTargetXp': dailyTargetXp,
+      'targetLanguage': targetLanguage,
+      'nativeLanguage': nativeLanguage,
+      'currentLevel': currentLevel,
+      'pearls': pearls,
+      'oxygen': oxygen,
+      'totalXp': totalXp,
+      'currentLeague': currentLeague,
+    };
+  }
+
+  GamificationStatusModel copyWith({
+    int? streakCount,
+    int? longestStreak,
+    String? lastActiveDate,
+    int? dailyTargetXp,
+    String? targetLanguage,
+    String? nativeLanguage,
+    String? currentLevel,
+    int? pearls,
+    int? oxygen,
+    int? totalXp,
+    String? currentLeague,
+  }) {
+    return GamificationStatusModel(
+      streakCount: streakCount ?? this.streakCount,
+      longestStreak: longestStreak ?? this.longestStreak,
+      lastActiveDate: lastActiveDate ?? this.lastActiveDate,
+      dailyTargetXp: dailyTargetXp ?? this.dailyTargetXp,
+      targetLanguage: targetLanguage ?? this.targetLanguage,
+      nativeLanguage: nativeLanguage ?? this.nativeLanguage,
+      currentLevel: currentLevel ?? this.currentLevel,
+      pearls: pearls ?? this.pearls,
+      oxygen: oxygen ?? this.oxygen,
+      totalXp: totalXp ?? this.totalXp,
+      currentLeague: currentLeague ?? this.currentLeague,
+    );
+  }
 }
 
 class PathNodeModel {
@@ -125,6 +169,83 @@ class PathNodeModel {
       sectionTitle: secTitle,
       sectionUnitNumber: secUnit,
       colorHex: json['colorHex']?.toString() ?? '#1CB0F6',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'index': index,
+      'title': title,
+      'subtitle': subtitle,
+      'type': type,
+      'status': status,
+      'stars': stars,
+      'scorePct': scorePct,
+      'xpReward': xpReward,
+      'pearlsReward': pearlsReward,
+      'sourceType': sourceType,
+      'sourceId': sourceId,
+      'offset': offset,
+      'audioUrl': audioUrl,
+      'stages': stages,
+      'unitNumber': unitNumber,
+      'unitTitle': unitTitle,
+      'unitDescription': unitDescription,
+      'sectionNumber': sectionNumber,
+      'sectionTitle': sectionTitle,
+      'sectionUnitNumber': sectionUnitNumber,
+      'colorHex': colorHex,
+    };
+  }
+
+  PathNodeModel copyWith({
+    dynamic id,
+    int? index,
+    String? title,
+    String? subtitle,
+    String? type,
+    String? status,
+    int? stars,
+    int? scorePct,
+    int? xpReward,
+    int? pearlsReward,
+    String? sourceType,
+    dynamic sourceId,
+    double? offset,
+    String? audioUrl,
+    List<dynamic>? stages,
+    int? unitNumber,
+    String? unitTitle,
+    String? unitDescription,
+    int? sectionNumber,
+    String? sectionTitle,
+    int? sectionUnitNumber,
+    String? colorHex,
+  }) {
+    return PathNodeModel(
+      id: id ?? this.id,
+      index: index ?? this.index,
+      title: title ?? this.title,
+      subtitle: subtitle ?? this.subtitle,
+      type: type ?? this.type,
+      status: status ?? this.status,
+      stars: stars ?? this.stars,
+      scorePct: scorePct ?? this.scorePct,
+      xpReward: xpReward ?? this.xpReward,
+      pearlsReward: pearlsReward ?? this.pearlsReward,
+      sourceType: sourceType ?? this.sourceType,
+      sourceId: sourceId ?? this.sourceId,
+      offset: offset ?? this.offset,
+      audioUrl: audioUrl ?? this.audioUrl,
+      stages: stages ?? this.stages,
+      unitNumber: unitNumber ?? this.unitNumber,
+      unitTitle: unitTitle ?? this.unitTitle,
+      unitDescription: unitDescription ?? this.unitDescription,
+      sectionNumber: sectionNumber ?? this.sectionNumber,
+      sectionTitle: sectionTitle ?? this.sectionTitle,
+      sectionUnitNumber: sectionUnitNumber ?? this.sectionUnitNumber,
+      colorHex: colorHex ?? this.colorHex,
     );
   }
 }

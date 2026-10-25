@@ -9,6 +9,23 @@ import 'api_exception.dart';
 class DioClient {
   static Dio? _dio;
   static const _storage = FlutterSecureStorage();
+  static String? _cachedToken;
+  static bool _hasLoadedToken = false;
+
+  static String? get cachedToken => _cachedToken;
+
+  static void setToken(String? token) {
+    _cachedToken = token;
+    _hasLoadedToken = true;
+  }
+
+  static Future<void> clearToken() async {
+    _cachedToken = null;
+    _hasLoadedToken = true;
+    try {
+      await _storage.delete(key: AppConstants.tokenKey);
+    } catch (_) {}
+  }
 
   static Future<Dio> getInstance() async {
     if (_dio != null) return _dio!;
@@ -22,18 +39,23 @@ class DioClient {
       headers: {'Content-Type': 'application/json'},
     ));
 
-    // Auth interceptor
+    // Auth interceptor (in-memory O(1) token lookup)
     _dio!.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        final token = await _storage.read(key: AppConstants.tokenKey);
-        if (token != null) {
-          options.headers['Authorization'] = 'Bearer $token';
+        if (!_hasLoadedToken) {
+          try {
+            _cachedToken = await _storage.read(key: AppConstants.tokenKey);
+          } catch (_) {}
+          _hasLoadedToken = true;
+        }
+        if (_cachedToken != null) {
+          options.headers['Authorization'] = 'Bearer $_cachedToken';
         }
         handler.next(options);
       },
       onError: (error, handler) async {
         if (error.response?.statusCode == 401) {
-          await _storage.delete(key: AppConstants.tokenKey);
+          await clearToken();
           // Token cleared — router redirect will handle navigation
         }
         handler.next(error);
@@ -73,7 +95,11 @@ class DioClient {
     return _dio!;
   }
 
-  static void reset() => _dio = null;
+  static void reset() {
+    _dio = null;
+    _cachedToken = null;
+    _hasLoadedToken = false;
+  }
 
   static ApiException handleError(dynamic e) {
     if (e is DioException) {

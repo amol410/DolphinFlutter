@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -134,6 +135,46 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  Future<void> _confirmDeleteAccount() async {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surfaceColor = isDark ? AppColors.pitchBlackSurface : AppColors.lightSurface;
+    final textSecondary = isDark ? AppColors.pitchBlackTextSecondary : AppColors.lightTextSecondary;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: surfaceColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Delete Account?',
+          style: GoogleFonts.plusJakartaSans(color: AppColors.error, fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          'This will permanently delete your profile, progress, pearls, and quiz history. You will be redirected to the account deletion request form.',
+          style: GoogleFonts.inter(color: textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              'Continue to Deletion Form',
+              style: GoogleFonts.inter(color: AppColors.error, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await _openUrl(AppConstants.deleteAccountUrl);
+    }
+  }
+
   Future<void> _openUrl(String url) async {
     try {
       final uri = Uri.parse(url);
@@ -173,14 +214,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final targetLang = statusAsync.value?.targetLanguage ?? 'de';
     final nativeLang = statusAsync.value?.nativeLanguage ?? (targetLang == 'en' ? 'mr' : 'en');
 
-    String courseLabel = 'German A1 (English)';
+    String courseLabel = 'German A1 (English instruction)';
     String courseFlag = '🇩🇪';
     if (targetLang == 'en') {
-      if (nativeLang == 'hi') {
-        courseLabel = 'English A1 (हिन्दी)';
+      if (nativeLang == 'mr') {
+        courseLabel = 'English A1 (मराठी माध्यम)';
         courseFlag = '🇬🇧';
       } else {
-        courseLabel = 'English A1 (मराठी)';
+        courseLabel = 'English A1 (हिन्दी माध्यम)';
         courseFlag = '🇬🇧';
       }
     }
@@ -298,42 +339,62 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
 
-          // Developer
-          _sectionLabel('Developer'),
-          GlassCard(
-            padding: EdgeInsets.zero,
-            child: ListTile(
-              leading: const Icon(Icons.dns_outlined, color: Color(0xFF64748B)),
-              title: Text(
-                'API Base URL',
-                style: GoogleFonts.inter(fontSize: 15, color: onSurface),
-              ),
-              subtitle: Text(
-                _apiBaseUrl,
-                style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
-                overflow: TextOverflow.ellipsis,
-              ),
-              trailing: Icon(Icons.edit_outlined, color: AppColors.textMuted, size: 18),
-              onTap: _editApiUrl,
-            ),
-          ),
-
-          // Cache
-          _sectionLabel('Storage'),
-          GlassCard(
-            padding: EdgeInsets.zero,
-            child: ListTile(
-              leading: const Icon(Icons.delete_sweep_outlined, color: AppColors.error),
-              title: Text(
-                'Clear Cache',
-                style: GoogleFonts.inter(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.error,
+          // Developer (Only visible in Debug mode)
+          if (kDebugMode) ...[
+            _sectionLabel('Developer'),
+            GlassCard(
+              padding: EdgeInsets.zero,
+              child: ListTile(
+                leading: const Icon(Icons.dns_outlined, color: Color(0xFF64748B)),
+                title: Text(
+                  'API Base URL',
+                  style: GoogleFonts.inter(fontSize: 15, color: onSurface),
                 ),
+                subtitle: Text(
+                  _apiBaseUrl,
+                  style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: Icon(Icons.edit_outlined, color: AppColors.textMuted, size: 18),
+                onTap: _editApiUrl,
               ),
-              trailing: const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
-              onTap: _clearCache,
+            ),
+          ],
+
+          // Storage & Account Management (Google Play Compliant)
+          _sectionLabel('Storage & Data'),
+          GlassCard(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.delete_sweep_outlined, color: Color(0xFF64748B)),
+                  title: Text(
+                    'Clear Cache',
+                    style: GoogleFonts.inter(fontSize: 15, color: onSurface),
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
+                  onTap: _clearCache,
+                ),
+                Divider(color: dividerColor, height: 1),
+                ListTile(
+                  leading: const Icon(Icons.delete_forever_rounded, color: AppColors.error),
+                  title: Text(
+                    'Delete Account',
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.error,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Permanently delete account and all data',
+                    style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+                  ),
+                  trailing: const Icon(Icons.open_in_new_rounded, size: 18, color: AppColors.error),
+                  onTap: _confirmDeleteAccount,
+                ),
+              ],
             ),
           ),
 
@@ -361,7 +422,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     'Rate App',
                     style: GoogleFonts.inter(fontSize: 15, color: onSurface),
                   ),
-                  onTap: () => _openUrl('https://play.google.com/store'),
+                  onTap: () => _openUrl('https://play.google.com/store/apps/details?id=com.dolphincoder.lms'),
                 ),
                 Divider(color: dividerColor, height: 1),
                 ListTile(
@@ -370,7 +431,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     'Privacy Policy',
                     style: GoogleFonts.inter(fontSize: 15, color: onSurface),
                   ),
-                  onTap: () => _openUrl('https://dolphincoder.com/privacy'),
+                  trailing: const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
+                  onTap: () => _openUrl(AppConstants.privacyPolicyUrl),
                 ),
                 Divider(color: dividerColor, height: 1),
                 ListTile(
@@ -379,7 +441,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     'Terms of Service',
                     style: GoogleFonts.inter(fontSize: 15, color: onSurface),
                   ),
-                  onTap: () => _openUrl('https://dolphincoder.com/terms'),
+                  trailing: const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
+                  onTap: () => _openUrl(AppConstants.termsOfServiceUrl),
                 ),
               ],
             ),

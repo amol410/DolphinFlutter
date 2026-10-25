@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../../shared/widgets/ocean_status_bar.dart';
 import '../../../shared/widgets/animated_dolphin_mascot.dart';
+import '../../../shared/widgets/out_of_oxygen_dialog.dart';
 import '../providers/gamification_provider.dart';
 import '../data/models/gamification_models.dart';
 import '../widgets/course_selection_sheet.dart';
@@ -20,13 +21,14 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
   final ScrollController _scrollController = ScrollController();
 
   int _visibleUnitNumber = 1;
-  String _visibleUnitTitle = 'Greet and introduce yourself';
-  String _visibleUnitDescription = 'Erste Begrüßungen';
+  String _visibleUnitTitle = '';
+  String _visibleUnitDescription = '';
   int _visibleSectionNumber = 1;
-  String _visibleSectionTitle = 'Rookie';
+  String _visibleSectionTitle = '';
   int _visibleSectionUnitNumber = 1;
   Color _visibleUnitColor = const Color(0xFF1CB0F6);
   dynamic _currentTrackId;
+  double _lastEvaluatedOffset = 0.0;
 
   @override
   void initState() {
@@ -42,12 +44,16 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
   }
 
   void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final offset = _scrollController.offset.clamp(0.0, double.infinity);
+    if ((offset - _lastEvaluatedOffset).abs() < 30.0) return;
+    _lastEvaluatedOffset = offset;
+
     final pathAsync = ref.read(pathNodesProvider);
     pathAsync.whenData((nodes) {
       if (nodes.isEmpty) return;
 
       // Approximate item height: ~130 pixels per node
-      final offset = _scrollController.offset.clamp(0.0, double.infinity);
       final estimatedIndex = (offset / 130.0).floor().clamp(0, nodes.length - 1);
       final currentNode = nodes[estimatedIndex];
 
@@ -74,26 +80,80 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
     }
   }
 
-  void _scrollToActiveNode(List<PathNodeModel> nodes) {
+  void _scrollToActiveNode(List<PathNodeModel> nodes, {bool animate = true}) {
+    if (!_scrollController.hasClients) return;
     int activeIndex = nodes.indexWhere((n) => n.status == 'available');
     if (activeIndex == -1) activeIndex = 0;
-    final targetOffset = (activeIndex * 130.0).clamp(0.0, _scrollController.position.maxScrollExtent);
-    _scrollController.animateTo(
-      targetOffset,
-      duration: const Duration(milliseconds: 600),
-      curve: Curves.easeOutCubic,
-    );
+
+    final viewportHeight = _scrollController.position.hasViewportDimension
+        ? _scrollController.position.viewportDimension
+        : 600.0;
+
+    double estimatedOffset = 0.0;
+    for (int i = 0; i < activeIndex && i < nodes.length; i++) {
+      final isFirstOfUnit = i == 0 || (i > 0 && nodes[i - 1].unitNumber != nodes[i].unitNumber);
+      if (isFirstOfUnit && i > 0) {
+        estimatedOffset += 85.0; // Duolingo unit transition divider
+      }
+      estimatedOffset += 135.0; // Stepping stone node
+    }
+
+    final targetOffset = (estimatedOffset - (viewportHeight * 0.25)).clamp(0.0, double.infinity);
+    _performScrollTo(targetOffset, animate: animate);
   }
 
   void _scrollToUnit(List<PathNodeModel> nodes, int targetUnit) {
     int unitIndex = nodes.indexWhere((n) => n.unitNumber == targetUnit);
     if (unitIndex == -1) return;
-    final targetOffset = (unitIndex * 130.0).clamp(0.0, _scrollController.position.maxScrollExtent);
-    _scrollController.animateTo(
-      targetOffset,
-      duration: const Duration(milliseconds: 700),
-      curve: Curves.easeInOutCubic,
-    );
+
+    final viewportHeight = _scrollController.position.hasViewportDimension
+        ? _scrollController.position.viewportDimension
+        : 600.0;
+
+    double estimatedOffset = 0.0;
+    for (int i = 0; i < unitIndex && i < nodes.length; i++) {
+      final isFirstOfUnit = i == 0 || (i > 0 && nodes[i - 1].unitNumber != nodes[i].unitNumber);
+      if (isFirstOfUnit && i > 0) {
+        estimatedOffset += 85.0;
+      }
+      estimatedOffset += 135.0;
+    }
+
+    final targetOffset = (estimatedOffset - (viewportHeight * 0.1)).clamp(0.0, double.infinity);
+    _performScrollTo(targetOffset, animate: true);
+  }
+
+  void _performScrollTo(double targetOffset, {bool animate = true}) {
+    if (!_scrollController.hasClients) return;
+    final maxExtent = _scrollController.position.maxScrollExtent;
+    final clamped = targetOffset.clamp(0.0, maxExtent);
+
+    if (animate) {
+      _scrollController.animateTo(
+        clamped,
+        duration: const Duration(milliseconds: 650),
+        curve: Curves.easeOutCubic,
+      ).then((_) {
+        if (mounted && _scrollController.hasClients && _scrollController.position.maxScrollExtent > maxExtent) {
+          final newClamped = targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent);
+          if ((newClamped - _scrollController.offset).abs() > 20) {
+            _scrollController.animateTo(
+              newClamped,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+            );
+          }
+        }
+      });
+    } else {
+      _scrollController.jumpTo(clamped);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _scrollController.hasClients && _scrollController.position.maxScrollExtent > maxExtent) {
+          final newClamped = targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent);
+          _scrollController.jumpTo(newClamped);
+        }
+      });
+    }
   }
 
   @override
@@ -118,43 +178,60 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
                 onOxygenTap: () => context.go('/shop'),
                 onPearlsTap: () => context.go('/shop'),
               ),
-              loading: () => const OceanStatusBar(
+              loading: () => OceanStatusBar(
                 flagEmoji: '🇩🇪',
                 streakCount: 1,
                 oxygen: 5,
                 pearls: 100,
+                onFlagTap: () => showCourseSelectionSheet(context),
               ),
-              error: (_, __) => const OceanStatusBar(
+              error: (_, __) => OceanStatusBar(
                 flagEmoji: '🇩🇪',
                 streakCount: 1,
                 oxygen: 5,
                 pearls: 100,
+                onFlagTap: () => showCourseSelectionSheet(context),
               ),
             ),
 
             // 2. Dynamic Sticky Section & Unit Banner (Changes Color & Unit on Scroll)
             pathAsync.maybeWhen(
               data: (nodes) {
+                if (nodes.isNotEmpty && _visibleUnitTitle.isEmpty) {
+                  final initialNode = nodes.first;
+                  _visibleUnitNumber = initialNode.unitNumber;
+                  _visibleUnitTitle = initialNode.unitTitle;
+                  _visibleUnitDescription = initialNode.unitDescription;
+                  _visibleSectionNumber = initialNode.sectionNumber;
+                  _visibleSectionTitle = initialNode.sectionTitle;
+                  _visibleSectionUnitNumber = initialNode.sectionUnitNumber;
+                  _visibleUnitColor = _parseColor(initialNode.colorHex);
+                }
+
                 final trackId = nodes.isNotEmpty ? (nodes[0].id ?? nodes[0].title) : null;
                 if (trackId != null && trackId != _currentTrackId) {
                   _currentTrackId = trackId;
-                  // Initialize or update with first node ONLY when course track actually changes
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) {
-                      setState(() {
-                        _visibleUnitNumber = nodes[0].unitNumber;
-                        _visibleUnitTitle = nodes[0].unitTitle;
-                        _visibleUnitDescription = nodes[0].unitDescription;
-                        _visibleSectionNumber = nodes[0].sectionNumber;
-                        _visibleSectionTitle = nodes[0].sectionTitle;
-                        _visibleSectionUnitNumber = nodes[0].sectionUnitNumber;
-                        _visibleUnitColor = _parseColor(nodes[0].colorHex);
-                      });
-                      if (_scrollController.hasClients) {
-                        _scrollController.jumpTo(0.0);
+                  final activeIndex = nodes.indexWhere((n) => n.status == 'available');
+                  final targetNode = (activeIndex != -1 && activeIndex < nodes.length)
+                      ? nodes[activeIndex]
+                      : (nodes.isNotEmpty ? nodes[0] : null);
+
+                  if (targetNode != null) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) {
+                        setState(() {
+                          _visibleUnitNumber = targetNode.unitNumber;
+                          _visibleUnitTitle = targetNode.unitTitle;
+                          _visibleUnitDescription = targetNode.unitDescription;
+                          _visibleSectionNumber = targetNode.sectionNumber;
+                          _visibleSectionTitle = targetNode.sectionTitle;
+                          _visibleSectionUnitNumber = targetNode.sectionUnitNumber;
+                          _visibleUnitColor = _parseColor(targetNode.colorHex);
+                        });
+                        _scrollToActiveNode(nodes, animate: false);
                       }
-                    }
-                  });
+                    });
+                  }
                 }
                 return _buildDynamicUnitBanner(context, nodes);
               },
@@ -167,8 +244,13 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
                 children: [
                   RefreshIndicator(
                     onRefresh: () async {
-                      ref.read(gamificationStatusProvider.notifier).refresh();
-                      ref.read(pathNodesProvider.notifier).loadPath();
+                      await ref.read(gamificationStatusProvider.notifier).refresh();
+                      final currentStatus = ref.read(gamificationStatusProvider).value;
+                      await ref.read(pathNodesProvider.notifier).loadPath(
+                        targetLanguage: currentStatus?.targetLanguage,
+                        nativeLanguage: currentStatus?.nativeLanguage,
+                        level: currentStatus?.currentLevel,
+                      );
                     },
                     child: pathAsync.when(
                       data: (nodes) {
@@ -208,7 +290,14 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
                             const Text('Unable to load path', style: TextStyle(color: Colors.white)),
                             const SizedBox(height: 10),
                             ElevatedButton(
-                              onPressed: () => ref.read(pathNodesProvider.notifier).loadPath(),
+                              onPressed: () {
+                                final currentStatus = ref.read(gamificationStatusProvider).value;
+                                ref.read(pathNodesProvider.notifier).loadPath(
+                                  targetLanguage: currentStatus?.targetLanguage,
+                                  nativeLanguage: currentStatus?.nativeLanguage,
+                                  level: currentStatus?.currentLevel,
+                                );
+                              },
                               child: const Text('Retry'),
                             ),
                           ],
@@ -303,6 +392,16 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
 
   // Sticky Duolingo Banner with Animated Color & Section/Unit Headings
   Widget _buildDynamicUnitBanner(BuildContext context, List<PathNodeModel> nodes) {
+    final displaySectionTitle = _visibleSectionTitle.isNotEmpty
+        ? _visibleSectionTitle
+        : (nodes.isNotEmpty ? nodes.first.sectionTitle : 'Rookie');
+    final displayUnitTitle = _visibleUnitTitle.isNotEmpty
+        ? _visibleUnitTitle
+        : (nodes.isNotEmpty ? nodes.first.unitTitle : 'Unit $_visibleUnitNumber');
+    final displayUnitDesc = _visibleUnitDescription.isNotEmpty
+        ? _visibleUnitDescription
+        : (nodes.isNotEmpty ? nodes.first.unitDescription : '');
+
     return GestureDetector(
       onTap: () => _showSectionSelectorSheet(context, nodes),
       child: AnimatedContainer(
@@ -330,7 +429,7 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
                   Row(
                     children: [
                       Text(
-                        'SECTION $_visibleSectionNumber (${_visibleSectionTitle.toUpperCase()}), UNIT $_visibleSectionUnitNumber',
+                        'SECTION $_visibleSectionNumber (${displaySectionTitle.toUpperCase()}), UNIT $_visibleSectionUnitNumber',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 11,
                           fontWeight: FontWeight.w900,
@@ -344,7 +443,7 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    _visibleUnitTitle,
+                    displayUnitTitle,
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 18,
                       fontWeight: FontWeight.w900,
@@ -353,10 +452,10 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (_visibleUnitDescription.isNotEmpty) ...[
+                  if (displayUnitDesc.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
-                      _visibleUnitDescription,
+                      displayUnitDesc,
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -572,6 +671,16 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
       return;
     }
 
+    if (node.type == 'chest' && node.status == 'completed') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Treasure chest already claimed!'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     if (node.type == 'chest') {
       ref.read(pathNodesProvider.notifier).completeNode(
         node.index,
@@ -579,18 +688,106 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
         scorePct: 100,
         xp: node.xpReward,
         pearls: node.pearlsReward > 0 ? node.pearlsReward : 30,
-      );
+      ).then((_) {
+        final currentNodes = ref.read(pathNodesProvider).asData?.value;
+        if (currentNodes != null && mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              _scrollToActiveNode(currentNodes, animate: true);
+            }
+          });
+        }
+      });
       _showChestDialog(context, node);
       return;
     }
 
-    context.push('/lesson/${node.index}', extra: node).then((_) {
-      ref.read(pathNodesProvider.notifier).loadPath();
+    // Duolingo-styled Oxygen Gate: If learner has 0 bubbles, show refill modal with rewarded ad
+    final oxygen = ref.read(gamificationStatusProvider).value?.oxygen ?? 5;
+    if (oxygen <= 0) {
+      OutOfOxygenSheet.show(
+        context,
+        onRefilled: () {
+          if (mounted) _launchLesson(context, node);
+        },
+      );
+      return;
+    }
+
+    _launchLesson(context, node);
+  }
+
+  void _launchLesson(BuildContext context, PathNodeModel node) {
+    context.push('/lesson/${node.index}', extra: node).then((_) async {
+      final currentStatus = ref.read(gamificationStatusProvider).value;
+      await ref.read(pathNodesProvider.notifier).loadPath(
+        targetLanguage: currentStatus?.targetLanguage,
+        nativeLanguage: currentStatus?.nativeLanguage,
+        level: currentStatus?.currentLevel,
+        silent: true,
+      );
+      final currentNodes = ref.read(pathNodesProvider).asData?.value;
+      if (currentNodes != null && mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _scrollToActiveNode(currentNodes, animate: true);
+          }
+        });
+      }
     });
   }
 
   // Section Selector Modal Sheet (Section 1: Rookie, Section 2: Explorer, Section 3: Traveler)
   void _showSectionSelectorSheet(BuildContext context, List<PathNodeModel> nodes) {
+    final status = ref.read(gamificationStatusProvider).value;
+    final courseName = status?.targetLanguage == 'en'
+        ? 'English ${status?.currentLevel ?? "A1"}'
+        : (status?.targetLanguage == 'de' ? 'German ${status?.currentLevel ?? "A1"}' : 'Course');
+
+    final totalUnits = nodes.map((n) => n.unitNumber).toSet().length;
+    final totalSections = nodes.map((n) => n.sectionNumber).toSet().length;
+    final subtitleInfo = nodes.isNotEmpty
+        ? '$totalSections ${totalSections == 1 ? "Section" : "Sections"} • $totalUnits ${totalUnits == 1 ? "Unit" : "Units"} • ${nodes.length} Lessons'
+        : 'Sections & Units';
+
+    // Dynamically locate the starting unit number and titles for each section present in nodes
+    final sec1Node = nodes.cast<PathNodeModel?>().firstWhere(
+      (n) => n?.sectionNumber == 1,
+      orElse: () => nodes.isNotEmpty ? nodes.first : null,
+    );
+    final sec2Node = nodes.cast<PathNodeModel?>().firstWhere(
+      (n) => n?.sectionNumber == 2,
+      orElse: () => null,
+    );
+    final sec3Node = nodes.cast<PathNodeModel?>().firstWhere(
+      (n) => n?.sectionNumber == 3,
+      orElse: () => null,
+    );
+
+    final sec1Unit = sec1Node?.unitNumber ?? 1;
+    final sec2Unit = sec2Node?.unitNumber;
+    final sec3Unit = sec3Node?.unitNumber;
+
+    final sec1Title = sec1Node != null && sec1Node.sectionTitle.isNotEmpty
+        ? 'Section 1: ${sec1Node.sectionTitle}'
+        : 'Section 1: Rookie';
+    final sec2Title = sec2Node != null && sec2Node.sectionTitle.isNotEmpty
+        ? 'Section 2: ${sec2Node.sectionTitle}'
+        : 'Section 2: Explorer';
+    final sec3Title = sec3Node != null && sec3Node.sectionTitle.isNotEmpty
+        ? 'Section 3: ${sec3Node.sectionTitle}'
+        : 'Section 3: Traveler';
+
+    final sec1Subtitle = sec1Node != null
+        ? 'Units $sec1Unit+ • First Steps & Foundations'
+        : 'First Steps & Foundations';
+    final sec2Subtitle = sec2Unit != null
+        ? 'Units $sec2Unit+ • Daily Life & Travel'
+        : 'Coming soon for this course track';
+    final sec3Subtitle = sec3Unit != null
+        ? 'Units $sec3Unit+ • Fluency & Exam Prep'
+        : 'Coming soon for this course track';
+
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1B272C),
@@ -613,7 +810,7 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
             ),
             const SizedBox(height: 18),
             Text(
-              'German A1 Course Sections',
+              '$courseName Sections',
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 20,
                 fontWeight: FontWeight.w900,
@@ -622,7 +819,7 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              '3 Sections • 105 Units • 1,680 Lessons',
+              subtitleInfo,
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
@@ -632,37 +829,55 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
             const SizedBox(height: 20),
             _buildSectionTile(
               sectionNum: 1,
-              title: 'Section 1: Rookie',
-              subtitle: 'Units 1–35 • First Steps & Foundations',
+              title: sec1Title,
+              subtitle: sec1Subtitle,
               color: const Color(0xFF1CB0F6),
               isCurrent: _visibleSectionNumber == 1,
               onTap: () {
                 Navigator.pop(ctx);
-                _scrollToUnit(nodes, 1);
+                _scrollToUnit(nodes, sec1Unit);
               },
             ),
             const SizedBox(height: 12),
             _buildSectionTile(
               sectionNum: 2,
-              title: 'Section 2: Explorer',
-              subtitle: 'Units 1–35 (36–70) • Daily Life & Travel',
+              title: sec2Title,
+              subtitle: sec2Subtitle,
               color: const Color(0xFF58CC02),
               isCurrent: _visibleSectionNumber == 2,
               onTap: () {
                 Navigator.pop(ctx);
-                _scrollToUnit(nodes, 36);
+                if (sec2Unit != null) {
+                  _scrollToUnit(nodes, sec2Unit);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Section 2 is coming soon for this course track!'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
               },
             ),
             const SizedBox(height: 12),
             _buildSectionTile(
               sectionNum: 3,
-              title: 'Section 3: Traveler',
-              subtitle: 'Units 1–35 (71–105) • Fluency & Goethe A1 Exam',
+              title: sec3Title,
+              subtitle: sec3Subtitle,
               color: const Color(0xFFFF9600),
               isCurrent: _visibleSectionNumber == 3,
               onTap: () {
                 Navigator.pop(ctx);
-                _scrollToUnit(nodes, 71);
+                if (sec3Unit != null) {
+                  _scrollToUnit(nodes, sec3Unit);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Section 3 is coming soon for this course track!'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
               },
             ),
           ],
@@ -742,6 +957,9 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
 
   // Unit Guidebook Modal Sheet
   void _showGuidebookSheet(BuildContext context) {
+    final status = ref.read(gamificationStatusProvider).value;
+    final langName = status?.targetLanguage == 'en' ? 'English' : 'German';
+
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1B272C),
@@ -779,7 +997,7 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              _visibleUnitTitle,
+              _visibleUnitTitle.isNotEmpty ? _visibleUnitTitle : 'Unit $_visibleUnitNumber Guide',
               style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.bold, color: _visibleUnitColor),
             ),
             const SizedBox(height: 16),
@@ -793,7 +1011,7 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '💡 Key German Concepts',
+                    '💡 Key $langName Concepts',
                     style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white),
                   ),
                   const SizedBox(height: 6),

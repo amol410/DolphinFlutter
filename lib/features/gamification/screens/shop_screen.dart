@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../core/services/ad_service.dart';
 import '../../../shared/widgets/animated_dolphin_mascot.dart';
 import '../providers/gamification_provider.dart';
 
@@ -79,7 +80,7 @@ class ShopScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Exchange earned pearls for oxygen refills and streak boosters.',
+                          'Exchange earned pearls or watch quick sponsor videos for oxygen & boosters.',
                           style: GoogleFonts.outfit(fontSize: 12, color: const Color(0xFFE0F2FE)),
                         ),
                       ],
@@ -88,16 +89,129 @@ class ShopScreen extends ConsumerWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 20),
 
-            // Item 1: Refill Oxygen Bubbles
+            // ══════════════════════════════════════════════════════════════
+            // SECTION 1: DUOLINGO-STYLE FREE REWARDS (SPONSORED ADS)
+            // ══════════════════════════════════════════════════════════════
+            Row(
+              children: [
+                const Text('⚡', style: TextStyle(fontSize: 16)),
+                const SizedBox(width: 6),
+                Text(
+                  'FREE SPONSORED REWARDS',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF059669),
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+
+            // Ad Reward 1: Free +1 Oxygen Bubble
+            _buildRewardedShopItem(
+              context,
+              icon: '🎬',
+              badge: '+1 BUBBLE',
+              title: 'Watch Ad: +1 Oxygen Bubble',
+              subtitle: 'Restore +1 bubble for free without spending pearls ($oxygen/5 currently)',
+              buttonText: oxygen >= 5 ? 'FULL' : 'WATCH AD',
+              isActionable: oxygen < 5,
+              buttonColor: const Color(0xFF10B981),
+              shadowColor: const Color(0xFF059669),
+              onWatch: () {
+                AdService().showRewardedAd(
+                  onUserEarnedReward: () async {
+                    await ref.read(gamificationStatusProvider.notifier).claimAdReward('oxygen', 1);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('🎉 Ad reward granted! +1 Oxygen bubble added! 🫧'),
+                          backgroundColor: Color(0xFF059669),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  },
+                  onAdFailed: (error) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(error), behavior: SnackBarBehavior.floating),
+                      );
+                    }
+                  },
+                );
+              },
+            ),
+
+            // Ad Reward 2: Free 25 Pearls
+            _buildRewardedShopItem(
+              context,
+              icon: '🎁',
+              badge: 'FREE PEARLS',
+              title: 'Watch Ad: Claim +25 Pearls',
+              subtitle: 'Watch a quick 20-second video to claim free pearls for boosters',
+              buttonText: '+25 💎',
+              isActionable: true,
+              buttonColor: const Color(0xFF0284C7),
+              shadowColor: const Color(0xFF0369A1),
+              onWatch: () {
+                AdService().showRewardedAd(
+                  onUserEarnedReward: () {
+                    ref.read(gamificationStatusProvider.notifier).optimisticAddRewards(0, 25);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('🎉 Claimed +25 Free Pearls! 💎'),
+                          backgroundColor: Color(0xFF059669),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  },
+                  onAdFailed: (error) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(error), behavior: SnackBarBehavior.floating),
+                      );
+                    }
+                  },
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // ══════════════════════════════════════════════════════════════
+            // SECTION 2: PEARL VAULT
+            // ══════════════════════════════════════════════════════════════
+            Row(
+              children: [
+                const Text('💎', style: TextStyle(fontSize: 16)),
+                const SizedBox(width: 6),
+                Text(
+                  'PEARL VAULT',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF64748B),
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+
+            // Item 1: Refill Oxygen Bubbles (Paid)
             _buildShopItem(
               context,
               icon: '🫧',
               title: 'Refill Oxygen Bubbles',
               subtitle: 'Restore full 5 oxygen bubbles instantly ($oxygen/5 currently)',
-              cost: 50,
-              canAfford: pearls >= 50 && oxygen < 5,
+              cost: 250,
+              canAfford: pearls >= 250 && oxygen < 5,
               buttonText: oxygen >= 5 ? 'FULL' : 'REFILL',
               onBuy: () async {
                 final ok = await ref.read(gamificationStatusProvider.notifier).refillOxygen();
@@ -228,6 +342,113 @@ class ShopScreen extends ConsumerWidget {
                     ),
                   ),
                 ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRewardedShopItem(
+    BuildContext context, {
+    required String icon,
+    required String badge,
+    required String title,
+    required String subtitle,
+    required String buttonText,
+    required bool isActionable,
+    required Color buttonColor,
+    required Color shadowColor,
+    required VoidCallback onWatch,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isActionable ? buttonColor.withOpacity(0.3) : const Color(0xFFE2E8F0),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isActionable ? buttonColor.withOpacity(0.08) : const Color(0xFFE2E8F0),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Text(icon, style: const TextStyle(fontSize: 32)),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: buttonColor.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    badge,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                      color: buttonColor,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  title,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF1E293B),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: GoogleFonts.outfit(
+                    fontSize: 12,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          ElevatedButton(
+            onPressed: isActionable ? onWatch : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: buttonColor,
+              disabledBackgroundColor: const Color(0xFFE2E8F0),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              elevation: isActionable ? 2 : 0,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isActionable && buttonText != 'FULL') ...[
+                  const Icon(Icons.play_circle_fill_rounded, size: 16, color: Colors.white),
+                  const SizedBox(width: 4),
+                ],
+                Text(
+                  buttonText,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                    color: isActionable ? Colors.white : const Color(0xFF94A3B8),
+                  ),
+                ),
               ],
             ),
           ),

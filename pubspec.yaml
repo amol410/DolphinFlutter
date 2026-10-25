@@ -1,7 +1,7 @@
 name: dolphincoder
 description: DolphinCoder LMS — Mobile Learning App
 publish_to: 'none'
-version: 1.2.6+11
+version: 1.2.8+13
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -23,6 +23,7 @@ dependencies:
   # Storage
   flutter_secure_storage: ^9.0.0
   shared_preferences: ^2.2.3
+  path_provider: ^2.1.2
 
   # UI & Styling
   google_fonts: ^6.2.1
@@ -51,6 +52,7 @@ dependencies:
   audioplayers: ^6.8.1
   speech_to_text: ^7.5.0
   flutter_tts: ^4.2.5
+  google_mobile_ads: ^9.2.0
 
 dev_dependencies:
   flutter_test:

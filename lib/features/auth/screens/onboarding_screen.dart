@@ -144,7 +144,7 @@ class _SlideWidget extends StatelessWidget {
             style: GoogleFonts.plusJakartaSans(
               fontSize: 26,
               fontWeight: FontWeight.bold,
-              color: Colors.white,
+              color: AppColors.textPrimary,
             ),
             textAlign: TextAlign.center,
           ),

@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/services/cache_service.dart';
 import '../data/gamification_repository.dart';
 import '../data/models/gamification_models.dart';
 
@@ -22,12 +23,61 @@ class GamificationStatusNotifier extends StateNotifier<AsyncValue<GamificationSt
     }
   }
 
+  void optimisticAddRewards(int xp, int pearls) {
+    state.whenData((status) {
+      state = AsyncValue.data(status.copyWith(
+        totalXp: status.totalXp + xp,
+        pearls: status.pearls + pearls,
+      ));
+    });
+  }
+
+  void optimisticRefillOxygen() {
+    state.whenData((status) {
+      state = AsyncValue.data(status.copyWith(oxygen: 5));
+      CacheService().saveStatus(status.copyWith(oxygen: 5));
+    });
+  }
+
+  void deductOxygen() {
+    state.whenData((status) {
+      if (status.oxygen > 0) {
+        final newOxygen = status.oxygen - 1;
+        state = AsyncValue.data(status.copyWith(oxygen: newOxygen));
+        CacheService().saveStatus(status.copyWith(oxygen: newOxygen));
+      }
+    });
+  }
+
   Future<bool> refillOxygen() async {
     try {
       final success = await _repo.refillOxygen();
       if (success) {
         await refresh();
       }
+      return success;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> claimAdReward(String rewardType, int amount) async {
+    state.whenData((status) {
+      GamificationStatusModel updated;
+      if (rewardType == 'oxygen') {
+        final newOxygen = (status.oxygen + amount).clamp(0, 5);
+        updated = status.copyWith(oxygen: newOxygen);
+      } else if (rewardType == 'pearls') {
+        updated = status.copyWith(pearls: status.pearls + amount);
+      } else {
+        updated = status.copyWith(totalXp: status.totalXp + amount);
+      }
+      state = AsyncValue.data(updated);
+      CacheService().saveStatus(updated);
+    });
+
+    try {
+      final success = await _repo.claimAdReward(rewardType, amount);
       return success;
     } catch (_) {
       return false;
@@ -64,11 +114,37 @@ class PathNodesNotifier extends StateNotifier<AsyncValue<List<PathNodeModel>>> {
   final Ref _ref;
 
   PathNodesNotifier(this._repo, this._ref) : super(const AsyncValue.loading()) {
-    loadPath();
+    _initPath();
   }
 
-  Future<void> loadPath({String? targetLanguage, String? nativeLanguage, String? level, int? section}) async {
-    state = const AsyncValue.loading();
+  Future<void> _initPath() async {
+    final status = _ref.read(gamificationStatusProvider).value;
+    if (status != null) {
+      await loadPath(
+        targetLanguage: status.targetLanguage,
+        nativeLanguage: status.nativeLanguage,
+        level: status.currentLevel,
+      );
+    } else {
+      final cachedStatus = await CacheService().getCachedStatus();
+      await loadPath(
+        targetLanguage: cachedStatus?.targetLanguage ?? 'de',
+        nativeLanguage: cachedStatus?.nativeLanguage ?? 'en',
+        level: cachedStatus?.currentLevel ?? 'A1',
+      );
+    }
+  }
+
+  Future<void> loadPath({
+    String? targetLanguage,
+    String? nativeLanguage,
+    String? level,
+    int? section,
+    bool silent = false,
+  }) async {
+    if (!silent) {
+      state = const AsyncValue.loading();
+    }
     try {
       final nodes = await _repo.getPath(
         targetLanguage: targetLanguage,
@@ -78,28 +154,63 @@ class PathNodesNotifier extends StateNotifier<AsyncValue<List<PathNodeModel>>> {
       );
       state = AsyncValue.data(nodes);
     } catch (e, st) {
-      state = AsyncValue.error(e, st);
+      if (!silent) {
+        state = AsyncValue.error(e, st);
+      }
     }
   }
 
   Future<bool> completeNode(int nodeIndex, {int stars = 3, int scorePct = 100, int xp = 20, int pearls = 10}) async {
+    // 1. Optimistic UI update (0ms instant unlock on client)
+    state.whenData((currentNodes) {
+      if (nodeIndex >= 0 && nodeIndex < currentNodes.length) {
+        final updated = List<PathNodeModel>.from(currentNodes);
+        // Mark current node as completed
+        updated[nodeIndex] = updated[nodeIndex].copyWith(
+          status: 'completed',
+          stars: stars,
+          scorePct: scorePct,
+        );
+        // Unlock next node if locked
+        if (nodeIndex + 1 < updated.length) {
+          if (updated[nodeIndex + 1].status == 'locked') {
+            updated[nodeIndex + 1] = updated[nodeIndex + 1].copyWith(status: 'available');
+          }
+        }
+        state = AsyncValue.data(updated);
+
+        // Save updated path to Tier-2 cache immediately
+        final statusAsync = _ref.read(gamificationStatusProvider);
+        statusAsync.whenData((st) {
+          CacheService().savePathNodes(
+            targetLanguage: st.targetLanguage,
+            nativeLanguage: st.nativeLanguage,
+            level: st.currentLevel,
+            nodes: updated,
+          );
+        });
+      }
+    });
+
+    // 2. Optimistically award pearls and XP in 0ms
+    _ref.read(gamificationStatusProvider.notifier).optimisticAddRewards(xp, pearls);
+
+    // 3. Dispatch HTTP sync in the background (no blocking await on 3 round trips!)
+    final status = _ref.read(gamificationStatusProvider).asData?.value;
     try {
-      final result = await _repo.completeNode(
+      _repo.completeNode(
         nodeIndex: nodeIndex,
         stars: stars,
         scorePct: scorePct,
         xpEarned: xp,
         pearlsEarned: pearls,
+        targetLanguage: status?.targetLanguage,
+        nativeLanguage: status?.nativeLanguage,
+        level: status?.currentLevel,
       );
-      if (result['success'] == true) {
-        // Reload path and refresh user stats
-        await loadPath();
-        _ref.read(gamificationStatusProvider.notifier).refresh();
-        return true;
-      }
-      return false;
+      return true;
     } catch (_) {
-      return false;
+      return true;
     }
   }
 }

@@ -1,11 +1,17 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/network/dio_client.dart';
+import '../../../core/services/tts_service.dart';
+import '../../../core/services/version_check_service.dart';
 import '../../../shared/widgets/animated_dolphin_mascot.dart';
+import '../../../shared/widgets/force_update_dialog.dart';
 
 /// DolphinCoder 2.0 Splash Screen
 /// Features glowing oceanic depth gradient, rising bubble physics,
@@ -88,29 +94,51 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   }
 
   Future<void> _bootSequence() async {
-    // 1. Kickoff mascot reveal
-    await Future.delayed(const Duration(milliseconds: 150));
-    if (!mounted) return;
+    // 1. Kickoff mascot reveal immediately
     _mascotController.forward();
+    Future.delayed(const Duration(milliseconds: 120), () {
+      if (mounted) _textController.forward();
+    });
 
-    // 2. Reveal brand text
-    await Future.delayed(const Duration(milliseconds: 350));
-    if (!mounted) return;
-    _textController.forward();
-
-    // 3. Auth verification check (generous 3s for pleasant brand mascot feel)
-    await Future.delayed(const Duration(milliseconds: 2600));
-    if (!mounted) return;
-
+    // 2. Parallel async token read, pre-warming DioClient & checking remote version gate
     const storage = FlutterSecureStorage();
-    final token = await storage.read(key: AppConstants.tokenKey);
+    final tokenFuture = storage.read(key: AppConstants.tokenKey);
+    final versionFuture = VersionCheckService().checkVersion();
+    // Smooth, tactile brand animation window (~450ms)
+    final minDisplayFuture = Future.delayed(const Duration(milliseconds: 450));
+
+    final results = await Future.wait([tokenFuture, versionFuture, minDisplayFuture]);
+    final token = results[0] as String?;
+    final versionResult = results[1] as VersionCheckResult;
+
+    if (token != null) {
+      DioClient.setToken(token);
+    }
+
     if (!mounted) return;
+
+    // 3. Remote Version Gate: If force update is required, halt boot and block screen
+    if (versionResult.forceUpdateRequired) {
+      await ForceUpdateDialog.show(context, versionResult);
+      return; // Do NOT proceed to home or onboarding!
+    }
 
     await _exitController.forward();
     if (!mounted) return;
 
     if (token != null) {
-      context.go('/home');
+      final prefs = await SharedPreferences.getInstance();
+      final hasSelectedCourse = prefs.getBool('has_selected_language_course') ?? false;
+      final savedTarget = prefs.getString('active_target_lang');
+      if (savedTarget != null) {
+        unawaited(TtsService().setLanguage(savedTarget).catchError((_) {}));
+      }
+
+      if (hasSelectedCourse) {
+        context.go('/home');
+      } else {
+        context.go('/language-select');
+      }
     } else {
       context.go('/onboarding');
     }
@@ -211,7 +239,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                           child: Column(
                             children: [
                               Text(
-                                'DolphinCoder',
+                                'LingoDolphy',
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 38,
                                   fontWeight: FontWeight.w900,
