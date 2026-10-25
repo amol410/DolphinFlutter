@@ -70,20 +70,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 Column(
                   children: [
                     Container(
-                      width: 72,
-                      height: 72,
+                      width: 80,
+                      height: 80,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        gradient: AppColors.primaryGradient,
                         boxShadow: [
                           BoxShadow(
-                            color: AppColors.primary.withOpacity(0.4),
+                            color: AppColors.primary.withOpacity(0.3),
                             blurRadius: 20,
-                            offset: const Offset(0, 8),
+                            offset: const Offset(0, 6),
                           )
                         ],
                       ),
-                      child: const Icon(Icons.waves, color: Colors.white, size: 32),
+                      child: Image.asset(
+                        'assets/images/mascot/dolphin_reading.png',
+                        width: 80,
+                        height: 80,
+                        fit: BoxFit.contain,
+                      ),
                     ),
                     const SizedBox(height: 20),
                     Text(
