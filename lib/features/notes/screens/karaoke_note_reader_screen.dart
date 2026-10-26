@@ -160,10 +160,6 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
             }
           }
         },
-        options: [
-          stt.SpeechToText.androidIntentLookup,
-          stt.SpeechToText.androidNoBluetooth,
-        ],
       );
     } catch (e) {
       debugPrint('Speech init failed: $e');
@@ -250,12 +246,7 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
     _lastScrolledSentenceIdx = -1;
     _scrollToActiveSentence(sIdx);
 
-    final available = await _speech.initialize(
-      options: [
-        stt.SpeechToText.androidIntentLookup,
-        stt.SpeechToText.androidNoBluetooth,
-      ],
-    );
+    final available = await _speech.initialize();
     if (!available) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
