@@ -1201,11 +1201,30 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     return false;
   }
 
+  void _onSpeechStatus(String val) {
+    debugPrint('STT runtime status: $val');
+    if (val == 'done' || val == 'notListening') {
+      if (mounted && _isSpeaking) {
+        _silenceTimer?.cancel();
+        if (_spokenText.trim().isNotEmpty) {
+          _silenceTimer = Timer(const Duration(milliseconds: 1200), () {
+            if (mounted && _isSpeaking && _spokenText.trim().isNotEmpty) {
+              setState(() => _isSpeaking = false);
+              _evaluateSpeechPronunciation();
+            }
+          });
+        } else {
+          setState(() => _isSpeaking = false);
+        }
+      }
+    }
+  }
+
   Future<void> _initSpeechRecognizer() async {
     try {
       _speechInitialized = await _speech.initialize(
         onError: (val) => debugPrint('STT pre-init error: ${val.errorMsg}'),
-        onStatus: (val) => debugPrint('STT pre-init status: $val'),
+        onStatus: (val) => _onSpeechStatus(val),
       );
       debugPrint('🗣️ [STT] Pre-initialized speech recognition engine: $_speechInitialized');
     } catch (e) {
@@ -1232,12 +1251,15 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     }
 
     if (_isSpeaking) {
+      _silenceTimer?.cancel();
       try {
         await _speech.stop();
       } catch (_) {}
       if (mounted) {
         setState(() => _isSpeaking = false);
-        _evaluateSpeechPronunciation();
+        if (_spokenText.trim().isNotEmpty) {
+          _evaluateSpeechPronunciation();
+        }
       }
       return;
     }
@@ -1289,20 +1311,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           onError: (val) {
             debugPrint('STT runtime error: ${val.errorMsg}');
           },
-          onStatus: (val) {
-            debugPrint('STT runtime status: $val');
-            if (val == 'done' || val == 'notListening') {
-              if (mounted && _isSpeaking) {
-                _silenceTimer?.cancel();
-                _silenceTimer = Timer(const Duration(milliseconds: 1500), () {
-                  if (mounted && _isSpeaking) {
-                    setState(() => _isSpeaking = false);
-                    _evaluateSpeechPronunciation();
-                  }
-                });
-              }
-            }
-          },
+          onStatus: (val) => _onSpeechStatus(val),
         );
         await Future.delayed(const Duration(milliseconds: 120));
       }
@@ -1324,46 +1333,67 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
       final currentTarget = ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
       final isEnglish = currentTarget == 'en';
-      String targetLocaleId = isEnglish ? 'en_IN' : 'de_DE';
+      final sysLocale = WidgetsBinding.instance.platformDispatcher.locale.toString().toLowerCase().replaceAll('-', '_');
+      String targetLocaleId = isEnglish ? 'en_US' : 'de_DE';
 
       try {
         final locales = await _speech.locales();
-        debugPrint('🗣️ [STT] Available locales on device: ${locales.length}');
+        debugPrint('🗣️ [STT] Available locales on device: ${locales.length}, System locale: $sysLocale');
 
         if (isEnglish) {
-          final inMatch = locales.where((l) {
+          stt.LocaleName? matchedLocale;
+
+          // 1. If device locale starts with 'en', check if it is supported in locales
+          if (sysLocale.startsWith('en')) {
+            matchedLocale = locales.where((l) {
+              final id = l.localeId.toLowerCase().replaceAll('-', '_');
+              return id == sysLocale || id.startsWith(sysLocale) || sysLocale.startsWith(id);
+            }).firstOrNull;
+          }
+
+          // 2. If not matched, match any locale where id == 'en_us', id == 'en_gb', or id == 'en_in'
+          matchedLocale ??= locales.where((l) {
             final id = l.localeId.toLowerCase().replaceAll('-', '_');
             return id == 'en_in' || id.contains('en_in');
           }).firstOrNull;
-
-          final usMatch = locales.where((l) {
+          matchedLocale ??= locales.where((l) {
             final id = l.localeId.toLowerCase().replaceAll('-', '_');
             return id == 'en_us' || id.contains('en_us');
           }).firstOrNull;
-
-          final gbMatch = locales.where((l) {
+          matchedLocale ??= locales.where((l) {
             final id = l.localeId.toLowerCase().replaceAll('-', '_');
             return id == 'en_gb' || id.contains('en_gb');
           }).firstOrNull;
 
-          final anyEn = locales.where((l) => l.localeId.toLowerCase().startsWith('en')).firstOrNull;
+          // 3. Fallback: match any 'en' locale
+          matchedLocale ??= locales.where((l) => l.localeId.toLowerCase().startsWith('en')).firstOrNull;
 
-          // For Indian English users, prioritize en_IN then en_US then en_GB
-          if (inMatch != null) {
-            targetLocaleId = inMatch.localeId;
-          } else if (usMatch != null) {
-            targetLocaleId = usMatch.localeId;
-          } else if (gbMatch != null) {
-            targetLocaleId = gbMatch.localeId;
-          } else if (anyEn != null) {
-            targetLocaleId = anyEn.localeId;
+          if (matchedLocale != null) {
+            targetLocaleId = matchedLocale.localeId;
           } else {
-            targetLocaleId = 'en_IN';
+            targetLocaleId = sysLocale.startsWith('en')
+                ? WidgetsBinding.instance.platformDispatcher.locale.toString()
+                : 'en_US';
           }
         } else {
-          final deMatch = locales.where((l) => l.localeId.toLowerCase().startsWith('de')).firstOrNull;
+          // German
+          stt.LocaleName? deMatch;
+          if (sysLocale.startsWith('de')) {
+            deMatch = locales.where((l) {
+              final id = l.localeId.toLowerCase().replaceAll('-', '_');
+              return id == sysLocale || id.startsWith(sysLocale) || sysLocale.startsWith(id);
+            }).firstOrNull;
+          }
+          deMatch ??= locales.where((l) {
+            final id = l.localeId.toLowerCase().replaceAll('-', '_');
+            return id == 'de_de' || id.contains('de_de');
+          }).firstOrNull;
+          deMatch ??= locales.where((l) => l.localeId.toLowerCase().startsWith('de')).firstOrNull;
+
           if (deMatch != null) {
             targetLocaleId = deMatch.localeId;
+          } else {
+            targetLocaleId = 'de_DE';
           }
         }
         debugPrint('🗣️ [STT] Final active speech recognition locale: $targetLocaleId (isEnglish: $isEnglish)');
@@ -1383,10 +1413,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
               _spokenText = result.recognizedWords.trim();
             });
           }
-          if (_spokenText.isNotEmpty) {
+          if (_spokenText.trim().isNotEmpty) {
             _silenceTimer?.cancel();
             _silenceTimer = Timer(const Duration(milliseconds: 2500), () {
-              if (mounted && _isSpeaking) {
+              if (mounted && _isSpeaking && _spokenText.trim().isNotEmpty) {
                 _speech.stop();
                 setState(() => _isSpeaking = false);
                 _evaluateSpeechPronunciation();
@@ -1395,7 +1425,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           }
         },
         listenOptions: stt.SpeechListenOptions(
-          listenMode: stt.ListenMode.confirmation,
+          listenMode: stt.ListenMode.dictation,
           cancelOnError: false,
           partialResults: true,
           onDevice: false,
@@ -1409,9 +1439,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       if (mounted) {
         setState(() {
           _isSpeaking = false;
-          _spokenText = _sprechenPrompt;
         });
-        _evaluateSpeechPronunciation();
+        if (_spokenText.trim().isNotEmpty) {
+          _evaluateSpeechPronunciation();
+        }
       }
     }
   }
@@ -1419,6 +1450,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   void _evaluateSpeechPronunciation() {
     _silenceTimer?.cancel();
     if (!mounted) return;
+    if (_spokenText.trim().isEmpty) return;
 
     final targetText = _sprechenPrompt.isNotEmpty ? _sprechenPrompt : 'Guten Tag! Wie geht es dir?';
     final targetWords = _cleanWords(targetText);

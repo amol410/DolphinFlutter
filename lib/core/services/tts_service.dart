@@ -6,13 +6,35 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// DolphinCoder Low-Latency Text-To-Speech & Pronunciation Service
-/// Supports British English (en-GB) and German (de-DE) pronunciation
-/// with natural voices, offline background pre-synthesis caching,
+/// Supports Natural Male Studio Narrator English (en-US) and German (de-DE)
+/// with offline background pre-synthesis caching, versioned cache invalidation,
 /// and sub-20ms instant tactile word tap playback via low-latency audio engine.
 class TtsService {
   static final TtsService _instance = TtsService._internal();
   factory TtsService() => _instance;
   TtsService._internal();
+
+  /// Cache version - increment to invalidate old synthesized audio files on device.
+  static const int _cacheVersion = 2;
+
+  /// High-priority male voice identifiers for Android (Google TTS), iOS, macOS, Windows.
+  static const List<String> _preferredMaleVoiceIdentifiers = [
+    'en-us-x-sfg', // Google US English Male (resonant, deep, studio quality)
+    'en-us-x-iom', // Google US English Male
+    'en-us-x-iob', // Google US English Male
+    'en-us-x-tpc', // Google US English Male
+    'en-us-x-iol', // Google US English Male
+    'en-gb-x-rjd', // Google UK English Male
+    'en-gb-x-fis', // Google UK English Male
+    'en-in-x-cnd', // Google India English Male
+    'en-in-x-ene', // Google India English Male
+    'daniel',       // iOS / macOS British Male
+    'david',        // Windows / Android Male
+    'oliver',       // iOS British Male
+    'george',       // iOS British Male
+    'guy',          // Android / Microsoft Male
+    'male',         // Generic male indicator
+  ];
 
   final FlutterTts _flutterTts = FlutterTts();
   final AudioPlayer _wordAudioPlayer = AudioPlayer();
@@ -39,6 +61,7 @@ class TtsService {
   bool _isProcessingQueue = false;
 
   Directory? _ttsCacheDir;
+  bool _isStaleCacheCleaned = false;
 
   bool get _supportsSynthesizeToFile {
     if (kIsWeb) return false;
@@ -52,9 +75,15 @@ class TtsService {
     return 'wav';
   }
 
-  /// Thread-safe local cache directory resolver.
+  /// Thread-safe local cache directory resolver with automatic stale cache wiping.
   Future<Directory> _getTtsCacheDir() async {
-    if (_ttsCacheDir != null) return _ttsCacheDir!;
+    if (_ttsCacheDir != null) {
+      if (!_isStaleCacheCleaned) {
+        _isStaleCacheCleaned = true;
+        unawaited(_cleanStaleCache(_ttsCacheDir!));
+      }
+      return _ttsCacheDir!;
+    }
     Directory baseDir;
     try {
       baseDir = await getApplicationSupportDirectory();
@@ -66,7 +95,49 @@ class TtsService {
       await dir.create(recursive: true);
     }
     _ttsCacheDir = dir;
+    if (!_isStaleCacheCleaned) {
+      _isStaleCacheCleaned = true;
+      await _cleanStaleCache(dir);
+    }
     return _ttsCacheDir!;
+  }
+
+  /// Automatically wipes stale or unversioned audio cache files so obsolete audio
+  /// (e.g. old female voice recordings) is never played again.
+  Future<void> _cleanStaleCache(Directory dir) async {
+    try {
+      if (!await dir.exists()) return;
+      const currentVersionPrefix = 'tts_v${_cacheVersion}_';
+      final List<FileSystemEntity> entities = await dir.list().toList();
+      for (final entity in entities) {
+        if (entity is File) {
+          final fileName = entity.uri.pathSegments.isNotEmpty
+              ? entity.uri.pathSegments.last
+              : entity.path.split(Platform.pathSeparator).last;
+          // Delete any tts_* file that does NOT match the current version prefix
+          if (fileName.startsWith('tts_') && !fileName.startsWith(currentVersionPrefix)) {
+            try {
+              await entity.delete();
+              debugPrint('🗑️ [TtsService] Wiped stale audio cache file: $fileName');
+            } catch (e) {
+              debugPrint('⚠️ [TtsService] Could not wipe stale file $fileName: $e');
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ [TtsService] _cleanStaleCache error: $e');
+    }
+  }
+
+  /// Manually trigger cache cleanup of stale audio files.
+  Future<void> clearStaleCache() async {
+    try {
+      final dir = await _getTtsCacheDir();
+      await _cleanStaleCache(dir);
+    } catch (e) {
+      debugPrint('⚠️ [TtsService] clearStaleCache error: $e');
+    }
   }
 
   /// Clean input word of surrounding punctuation.
@@ -78,6 +149,12 @@ class TtsService {
   }
 
   @visibleForTesting
+  static int get cacheVersion => _cacheVersion;
+
+  @visibleForTesting
+  Future<void> cleanStaleCacheForTesting(Directory dir) => _cleanStaleCache(dir);
+
+  @visibleForTesting
   String normalizeWordForTesting(String word) => _normalizeWord(word);
 
   @visibleForTesting
@@ -86,19 +163,19 @@ class TtsService {
   @visibleForTesting
   String getFileNameForWordForTesting(String word, String locale) => _getFileNameForWord(word, locale);
 
-  /// Unique memory/disk cache key based on locale and word.
+  /// Unique memory/disk cache key based on version, locale and word.
   String _getCacheKey(String word, String locale) {
-    return '${locale.toLowerCase()}_${word.toLowerCase()}';
+    return 'v${_cacheVersion}_${locale.toLowerCase()}_${word.toLowerCase()}';
   }
 
-  /// Deterministic alphanumeric file name for disk caching.
+  /// Deterministic alphanumeric file name for disk caching with version prefix.
   String _getFileNameForWord(String word, String locale) {
     final clean = _normalizeWord(word);
     final safeWord = clean.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
     final truncated = safeWord.length > 24 ? safeWord.substring(0, 24) : safeWord;
     final hash = clean.hashCode.abs().toRadixString(16);
     final prefix = locale.toLowerCase().replaceAll('-', '_');
-    return 'tts_${prefix}_${truncated}_$hash.$_audioFileExtension';
+    return 'tts_v${_cacheVersion}_${prefix}_${truncated}_$hash.$_audioFileExtension';
   }
 
   /// Check if a pre-synthesized file exists on disk.
@@ -116,7 +193,7 @@ class TtsService {
     return null;
   }
 
-  /// Update active learning language for speech synthesis ('en' for British English, 'de' for German)
+  /// Update active learning language for speech synthesis ('en' for English, 'de' for German)
   Future<void> setLanguage(String langCode) async {
     final cleaned = langCode.toLowerCase().trim();
     final newLangCode = (cleaned == 'en' || cleaned == 'english') ? 'en' : 'de';
@@ -137,6 +214,16 @@ class TtsService {
 
     try {
       await _flutterTts.setLanguage(newLocale);
+      if (newLangCode == 'en') {
+        // Natural, resonant studio narrator male voice settings
+        await _flutterTts.setPitch(0.88);
+        await _flutterTts.setSpeechRate(0.48);
+        await _flutterTts.setVolume(1.0);
+      } else {
+        await _flutterTts.setPitch(1.0);
+        await _flutterTts.setSpeechRate(0.48);
+        await _flutterTts.setVolume(1.0);
+      }
       await _applyBestVoiceForLocale(newLocale);
       _currentAppliedLocale = newLocale;
       debugPrint('🔊 [TtsService] Switched speech synthesis language to $newLocale');
@@ -154,13 +241,25 @@ class TtsService {
   Future<void> _doInit() async {
     if (_isInitialized) return;
     try {
+      // Clear memory cache so stale references are wiped
+      _wordAudioFileMap.clear();
+
+      // Wipe stale unversioned disk cache files
+      try {
+        final cacheDir = await _getTtsCacheDir();
+        await _cleanStaleCache(cacheDir);
+      } catch (e) {
+        debugPrint('⚠️ [TtsService] Stale cache cleanup on init note: $e');
+      }
+
       final locale = activeLocale;
       await _flutterTts.setLanguage(locale);
       // Speaking rate: 0.48 for crystal-clear language learning articulation
       await _flutterTts.setSpeechRate(0.48);
       await _flutterTts.setVolume(1.0);
-      // Pitch: 1.0 provides a natural, pleasant, resonant timbre
-      await _flutterTts.setPitch(1.0);
+      // Pitch: 0.88 provides a natural, deep, pleasant studio narrator male voice for English
+      final isEnglish = locale.toLowerCase().startsWith('en');
+      await _flutterTts.setPitch(isEnglish ? 0.88 : 1.0);
       // Non-blocking asynchronous mode for instant tactile word taps
       await _flutterTts.awaitSpeakCompletion(false);
 
@@ -182,20 +281,164 @@ class TtsService {
       }
 
       _isInitialized = true;
-      debugPrint('⚡ [TtsService] Engine initialized for $locale (Low-Latency Audio Ready)');
+      debugPrint('⚡ [TtsService] Engine initialized for $locale with male narrator voice (Pitch 0.88, Rate 0.48, Low-Latency Audio Ready)');
     } catch (e) {
       debugPrint('⚠️ [TtsService] Init error: $e');
     }
   }
 
+  /// Evaluates and selects the highest quality voice for the target locale.
+  /// For English: Guarantees a natural, resonant male narrator voice.
+  /// Excludes any voice flagged as female or containing female markers.
+  /// For German: Selects high-quality German female voice.
+  @visibleForTesting
+  Map<String, String>? selectBestVoiceForLocale(List<dynamic> rawVoices, String targetLocale) {
+    final isEnglish = targetLocale.toLowerCase().startsWith('en');
+
+    if (isEnglish) {
+      int bestScore = -1;
+      Map<String, String>? bestVoice;
+      Map<String, String>? firstNonFemaleVoice;
+      Map<String, String>? firstNonFemaleMatchingLocaleVoice;
+
+      final targetNormalized = targetLocale.toLowerCase().replaceAll('_', '-');
+
+      for (final voice in rawVoices) {
+        if (voice is! Map) continue;
+        final name = (voice['name'] ?? '').toString().toLowerCase();
+        final locale = (voice['locale'] ?? '').toString().toLowerCase();
+        final features = (voice['features'] ?? '').toString().toLowerCase();
+        final gender = (voice['gender'] ?? '').toString().toLowerCase();
+
+        // Must be an English locale (e.g. en-US, en-GB, en-AU, en-IN, en_US)
+        final isEnLocale = locale.startsWith('en') ||
+            locale.contains('en-') ||
+            locale.contains('en_');
+        if (!isEnLocale) continue;
+
+        // 1. Explicitly exclude any voice where name, features, or gender indicates female!
+        final isFemale = name.contains('female') ||
+            features.contains('female') ||
+            gender.contains('female') ||
+            name.contains('woman') ||
+            name.contains('girl');
+        if (isFemale) {
+          continue;
+        }
+
+        final voiceMap = {
+          "name": voice['name'].toString(),
+          "locale": voice['locale'].toString(),
+        };
+
+        // Track non-female candidates for fallback
+        firstNonFemaleVoice ??= voiceMap;
+        if (locale.replaceAll('_', '-').startsWith(targetNormalized)) {
+          firstNonFemaleMatchingLocaleVoice ??= voiceMap;
+        }
+
+        // 2. Check male indicators
+        // Android Google TTS provides gender info in features (e.g. "[male, notInstalled]")
+        final hasMaleFeature = (features.contains('male') || gender.contains('male')) &&
+            !features.contains('female') &&
+            !gender.contains('female');
+
+        // Check voice name against known high-quality male voices across Android/iOS/Desktop
+        int preferredIndex = -1;
+        for (int i = 0; i < _preferredMaleVoiceIdentifiers.length; i++) {
+          if (name.contains(_preferredMaleVoiceIdentifiers[i])) {
+            preferredIndex = i;
+            break;
+          }
+        }
+        final isPreferredMaleName = preferredIndex != -1;
+
+        if (isPreferredMaleName || hasMaleFeature) {
+          int score = 100;
+
+          if (isPreferredMaleName) {
+            // Prioritize higher-ranked male voice identifiers
+            score += 200 + (_preferredMaleVoiceIdentifiers.length - preferredIndex) * 10;
+          }
+          if (hasMaleFeature) {
+            score += 50;
+          }
+
+          // Bonus for matching target locale (e.g. en-US)
+          if (locale.replaceAll('_', '-').startsWith(targetNormalized)) {
+            score += 40;
+          }
+
+          // Bonus for local offline voice on Android (faster, no network dependence)
+          if (name.contains('-local')) {
+            score += 20;
+          }
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestVoice = voiceMap;
+          }
+        }
+      }
+
+      // 3. Fallback: If no preferred male voice was matched, fallback to the first
+      // non-female English voice (matching target locale first, then any English).
+      // NEVER fallback to a female voice!
+      return bestVoice ?? (firstNonFemaleMatchingLocaleVoice ?? firstNonFemaleVoice);
+    } else {
+      // German voice matching
+      Map<String, String>? selectedVoice;
+      for (final voice in rawVoices) {
+        if (voice is! Map) continue;
+        final name = (voice['name'] ?? '').toString().toLowerCase();
+        final locale = (voice['locale'] ?? '').toString().toLowerCase();
+
+        final isDeLocale = locale.contains('de-de') || locale.contains('de_de');
+        if (!isDeLocale) continue;
+
+        final isFemale = name.contains('female') ||
+            name.contains('frau') ||
+            name.contains('w-') ||
+            name.contains('eva') ||
+            name.contains('marlene') ||
+            name.contains('vicki') ||
+            name.contains('anna') ||
+            name.contains('katja') ||
+            name.contains('de-de-x-deb') ||
+            name.contains('de-de-x-dea') ||
+            name.contains('de-de-x-deg') ||
+            name.contains('de-de-x-def');
+
+        if (isFemale) {
+          return {
+            "name": voice['name'].toString(),
+            "locale": voice['locale'].toString(),
+          };
+        }
+        selectedVoice ??= {
+          "name": voice['name'].toString(),
+          "locale": voice['locale'].toString(),
+        };
+      }
+      return selectedVoice;
+    }
+  }
+
   /// Automatically matches and binds the best natural voice for the target locale.
-  /// For 'en-GB': selects British English female / natural accent (rjs, gda, fis, etc.)
-  /// For 'de-DE': selects German female voice (anna, katja, eva, etc.)
   Future<void> _applyBestVoiceForLocale(String targetLocale) async {
     // Guard against redundant voice selection if already applied
     if (_currentAppliedVoiceLocale == targetLocale) {
       return;
     }
+
+    final isEnglish = targetLocale.toLowerCase().startsWith('en');
+
+    // Ensure pitch (0.88 for English narrator), speech rate, and volume are set
+    try {
+      await _flutterTts.setPitch(isEnglish ? 0.88 : 1.0);
+      await _flutterTts.setSpeechRate(0.48);
+      await _flutterTts.setVolume(1.0);
+    } catch (_) {}
 
     try {
       final dynamic rawVoices = await _flutterTts.getVoices.timeout(
@@ -203,82 +446,15 @@ class TtsService {
         onTimeout: () => null,
       );
 
-      if (rawVoices is! List) return;
-
-      final isEnglish = targetLocale.toLowerCase().startsWith('en');
-
       Map<String, String>? selectedVoice;
-
-      for (final voice in rawVoices) {
-        if (voice is! Map) continue;
-        final name = (voice['name'] ?? '').toString().toLowerCase();
-        final locale = (voice['locale'] ?? '').toString().toLowerCase();
-
-        if (isEnglish) {
-          // Look for English voices (en-US, en-GB, en-IN)
-          final isEnLocale = locale.startsWith('en');
-          if (!isEnLocale) continue;
-
-          // Prefer natural male / clear studio narrator voices over high-pitched girl voices
-          final isHighQualityMale = name.contains('male') ||
-              name.contains('rjd') || // Android Google UK English Male
-              name.contains('en-us-x-sfg') || // Android Google US English Male
-              name.contains('en-us-x-iom') ||
-              name.contains('en-us-x-iob') ||
-              name.contains('en-in-x-c') || // Android Google India English Male
-              name.contains('daniel') || // iOS / macOS natural British male
-              name.contains('david') || // Windows / Android natural male
-              name.contains('oliver') ||
-              name.contains('george') ||
-              name.contains('guy');
-
-          if (isHighQualityMale) {
-            selectedVoice = {
-              "name": voice['name'].toString(),
-              "locale": voice['locale'].toString(),
-            };
-            break;
-          }
-          selectedVoice ??= {
-            "name": voice['name'].toString(),
-            "locale": voice['locale'].toString(),
-          };
-        } else {
-          // Look for German voices
-          final isDeLocale = locale.contains('de-de') || locale.contains('de_de');
-          if (!isDeLocale) continue;
-
-          final isFemale = name.contains('female') ||
-              name.contains('frau') ||
-              name.contains('w-') ||
-              name.contains('eva') ||
-              name.contains('marlene') ||
-              name.contains('vicki') ||
-              name.contains('anna') ||
-              name.contains('katja') ||
-              name.contains('de-de-x-deb') ||
-              name.contains('de-de-x-dea') ||
-              name.contains('de-de-x-deg') ||
-              name.contains('de-de-x-def');
-
-          if (isFemale) {
-            selectedVoice = {
-              "name": voice['name'].toString(),
-              "locale": voice['locale'].toString(),
-            };
-            break;
-          }
-          selectedVoice ??= {
-            "name": voice['name'].toString(),
-            "locale": voice['locale'].toString(),
-          };
-        }
+      if (rawVoices is List) {
+        selectedVoice = selectBestVoiceForLocale(rawVoices, targetLocale);
       }
 
       if (selectedVoice != null) {
         await _flutterTts.setVoice(selectedVoice);
         _currentAppliedVoiceLocale = targetLocale;
-        debugPrint('🇬🇧/🇩🇪 [TtsService] Selected native voice: ${selectedVoice['name']} (${selectedVoice['locale']})');
+        debugPrint('🎙️ [TtsService] Selected native voice: ${selectedVoice['name']} (${selectedVoice['locale']}) for $targetLocale');
       } else {
         await _flutterTts.setLanguage(targetLocale);
         _currentAppliedVoiceLocale = targetLocale;
@@ -413,6 +589,11 @@ class TtsService {
         _currentAppliedLocale = locale;
       }
 
+      final isEnglish = locale.toLowerCase().startsWith('en');
+      await _flutterTts.setPitch(isEnglish ? 0.88 : 1.0);
+      await _flutterTts.setSpeechRate(0.48);
+      await _flutterTts.setVolume(1.0);
+
       // Synthesize to disk
       await _flutterTts
           .synthesizeToFile(word, filePath, true)
@@ -500,6 +681,11 @@ class TtsService {
         _currentAppliedLocale = locale;
       }
 
+      final isEnglish = locale.toLowerCase().startsWith('en');
+      await _flutterTts.setPitch(isEnglish ? 0.88 : 1.0);
+      await _flutterTts.setSpeechRate(0.48);
+      await _flutterTts.setVolume(1.0);
+
       _flutterTts.speak(speakable);
 
       // 4. Background synthesis for future instant taps
@@ -529,6 +715,11 @@ class TtsService {
         await _applyBestVoiceForLocale(locale);
         _currentAppliedLocale = locale;
       }
+
+      final isEnglish = locale.toLowerCase().startsWith('en');
+      await _flutterTts.setPitch(isEnglish ? 0.88 : 1.0);
+      await _flutterTts.setSpeechRate(0.48);
+      await _flutterTts.setVolume(1.0);
 
       // Stop any active word sound before sentence playback
       try {
