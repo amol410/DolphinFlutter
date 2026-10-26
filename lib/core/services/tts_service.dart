@@ -22,7 +22,7 @@ class TtsService {
   String _currentLanguageCode = 'en'; // default to en or de based on active course
   String get currentLanguageCode => _currentLanguageCode;
 
-  String get activeLocale => _currentLanguageCode == 'en' ? 'en-GB' : 'de-DE';
+  String get activeLocale => _currentLanguageCode == 'en' ? 'en-US' : 'de-DE';
 
   // Guard against redundant native re-configuration
   String? _currentAppliedLocale;
@@ -120,7 +120,7 @@ class TtsService {
   Future<void> setLanguage(String langCode) async {
     final cleaned = langCode.toLowerCase().trim();
     final newLangCode = (cleaned == 'en' || cleaned == 'english') ? 'en' : 'de';
-    final newLocale = newLangCode == 'en' ? 'en-GB' : 'de-DE';
+    final newLocale = newLangCode == 'en' ? 'en-US' : 'de-DE';
 
     final bool languageChanged = _currentLanguageCode != newLangCode;
     _currentLanguageCode = newLangCode;
@@ -159,8 +159,8 @@ class TtsService {
       // Speaking rate: 0.48 for crystal-clear language learning articulation
       await _flutterTts.setSpeechRate(0.48);
       await _flutterTts.setVolume(1.0);
-      // Pitch: 1.05 provides a natural, bright timbre
-      await _flutterTts.setPitch(1.05);
+      // Pitch: 1.0 provides a natural, pleasant, resonant timbre
+      await _flutterTts.setPitch(1.0);
       // Non-blocking asynchronous mode for instant tactile word taps
       await _flutterTts.awaitSpeakCompletion(false);
 
@@ -205,8 +205,7 @@ class TtsService {
 
       if (rawVoices is! List) return;
 
-      final isBritish = targetLocale.toLowerCase().contains('en-gb') ||
-          targetLocale.toLowerCase().contains('en_gb');
+      final isEnglish = targetLocale.toLowerCase().startsWith('en');
 
       Map<String, String>? selectedVoice;
 
@@ -215,19 +214,25 @@ class TtsService {
         final name = (voice['name'] ?? '').toString().toLowerCase();
         final locale = (voice['locale'] ?? '').toString().toLowerCase();
 
-        if (isBritish) {
-          // Look for British English voices
-          final isGbLocale = locale.contains('en-gb') || locale.contains('en_gb');
-          if (!isGbLocale) continue;
+        if (isEnglish) {
+          // Look for English voices (en-US, en-GB, en-IN)
+          final isEnLocale = locale.startsWith('en');
+          if (!isEnLocale) continue;
 
-          final isHighQualityFemale = name.contains('female') ||
-              name.contains('rjs') ||
-              name.contains('gda') ||
-              name.contains('fis') ||
-              name.contains('gba') ||
-              name.contains('gb');
+          // Prefer natural male / clear studio narrator voices over high-pitched girl voices
+          final isHighQualityMale = name.contains('male') ||
+              name.contains('rjd') || // Android Google UK English Male
+              name.contains('en-us-x-sfg') || // Android Google US English Male
+              name.contains('en-us-x-iom') ||
+              name.contains('en-us-x-iob') ||
+              name.contains('en-in-x-c') || // Android Google India English Male
+              name.contains('daniel') || // iOS / macOS natural British male
+              name.contains('david') || // Windows / Android natural male
+              name.contains('oliver') ||
+              name.contains('george') ||
+              name.contains('guy');
 
-          if (isHighQualityFemale) {
+          if (isHighQualityMale) {
             selectedVoice = {
               "name": voice['name'].toString(),
               "locale": voice['locale'].toString(),

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:permission_handler/permission_handler.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../shared/widgets/animated_dolphin_mascot.dart';
 import '../../../shared/widgets/tactile_game_button.dart';
@@ -171,6 +172,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     _speech = stt.SpeechToText();
     _audioPlayer = AudioPlayer();
     TtsService().warmUp();
+    _initSpeechRecognizer();
 
     _playerCompleteSub = _audioPlayer.onPlayerComplete.listen((_) {
       if (mounted) {
@@ -465,33 +467,76 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     if (_initialTotalStages == 0) {
       _initialTotalStages = _activeStageTypes.length;
     }
-    _clozeSentence = 'Ich _____ aus Indien.';
-    _clozeTranslation = 'I come from India.';
-    _clozeBlank = 'komme';
-    _clozeOptions = ['komme', 'kommst', 'wohne'];
 
-    _typePrompt = 'Der Kaffee ist _____.';
-    _typeTranslation = 'The coffee is hot.';
-    _typeTarget = 'heiß';
-    _typeHint = 'Translate "hot" into German';
+    final currentTarget = ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
+    final isEnglish = currentTarget == 'en';
 
-    _dialoguePartnerName = 'Florian';
-    _dialoguePartnerMessage = 'Hallo! Wie heißt du?';
-    _dialoguePartnerTranslation = 'Hello! What is your name?';
-    _dialogueOptions = [
-      {'text': 'Ich heiße Alex.', 'isCorrect': true},
-      {'text': 'Auf Wiedersehen!', 'isCorrect': false},
-      {'text': 'Nein, danke.', 'isCorrect': false},
-    ];
+    if (isEnglish) {
+      _germanWords = ['Hello', 'Thank you', 'Please', 'Goodbye'];
+      _englishWords = ['नमस्ते', 'धन्यवाद', 'कृपया', 'अलविदा'];
+      _solutionPairs = {
+        'Hello': 'नमस्ते',
+        'Thank you': 'धन्यवाद',
+        'Please': 'कृपया',
+        'Goodbye': 'अलविदा',
+      };
+      _clozeSentence = 'I _____ from India.';
+      _clozeTranslation = 'मैं भारत से हूँ।';
+      _clozeBlank = 'come';
+      _clozeOptions = ['come', 'comes', 'live'];
 
-    _listenSelectSentence = 'Zwei Kaffee und ein Wasser, bitte.';
-    _listenSelectQuestion = 'What is the customer ordering?';
-    _listenSelectOptions = [
-      {'text': 'Two coffees and one water', 'isCorrect': true},
-      {'text': 'One tea and two beers', 'isCorrect': false},
-      {'text': 'A slice of chocolate cake', 'isCorrect': false},
-    ];
-    debugPrint('🎧 [_initStagesData] Fallback mode (all 8 stages active)');
+      _typePrompt = 'The coffee is _____.';
+      _typeTranslation = 'The coffee is hot.';
+      _typeTarget = 'hot';
+      _typeHint = 'Translate "hot" into English';
+
+      _dialoguePartnerName = 'Alex';
+      _dialoguePartnerMessage = 'Hello! What is your name?';
+      _dialoguePartnerTranslation = 'Hello! What is your name?';
+      _dialogueOptions = [
+        {'text': 'My name is Rohan.', 'isCorrect': true},
+        {'text': 'Goodbye!', 'isCorrect': false},
+        {'text': 'No, thank you.', 'isCorrect': false},
+      ];
+
+      _listenSelectSentence = 'Two coffees and one water, please.';
+      _listenSelectQuestion = 'What is the customer ordering?';
+      _listenSelectOptions = [
+        {'text': 'Two coffees and one water', 'isCorrect': true},
+        {'text': 'One tea and two beers', 'isCorrect': false},
+        {'text': 'A slice of chocolate cake', 'isCorrect': false},
+      ];
+      _sprechenPrompt = 'Hello! How are you?';
+      _sprechenTranslation = 'नमस्ते! आप कैसे हैं?';
+    } else {
+      _clozeSentence = 'Ich _____ aus Indien.';
+      _clozeTranslation = 'I come from India.';
+      _clozeBlank = 'komme';
+      _clozeOptions = ['komme', 'kommst', 'wohne'];
+
+      _typePrompt = 'Der Kaffee ist _____.';
+      _typeTranslation = 'The coffee is hot.';
+      _typeTarget = 'heiß';
+      _typeHint = 'Translate "hot" into German';
+
+      _dialoguePartnerName = 'Florian';
+      _dialoguePartnerMessage = 'Hallo! Wie heißt du?';
+      _dialoguePartnerTranslation = 'Hello! What is your name?';
+      _dialogueOptions = [
+        {'text': 'Ich heiße Alex.', 'isCorrect': true},
+        {'text': 'Auf Wiedersehen!', 'isCorrect': false},
+        {'text': 'Nein, danke.', 'isCorrect': false},
+      ];
+
+      _listenSelectSentence = 'Zwei Kaffee und ein Wasser, bitte.';
+      _listenSelectQuestion = 'What is the customer ordering?';
+      _listenSelectOptions = [
+        {'text': 'Two coffees and one water', 'isCorrect': true},
+        {'text': 'One tea and two beers', 'isCorrect': false},
+        {'text': 'A slice of chocolate cake', 'isCorrect': false},
+      ];
+    }
+    debugPrint('🎧 [_initStagesData] Fallback mode (all 8 stages active, isEnglish: $isEnglish)');
     _precacheAllVocab();
   }
 
@@ -785,7 +830,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   void _onGermanMatchTap(String word) {
     if (_isEvaluatingMatch) return;
     if (_matchedGerman.contains(word)) return;
-    TtsService().speakGerman(word);
+    TtsService().speakWord(word);
     setState(() {
       _selectedGerman = word;
       _evaluateMatch();
@@ -832,7 +877,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
   // ── Stage: Cloze Test Handlers ────────────────────────────────────
   void _onClozeOptionTap(String option) {
-    TtsService().speakGerman(option);
+    TtsService().speakWord(option);
     setState(() {
       _clozeSelectedOption = option;
       _clozeCorrect = null;
@@ -880,7 +925,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
     final isCorrect = (typed == target) || (normTyped == normTarget);
     if (isCorrect) {
-      TtsService().speakGerman(_typeTarget);
+      TtsService().speakWord(_typeTarget);
     }
     setState(() {
       _typeCorrect = isCorrect;
@@ -1133,6 +1178,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     // Spoken number variants
     if ((w1 == 'zwei' && w2 == 'zwo') || (w1 == 'zwo' && w2 == 'zwei')) return true;
     if ((w1 == 'eins' && w2 == 'ein') || (w1 == 'ein' && w2 == 'eins')) return true;
+    // English contractions and variants
+    if ((w1 == 'im' && w2 == 'i') || (w1 == 'i' && w2 == 'im')) return true;
+    if ((w1 == 'dont' && w2 == 'do') || (w1 == 'cant' && w2 == 'can')) return true;
+    if ((w1 == 'whats' && w2 == 'what') || (w1 == 'what' && w2 == 'whats')) return true;
     // Gender/inflection lenient matches
     if ((w1 == 'meine' && w2 == 'mein') || (w1 == 'mein' && w2 == 'meine')) return true;
     if ((w1 == 'deine' && w2 == 'dein') || (w1 == 'dein' && w2 == 'deine')) return true;
@@ -1152,21 +1201,37 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     return false;
   }
 
+  Future<void> _initSpeechRecognizer() async {
+    try {
+      _speechInitialized = await _speech.initialize(
+        onError: (val) => debugPrint('STT pre-init error: ${val.errorMsg}'),
+        onStatus: (val) => debugPrint('STT pre-init status: $val'),
+      );
+      debugPrint('🗣️ [STT] Pre-initialized speech recognition engine: $_speechInitialized');
+    } catch (e) {
+      debugPrint('⚠️ [STT] Exception during speech pre-initialization: $e');
+    }
+  }
+
   Future<void> _toggleSpeaking() async {
-    if (_isSprechenDemoPlaying) {
-      _ttsHighlightTimer?.cancel();
+    _ttsHighlightTimer?.cancel();
+    _sprechenAutoPlayTimer?.cancel();
+    _silenceTimer?.cancel();
+
+    // Ensure all audio output streams are stopped immediately
+    try {
       await _audioPlayer.stop();
       await TtsService().stop();
-      if (mounted) {
-        setState(() {
-          _isSprechenDemoPlaying = false;
-          _activeSprechenWordIndex = -1;
-        });
-      }
+    } catch (_) {}
+
+    if (mounted && _isSprechenDemoPlaying) {
+      setState(() {
+        _isSprechenDemoPlaying = false;
+        _activeSprechenWordIndex = -1;
+      });
     }
 
     if (_isSpeaking) {
-      _silenceTimer?.cancel();
       try {
         await _speech.stop();
       } catch (_) {}
@@ -1177,6 +1242,40 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       return;
     }
 
+    // Give Android audio hardware 150ms to release audio focus before mic starts
+    await Future.delayed(const Duration(milliseconds: 150));
+
+    // Ensure microphone permission is granted before starting STT
+    try {
+      final micStatus = await Permission.microphone.status;
+      if (!micStatus.isGranted) {
+        final reqResult = await Permission.microphone.request();
+        if (!reqResult.isGranted) {
+          debugPrint('⚠️ Microphone permission denied by user');
+          if (mounted) {
+            final currentTarget = ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
+            final nativeLang = ref.read(gamificationStatusProvider).value?.nativeLanguage ?? (currentTarget == 'en' ? 'hi' : 'en');
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  currentTarget == 'en'
+                      ? (nativeLang == 'hi'
+                          ? 'माइक्रोफ़ोन की अनुमति आवश्यक है। कृपया अनुमति दें।'
+                          : (nativeLang == 'mr'
+                              ? 'मायक्रोफोन परवानगी आवश्यक आहे. कृपया परवानगी द्या.'
+                              : 'Microphone permission is required.'))
+                      : 'Microphone permission is required.',
+                ),
+              ),
+            );
+          }
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error checking microphone permission: $e');
+    }
+
     setState(() {
       _isSpeaking = true;
       _spokenText = '';
@@ -1185,16 +1284,17 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     });
 
     try {
-      bool available = _speechInitialized;
-      if (!available) {
-        available = await _speech.initialize(
-          onError: (val) => debugPrint('STT error: ${val.errorMsg}'),
+      if (!_speechInitialized) {
+        _speechInitialized = await _speech.initialize(
+          onError: (val) {
+            debugPrint('STT runtime error: ${val.errorMsg}');
+          },
           onStatus: (val) {
-            debugPrint('STT status: $val');
+            debugPrint('STT runtime status: $val');
             if (val == 'done' || val == 'notListening') {
               if (mounted && _isSpeaking) {
                 _silenceTimer?.cancel();
-                _silenceTimer = Timer(const Duration(milliseconds: 2000), () {
+                _silenceTimer = Timer(const Duration(milliseconds: 1500), () {
                   if (mounted && _isSpeaking) {
                     setState(() => _isSpeaking = false);
                     _evaluateSpeechPronunciation();
@@ -1204,10 +1304,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
             }
           },
         );
-        _speechInitialized = available;
+        await Future.delayed(const Duration(milliseconds: 120));
       }
 
-      if (!available) {
+      if (!_speechInitialized) {
         debugPrint('⚠️ Speech recognition unavailable; fallback test simulation');
         _silenceTimer?.cancel();
         _silenceTimer = Timer(const Duration(milliseconds: 1800), () {
@@ -1224,16 +1324,41 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
       final currentTarget = ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
       final isEnglish = currentTarget == 'en';
-      String targetLocaleId = isEnglish ? 'en_GB' : 'de_DE';
+      String targetLocaleId = isEnglish ? 'en_IN' : 'de_DE';
+
       try {
         final locales = await _speech.locales();
+        debugPrint('🗣️ [STT] Available locales on device: ${locales.length}');
+
         if (isEnglish) {
-          final gbMatch = locales.where((l) => l.localeId.toLowerCase().contains('en_gb') || l.localeId.toLowerCase().contains('en-gb')).firstOrNull;
+          final inMatch = locales.where((l) {
+            final id = l.localeId.toLowerCase().replaceAll('-', '_');
+            return id == 'en_in' || id.contains('en_in');
+          }).firstOrNull;
+
+          final usMatch = locales.where((l) {
+            final id = l.localeId.toLowerCase().replaceAll('-', '_');
+            return id == 'en_us' || id.contains('en_us');
+          }).firstOrNull;
+
+          final gbMatch = locales.where((l) {
+            final id = l.localeId.toLowerCase().replaceAll('-', '_');
+            return id == 'en_gb' || id.contains('en_gb');
+          }).firstOrNull;
+
           final anyEn = locales.where((l) => l.localeId.toLowerCase().startsWith('en')).firstOrNull;
-          if (gbMatch != null) {
+
+          // For Indian English users, prioritize en_IN then en_US then en_GB
+          if (inMatch != null) {
+            targetLocaleId = inMatch.localeId;
+          } else if (usMatch != null) {
+            targetLocaleId = usMatch.localeId;
+          } else if (gbMatch != null) {
             targetLocaleId = gbMatch.localeId;
           } else if (anyEn != null) {
             targetLocaleId = anyEn.localeId;
+          } else {
+            targetLocaleId = 'en_IN';
           }
         } else {
           final deMatch = locales.where((l) => l.localeId.toLowerCase().startsWith('de')).firstOrNull;
@@ -1241,9 +1366,14 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
             targetLocaleId = deMatch.localeId;
           }
         }
-        debugPrint('🗣️ [Speech Recognition] Using target locale: $targetLocaleId (isEnglish: $isEnglish)');
+        debugPrint('🗣️ [STT] Final active speech recognition locale: $targetLocaleId (isEnglish: $isEnglish)');
       } catch (e) {
         debugPrint('⚠️ Error querying locales: $e');
+      }
+
+      if (_speech.isListening) {
+        await _speech.stop();
+        await Future.delayed(const Duration(milliseconds: 100));
       }
 
       await _speech.listen(
@@ -1255,7 +1385,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           }
           if (_spokenText.isNotEmpty) {
             _silenceTimer?.cancel();
-            _silenceTimer = Timer(const Duration(milliseconds: 3000), () {
+            _silenceTimer = Timer(const Duration(milliseconds: 2500), () {
               if (mounted && _isSpeaking) {
                 _speech.stop();
                 setState(() => _isSpeaking = false);
@@ -1265,12 +1395,13 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           }
         },
         listenOptions: stt.SpeechListenOptions(
-          listenMode: stt.ListenMode.dictation,
+          listenMode: stt.ListenMode.confirmation,
           cancelOnError: false,
           partialResults: true,
+          onDevice: false,
           localeId: targetLocaleId,
           listenFor: const Duration(seconds: 30),
-          pauseFor: const Duration(seconds: 3),
+          pauseFor: const Duration(seconds: 4),
         ),
       );
     } catch (e) {
@@ -1313,19 +1444,37 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     });
     _triggerPrewarmForNext();
 
+    final currentTarget = ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
+    final isEn = currentTarget == 'en';
+    final nLang = ref.read(gamificationStatusProvider).value?.nativeLanguage ?? (isEn ? 'hi' : 'en');
+
     if (isPassed) {
+      final successText = isEn
+          ? (nLang == 'hi'
+              ? 'शानदार उच्चारण! ($accuracy% मैच) 🎉'
+              : (nLang == 'mr'
+                  ? 'उत्कृष्ट उच्चार! ($accuracy% मॅच) 🎉'
+                  : 'Great pronunciation! ($accuracy% match) 🎉'))
+          : 'Ausgezeichnet! ($accuracy% match) 🎉';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: const Color(0xFF15803D),
-          content: Text('Ausgezeichnet! ($accuracy% match) 🎉'),
+          content: Text(successText),
           duration: const Duration(seconds: 2),
         ),
       );
     } else {
+      final retryText = isEn
+          ? (nLang == 'hi'
+              ? 'मैच $accuracy% — पास होने के लिए $threshold% आवश्यक है। पुनः प्रयास करें!'
+              : (nLang == 'mr'
+                  ? 'मॅच $accuracy% — पास होण्यासाठी $threshold% आवश्यक आहे. पुन्हा प्रयत्न करा!'
+                  : 'Match $accuracy% — Need $threshold% or higher to pass. Try again!'))
+          : 'Match $accuracy% — Need $threshold% or higher to pass. Try again!';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: const Color(0xFFDC2626),
-          content: Text('Match $accuracy% — Need $threshold% or higher to pass. Try again!'),
+          content: Text(retryText),
           duration: const Duration(seconds: 3),
         ),
       );
@@ -1597,6 +1746,399 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     );
   }
 
+  String get _targetLang => ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
+  String get _nativeLang => ref.read(gamificationStatusProvider).value?.nativeLanguage ?? (_targetLang == 'en' ? 'hi' : 'en');
+  bool get _isTargetEnglish => _targetLang == 'en';
+
+  String _getStageTitle(String stageType) {
+    final isEn = _isTargetEnglish;
+    final nLang = _nativeLang;
+
+    if (isEn) {
+      if (nLang == 'hi') {
+        switch (stageType) {
+          case 'word_match':
+          case 'match_pairs':
+            return 'शब्दों के जोड़े मिलाइए';
+          case 'listen_tap':
+            return 'सुनकर वाक्य चुनिए';
+          case 'sentence_builder':
+            return 'अंग्रेजी वाक्य बनाइए';
+          case 'sprechen':
+            return 'अंग्रेजी में बोलिए';
+          case 'cloze_test':
+          case 'cloze':
+            return 'रिक्त स्थान भरिए';
+          case 'type_word':
+          case 'type_input':
+            return 'अंग्रेजी शब्द टाइप करें';
+          case 'dialogue_bubble':
+          case 'dialogue':
+            return 'बातचीत का अभ्यास';
+          case 'listen_select':
+          case 'listen_comprehension':
+            return 'सुनें और सही विकल्प चुनें';
+          default:
+            return 'चुनौती पूरी करें';
+        }
+      } else if (nLang == 'mr') {
+        switch (stageType) {
+          case 'word_match':
+          case 'match_pairs':
+            return 'शब्दांच्या जोड्या जुळवा';
+          case 'listen_tap':
+            return 'ऐकून वाक्य निवडा';
+          case 'sentence_builder':
+            return 'इंग्रजी वाक्य बनवा';
+          case 'sprechen':
+            return 'इंग्रजीत बोला';
+          case 'cloze_test':
+          case 'cloze':
+            return 'गाळलेली जागा भरा';
+          case 'type_word':
+          case 'type_input':
+            return 'इंग्रजी शब्द टाइप करा';
+          case 'dialogue_bubble':
+          case 'dialogue':
+            return 'संभाषणाचा सराव';
+          case 'listen_select':
+          case 'listen_comprehension':
+            return 'ऐका आणि योग्य पर्याय निवडा';
+          default:
+            return 'आव्हान पूर्ण करा';
+        }
+      } else {
+        switch (stageType) {
+          case 'word_match':
+          case 'match_pairs':
+            return 'Match the word pairs';
+          case 'listen_tap':
+            return 'Listen and tap what you hear';
+          case 'sentence_builder':
+            return 'Construct the English sentence';
+          case 'sprechen':
+            return 'Speak in English';
+          case 'cloze_test':
+          case 'cloze':
+            return 'Fill in the blank';
+          case 'type_word':
+          case 'type_input':
+            return 'Type the English word';
+          case 'dialogue_bubble':
+          case 'dialogue':
+            return 'Conversation with $_dialoguePartnerName';
+          case 'listen_select':
+          case 'listen_comprehension':
+            return 'Listen & Comprehend';
+          default:
+            return 'Complete the Challenge';
+        }
+      }
+    } else {
+      // German course
+      if (nLang == 'hi') {
+        switch (stageType) {
+          case 'word_match':
+          case 'match_pairs':
+            return 'शब्दों के जोड़े मिलाइए';
+          case 'listen_tap':
+            return 'सुनकर वाक्य चुनिए';
+          case 'sentence_builder':
+            return 'जर्मन वाक्य बनाइए';
+          case 'sprechen':
+            return 'जर्मन में बोलिए (Auf Deutsch)';
+          case 'cloze_test':
+          case 'cloze':
+            return 'रिक्त स्थान भरिए';
+          case 'type_word':
+          case 'type_input':
+            return 'जर्मन शब्द टाइप करें';
+          case 'dialogue_bubble':
+          case 'dialogue':
+            return 'बातचीत का अभ्यास';
+          case 'listen_select':
+          case 'listen_comprehension':
+            return 'सुनें और सही विकल्प चुनें';
+          default:
+            return 'चुनौती पूरी करें';
+        }
+      } else if (nLang == 'mr') {
+        switch (stageType) {
+          case 'word_match':
+          case 'match_pairs':
+            return 'शब्दांच्या जोड्या जुळवा';
+          case 'listen_tap':
+            return 'ऐकून वाक्य निवडा';
+          case 'sentence_builder':
+            return 'जर्मन वाक्य बनवा';
+          case 'sprechen':
+            return 'जर्मनमध्ये बोला (Auf Deutsch)';
+          case 'cloze_test':
+          case 'cloze':
+            return 'गाळलेली जागा भरा';
+          case 'type_word':
+          case 'type_input':
+            return 'जर्मन शब्द टाइप करा';
+          case 'dialogue_bubble':
+          case 'dialogue':
+            return 'संभाषणाचा सराव';
+          case 'listen_select':
+          case 'listen_comprehension':
+            return 'ऐका आणि योग्य पर्याय निवडा';
+          default:
+            return 'आव्हान पूर्ण करा';
+        }
+      } else {
+        switch (stageType) {
+          case 'word_match':
+          case 'match_pairs':
+            return 'Match the word pairs';
+          case 'listen_tap':
+            return 'Listen and tap what you hear';
+          case 'sentence_builder':
+            return 'Construct the German sentence';
+          case 'sprechen':
+            return 'Pronounce Auf Deutsch';
+          case 'cloze_test':
+          case 'cloze':
+            return 'Fill in the blank';
+          case 'type_word':
+          case 'type_input':
+            return 'Type the German word';
+          case 'dialogue_bubble':
+          case 'dialogue':
+            return 'Conversation with $_dialoguePartnerName';
+          case 'listen_select':
+          case 'listen_comprehension':
+            return 'Listen & Comprehend';
+          default:
+            return 'Complete the Challenge';
+        }
+      }
+    }
+  }
+
+  String _getStageSubtitle(String stageType) {
+    final isEn = _isTargetEnglish;
+    final nLang = _nativeLang;
+
+    if (isEn) {
+      if (nLang == 'hi') {
+        switch (stageType) {
+          case 'word_match':
+          case 'match_pairs':
+            return 'अंग्रेजी शब्द और उसके सही हिंदी अर्थ को छुएं।';
+          case 'listen_tap':
+            return 'ऑडियो ध्यान से सुनें और सुने गए शब्दों को क्रम से लगाएं।';
+          case 'sentence_builder':
+            return 'शब्दों को सही क्रम में लगाकर अंग्रेजी वाक्य बनाएं।';
+          case 'sprechen':
+            return 'माइक दबाएं और इको के साथ अंग्रेजी में बोलें।';
+          case 'cloze_test':
+          case 'cloze':
+            return 'वाक्य पूरा करने के लिए सही अंग्रेजी शब्द चुनें।';
+          case 'type_word':
+          case 'type_input':
+            return _typeHint.isNotEmpty ? _typeHint : 'खाली स्थान के लिए सही अंग्रेजी शब्द लिखें।';
+          case 'dialogue_bubble':
+          case 'dialogue':
+            return 'बातचीत जारी रखने के लिए सबसे सही उत्तर चुनें।';
+          case 'listen_select':
+          case 'listen_comprehension':
+            return _listenSelectQuestion.isNotEmpty ? _listenSelectQuestion : 'ऑडियो ध्यान से सुनें और सही उत्तर चुनें।';
+          default:
+            return 'दिए गए कार्य को पूरा करें।';
+        }
+      } else if (nLang == 'mr') {
+        switch (stageType) {
+          case 'word_match':
+          case 'match_pairs':
+            return 'इंग्रजी शब्द आणि त्याचा योग्य मराठी अर्थ टॅप करा.';
+          case 'listen_tap':
+            return 'ऑडिओ लक्षपूर्वक ऐका आणि ऐकलेले शब्द क्रमाने लावा.';
+          case 'sentence_builder':
+            return 'शब्दांना योग्य क्रमाने लावून इंग्रजी वाक्य बनवा.';
+          case 'sprechen':
+            return 'माइक टॅप करा आणि इकोसोबत इंग्रजीत बोला.';
+          case 'cloze_test':
+          case 'cloze':
+            return 'वाक्य पूर्ण करण्यासाठी योग्य इंग्रजी शब्द निवडा.';
+          case 'type_word':
+          case 'type_input':
+            return _typeHint.isNotEmpty ? _typeHint : 'रिकाम्या जागेसाठी योग्य इंग्रजी शब्द लिहा.';
+          case 'dialogue_bubble':
+          case 'dialogue':
+            return 'संभाषण पुढे नेण्यासाठी सर्वात योग्य पर्याय निवडा.';
+          case 'listen_select':
+          case 'listen_comprehension':
+            return _listenSelectQuestion.isNotEmpty ? _listenSelectQuestion : 'ऑडिओ लक्षपूर्वक ऐका आणि अचूक पर्याय निवडा.';
+          default:
+            return 'दिलेले कार्य पूर्ण करा.';
+        }
+      } else {
+        switch (stageType) {
+          case 'word_match':
+          case 'match_pairs':
+            return 'Tap an English word and its matching meaning.';
+          case 'listen_tap':
+            return 'Listen to the audio and arrange the words.';
+          case 'sentence_builder':
+            return 'Arrange the words to form the correct sentence.';
+          case 'sprechen':
+            return 'Tap the microphone and speak aloud to Echo the Dolphin.';
+          case 'cloze_test':
+          case 'cloze':
+            return 'Tap the correct English word to complete the sentence.';
+          case 'type_word':
+          case 'type_input':
+            return _typeHint.isNotEmpty ? _typeHint : 'Translate and spell the missing word correctly.';
+          case 'dialogue_bubble':
+          case 'dialogue':
+            return 'Choose the most natural reply to continue the conversation.';
+          case 'listen_select':
+          case 'listen_comprehension':
+            return _listenSelectQuestion.isNotEmpty ? _listenSelectQuestion : 'Listen carefully to the audio and select the right option.';
+          default:
+            return 'Complete the task.';
+        }
+      }
+    } else {
+      if (nLang == 'hi') {
+        switch (stageType) {
+          case 'word_match':
+          case 'match_pairs':
+            return 'जर्मन शब्द और उसके सही अर्थ को छुएं।';
+          case 'listen_tap':
+            return 'ऑडियो ध्यान से सुनें और सुने गए जर्मन शब्दों को चुनें।';
+          case 'sentence_builder':
+            return 'शब्दों को सही क्रम में लगाकर जर्मन वाक्य बनाएं।';
+          case 'sprechen':
+            return 'माइक दबाएं और इको के साथ जर्मन में बोलें।';
+          case 'cloze_test':
+          case 'cloze':
+            return 'वाक्य पूरा करने के लिए सही जर्मन शब्द चुनें।';
+          case 'type_word':
+          case 'type_input':
+            return _typeHint.isNotEmpty ? _typeHint : 'खाली स्थान के लिए सही जर्मन शब्द लिखें।';
+          case 'dialogue_bubble':
+          case 'dialogue':
+            return 'बातचीत जारी रखने के लिए सबसे सही उत्तर चुनें।';
+          case 'listen_select':
+          case 'listen_comprehension':
+            return _listenSelectQuestion.isNotEmpty ? _listenSelectQuestion : 'ऑडियो ध्यान से सुनें और सही उत्तर चुनें।';
+          default:
+            return 'दिए गए कार्य को पूरा करें।';
+        }
+      } else if (nLang == 'mr') {
+        switch (stageType) {
+          case 'word_match':
+          case 'match_pairs':
+            return 'जर्मन शब्द आणि त्याचा योग्य अर्थ टॅप करा.';
+          case 'listen_tap':
+            return 'ऑडिओ लक्षपूर्वक ऐका आणि ऐकलेले जर्मन शब्द निवडा.';
+          case 'sentence_builder':
+            return 'शब्दांना योग्य क्रमाने लावून जर्मन वाक्य बनवा.';
+          case 'sprechen':
+            return 'माइक टॅप करा आणि इकोसोबत जर्मनमध्ये बोला.';
+          case 'cloze_test':
+          case 'cloze':
+            return 'वाक्य पूर्ण करण्यासाठी योग्य जर्मन शब्द निवडा.';
+          case 'type_word':
+          case 'type_input':
+            return _typeHint.isNotEmpty ? _typeHint : 'रिकाम्या जागेसाठी योग्य जर्मन शब्द लिहा.';
+          case 'dialogue_bubble':
+          case 'dialogue':
+            return 'संभाषण पुढे नेण्यासाठी सर्वात योग्य पर्याय निवडा.';
+          case 'listen_select':
+          case 'listen_comprehension':
+            return _listenSelectQuestion.isNotEmpty ? _listenSelectQuestion : 'ऑडिओ लक्षपूर्वक ऐका आणि अचूक पर्याय निवडा.';
+          default:
+            return 'दिलेले कार्य पूर्ण करा.';
+        }
+      } else {
+        switch (stageType) {
+          case 'word_match':
+          case 'match_pairs':
+            return 'Tap a German greeting and its matching English meaning.';
+          case 'listen_tap':
+            return 'Listen to the audio and arrange the words in order.';
+          case 'sentence_builder':
+            return 'Arrange the words to form the correct German sentence.';
+          case 'sprechen':
+            return 'Tap the microphone and speak aloud to Echo the Dolphin.';
+          case 'cloze_test':
+          case 'cloze':
+            return 'Tap the correct German word to complete the sentence.';
+          case 'type_word':
+          case 'type_input':
+            return _typeHint.isNotEmpty ? _typeHint : 'Translate and spell the missing word correctly.';
+          case 'dialogue_bubble':
+          case 'dialogue':
+            return 'Choose the most natural reply to continue the conversation.';
+          case 'listen_select':
+          case 'listen_comprehension':
+            return _listenSelectQuestion.isNotEmpty ? _listenSelectQuestion : 'Listen carefully to the audio and select the right option.';
+          default:
+            return 'Complete the task.';
+        }
+      }
+    }
+  }
+
+  String _getTypeWordPlaceholder() {
+    final isEn = _isTargetEnglish;
+    final nLang = _nativeLang;
+    if (isEn) {
+      if (nLang == 'hi') return 'यहाँ अंग्रेजी शब्द लिखें...';
+      if (nLang == 'mr') return 'येथे इंग्रजी शब्द लिहा...';
+      return 'Type English word here...';
+    } else {
+      if (nLang == 'hi') return 'यहाँ जर्मन शब्द लिखें...';
+      if (nLang == 'mr') return 'येथे जर्मन शब्द लिहा...';
+      return 'Type German word here...';
+    }
+  }
+
+  String _getSprechenListeningText() {
+    final isEn = _isTargetEnglish;
+    final nLang = _nativeLang;
+    if (isEn) {
+      if (nLang == 'hi') return 'आपकी आवाज़ सुनी जा रही है...';
+      if (nLang == 'mr') return 'तुमचा आवाज ऐकत आहे...';
+      return 'Listening to your pronunciation...';
+    } else {
+      if (nLang == 'hi') return 'आपकी आवाज़ सुनी जा रही है...';
+      if (nLang == 'mr') return 'तुमचा आवाज ऐकत आहे...';
+      return 'Listening to your pronunciation...';
+    }
+  }
+
+  String _getSprechenTapToSpeakText() {
+    final isEn = _isTargetEnglish;
+    final nLang = _nativeLang;
+    if (isEn) {
+      if (nLang == 'hi') return 'बोलने के लिए माइक दबाएं';
+      if (nLang == 'mr') return 'बोलण्यासाठी माइक टॅप करा';
+      return 'Tap Mic to Speak';
+    } else {
+      if (nLang == 'hi') return 'बोलने के लिए माइक दबाएं';
+      if (nLang == 'mr') return 'बोलण्यासाठी माइक टॅप करा';
+      return 'Tap Mic to Speak';
+    }
+  }
+
+  String _getSprechenSkipText() {
+    final isEn = _isTargetEnglish;
+    final nLang = _nativeLang;
+    if (isEn) {
+      if (nLang == 'hi') return 'अभी बोल नहीं सकते';
+      if (nLang == 'mr') return 'आता बोलू शकत नाही';
+      return "CAN'T SPEAK RIGHT NOW";
+    } else {
+      return "CAN'T SPEAK RIGHT NOW";
+    }
+  }
+
   Widget _buildCurrentStageView() {
     if (_isCelebrationStage || _currentStage >= _activeStageTypes.length) {
       return _buildCelebrationStage();
@@ -1644,7 +2186,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Match the word pairs',
+                  _getStageTitle('word_match'),
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 22,
                     fontWeight: FontWeight.w900,
@@ -1654,7 +2196,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Tap a German greeting and its matching English meaning.',
+                  _getStageSubtitle('word_match'),
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
                     color: const Color(0xFF64748B),
@@ -1708,8 +2250,20 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         if (_matchFinished)
           DuoFeedbackSheet(
             isSuccess: true,
-            title: 'Wunderbar! Perfect Match!',
-            subtitle: 'You mastered the core German greetings.',
+            title: _isTargetEnglish
+                ? (_nativeLang == 'hi'
+                    ? 'शानदार! सभी जोड़े मिल गए!'
+                    : (_nativeLang == 'mr'
+                        ? 'छान! सर्व जोड्या जुळल्या!'
+                        : 'Well done! Perfect match!'))
+                : 'Wunderbar! Perfect Match!',
+            subtitle: _isTargetEnglish
+                ? (_nativeLang == 'hi'
+                    ? 'आपने सभी शब्द सफलतापूर्वक सीख लिए।'
+                    : (_nativeLang == 'mr'
+                        ? 'तुम्ही सर्व शब्द यशस्वीपणे शिकलात.'
+                        : 'You mastered all the words.'))
+                : 'You mastered the core German greetings.',
             buttonText: 'NEXT TASK →',
             onContinue: _nextStage,
           ),
@@ -1787,12 +2341,20 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Listen and tap what you hear',
+                  _getStageTitle('listen_tap'),
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 22,
                     fontWeight: FontWeight.w900,
                     color: const Color(0xFF1E293B),
                     letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _getStageSubtitle('listen_tap'),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    color: const Color(0xFF64748B),
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -1892,7 +2454,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                       onTap: isUsed
                           ? null
                           : () {
-                              TtsService().speakGerman(word);
+                              TtsService().speakWord(word);
                               setState(() {
                                 _listenSelectedIndices.add(index);
                                 _listenCorrect = null;
@@ -1960,7 +2522,15 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         else
           DuoFeedbackSheet(
             isSuccess: _listenCorrect == true,
-            title: _listenCorrect == true ? 'Sehr gut! Correct sequence!' : 'Almost there!',
+            title: _listenCorrect == true
+                ? (_isTargetEnglish
+                    ? (_nativeLang == 'hi'
+                        ? 'बहुत खूब! बिल्कुल सही वाक्य!'
+                        : (_nativeLang == 'mr'
+                            ? 'उत्तम! अगदी अचूक वाक्य!'
+                            : 'Great job! Correct sequence!'))
+                    : 'Sehr gut! Correct sequence!')
+                : 'Almost there!',
             subtitle: 'Target: "${_listenTargetSentence.isNotEmpty ? _listenTargetSentence : _listenTarget.join(' ')}"',
             buttonText: 'NEXT TASK →',
             onContinue: _nextStage,
@@ -1987,7 +2557,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Fill in the blank',
+                  _getStageTitle('cloze_test'),
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 22,
                     fontWeight: FontWeight.w900,
@@ -1997,7 +2567,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Tap the correct German word to complete the sentence.',
+                  _getStageSubtitle('cloze_test'),
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
                     color: const Color(0xFF64748B),
@@ -2197,7 +2767,15 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         else
           DuoFeedbackSheet(
             isSuccess: _clozeCorrect == true,
-            title: _clozeCorrect == true ? 'Hervorragend! Correct word!' : 'Not quite right!',
+            title: _clozeCorrect == true
+                ? (_isTargetEnglish
+                    ? (_nativeLang == 'hi'
+                        ? 'शाबाश! सही शब्द चुना!'
+                        : (_nativeLang == 'mr'
+                            ? 'शाब्बास! अचूक शब्द निवडला!'
+                            : 'Great job! Correct word!'))
+                    : 'Hervorragend! Correct word!')
+                : 'Not quite right!',
             subtitle: 'Complete: "${_clozeSentence.replaceAll(RegExp(r'_+'), _clozeBlank)}"',
             buttonText: 'CONTINUE →',
             onContinue: _nextStage,
@@ -2220,12 +2798,20 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Construct the German sentence',
+                  _getStageTitle('sentence_builder'),
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 22,
                     fontWeight: FontWeight.w900,
                     color: const Color(0xFF1E293B),
                     letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _getStageSubtitle('sentence_builder'),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    color: const Color(0xFF64748B),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -2317,7 +2903,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                       onTap: isUsed
                           ? null
                           : () {
-                              TtsService().speakGerman(word);
+                              TtsService().speakWord(word);
                               setState(() {
                                 _builderSelectedIndices.add(index);
                                 _builderCorrect = null;
@@ -2384,8 +2970,16 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         else
           DuoFeedbackSheet(
             isSuccess: _builderCorrect == true,
-            title: _builderCorrect == true ? 'Hervorragend! Outstanding!' : 'Check punctuation and order',
-            subtitle: 'German: "${_builderTargetSentence.isNotEmpty ? _builderTargetSentence : _builderTarget.join(' ')}"',
+            title: _builderCorrect == true
+                ? (_isTargetEnglish
+                    ? (_nativeLang == 'hi'
+                        ? 'शानदार! बिल्कुल सही वाक्य बनाया!'
+                        : (_nativeLang == 'mr'
+                            ? 'छान! अगदी अचूक वाक्य बनवले!'
+                            : 'Outstanding! Great job!'))
+                    : 'Hervorragend! Outstanding!')
+                : 'Check punctuation and order',
+            subtitle: '${_isTargetEnglish ? "Target" : "German"}: "${_builderTargetSentence.isNotEmpty ? _builderTargetSentence : _builderTarget.join(' ')}"',
             buttonText: 'NEXT TASK →',
             onContinue: _nextStage,
           ),
@@ -2407,7 +3001,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Type the German word',
+                  _getStageTitle('type_word'),
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 22,
                     fontWeight: FontWeight.w900,
@@ -2417,7 +3011,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  _typeHint.isNotEmpty ? _typeHint : 'Translate and spell the missing word correctly.',
+                  _getStageSubtitle('type_word'),
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
                     color: const Color(0xFF64748B),
@@ -2516,7 +3110,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                             color: const Color(0xFF1E293B),
                           ),
                           decoration: InputDecoration(
-                            hintText: 'Type German word here...',
+                            hintText: _getTypeWordPlaceholder(),
                             hintStyle: GoogleFonts.plusJakartaSans(
                               fontSize: 16,
                               color: const Color(0xFF94A3B8),
@@ -2544,53 +3138,55 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                 ),
                 const SizedBox(height: 18),
 
-                // German Umlauts Quick-Tap Bar
-                Text(
-                  'QUICK GERMAN UMLAUTS:',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    color: const Color(0xFF94A3B8),
-                    letterSpacing: 1.0,
+                // German Umlauts Quick-Tap Bar (Only shown when learning German)
+                if (!_isTargetEnglish) ...[
+                  Text(
+                    'QUICK GERMAN UMLAUTS:',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      color: const Color(0xFF94A3B8),
+                      letterSpacing: 1.0,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: ['ä', 'ö', 'ü', 'ß', 'Ä', 'Ö', 'Ü'].map((umlaut) {
-                    return Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 3),
-                        child: GestureDetector(
-                          onTap: () => _addUmlautToInput(umlaut),
-                          child: Container(
-                            height: 44,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: const Color(0xFFCBD5E1), width: 1.5),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Color(0xFFE2E8F0),
-                                  blurRadius: 0,
-                                  offset: Offset(0, 2),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: ['ä', 'ö', 'ü', 'ß', 'Ä', 'Ö', 'Ü'].map((umlaut) {
+                      return Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 3),
+                          child: GestureDetector(
+                            onTap: () => _addUmlautToInput(umlaut),
+                            child: Container(
+                              height: 44,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFFCBD5E1), width: 1.5),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0xFFE2E8F0),
+                                    blurRadius: 0,
+                                    offset: Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Text(
+                                umlaut,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                  color: const Color(0xFF0F172A),
                                 ),
-                              ],
-                            ),
-                            child: Text(
-                              umlaut,
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                color: const Color(0xFF0F172A),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    );
-                  }).toList(),
-                ),
+                      );
+                    }).toList(),
+                  ),
+                ],
               ],
             ),
           ),
@@ -2610,8 +3206,16 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         else
           DuoFeedbackSheet(
             isSuccess: _typeCorrect == true,
-            title: _typeCorrect == true ? 'Ausgezeichnet! Perfect German spelling!' : 'Check the spelling!',
-            subtitle: 'Target word: "$_typeTarget"',
+            title: _typeCorrect == true
+                ? (_isTargetEnglish
+                    ? (_nativeLang == 'hi'
+                        ? 'बिल्कुल सही स्पेलिंग!'
+                        : (_nativeLang == 'mr'
+                            ? 'अगदी अचूक स्पेलिंग!'
+                            : 'Excellent! Perfect spelling!'))
+                    : 'Ausgezeichnet! Perfect German spelling!')
+                : 'Check the spelling!',
+            subtitle: 'Target: "$_typeTarget"',
             buttonText: 'CONTINUE →',
             onContinue: _nextStage,
           ),
@@ -2633,7 +3237,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Conversation with $_dialoguePartnerName',
+                  _getStageTitle('dialogue_bubble'),
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 22,
                     fontWeight: FontWeight.w900,
@@ -2643,7 +3247,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Choose the most natural reply to continue the conversation.',
+                  _getStageSubtitle('dialogue_bubble'),
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
                     color: const Color(0xFF64748B),
@@ -2898,7 +3502,15 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         else
           DuoFeedbackSheet(
             isSuccess: _dialogueCorrect == true,
-            title: _dialogueCorrect == true ? 'Perfekt! Great conversational choice!' : 'Try a different reply!',
+            title: _dialogueCorrect == true
+                ? (_isTargetEnglish
+                    ? (_nativeLang == 'hi'
+                        ? 'शानदार! बेहतरीन बातचीत!'
+                        : (_nativeLang == 'mr'
+                            ? 'अप्रतिम! उत्कृष्ट संभाषण!'
+                            : 'Perfect! Great conversation!'))
+                    : 'Perfekt! Great conversational choice!')
+                : 'Try a different reply!',
             subtitle: 'You continued the conversation with $_dialoguePartnerName!',
             buttonText: 'CONTINUE →',
             onContinue: _nextStage,
@@ -2921,7 +3533,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Listen & Comprehend',
+                  _getStageTitle('listen_select'),
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 22,
                     fontWeight: FontWeight.w900,
@@ -2931,9 +3543,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  _listenSelectQuestion.isNotEmpty
-                      ? _listenSelectQuestion
-                      : 'Listen carefully to the audio and select the right option.',
+                  _getStageSubtitle('listen_select'),
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -3116,7 +3726,15 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         else
           DuoFeedbackSheet(
             isSuccess: _listenSelectCorrect == true,
-            title: _listenSelectCorrect == true ? 'Hervorragend! Correct comprehension!' : 'Almost there!',
+            title: _listenSelectCorrect == true
+                ? (_isTargetEnglish
+                    ? (_nativeLang == 'hi'
+                        ? 'बहुत खूब! सही समझा!'
+                        : (_nativeLang == 'mr'
+                            ? 'छान! अचूक समजले!'
+                            : 'Great job! Correct comprehension!'))
+                    : 'Hervorragend! Correct comprehension!')
+                : 'Almost there!',
             subtitle: 'Sentence heard: "$_listenSelectSentence"',
             buttonText: 'CONTINUE →',
             onContinue: _nextStage,
@@ -3139,7 +3757,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Pronounce Auf Deutsch',
+                  _getStageTitle('sprechen'),
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 22,
                     fontWeight: FontWeight.w900,
@@ -3149,7 +3767,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Tap the microphone and speak aloud to Echo the Dolphin.',
+                  _getStageSubtitle('sprechen'),
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
                     color: const Color(0xFF64748B),
@@ -3218,7 +3836,13 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                                     ),
                                     const SizedBox(width: 6),
                                     Text(
-                                      'Echo is speaking...',
+                                      _isTargetEnglish
+                                          ? (_nativeLang == 'hi'
+                                              ? 'इको बोल रहा है...'
+                                              : (_nativeLang == 'mr'
+                                                  ? 'इको बोलत आहे...'
+                                                  : 'Echo is speaking...'))
+                                          : 'Echo is speaking...',
                                       style: GoogleFonts.plusJakartaSans(
                                         fontSize: 11,
                                         fontWeight: FontWeight.w700,
@@ -3241,7 +3865,13 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                                       const Icon(Icons.volume_up_rounded, size: 14, color: Color(0xFF0284C7)),
                                       const SizedBox(width: 4),
                                       Text(
-                                        'Listen to Echo (Tap to hear)',
+                                        _isTargetEnglish
+                                            ? (_nativeLang == 'hi'
+                                                ? 'इको को सुनें (सुनने के लिए छुएं)'
+                                                : (_nativeLang == 'mr'
+                                                    ? 'इकोला ऐका (ऐकण्यासाठी टॅप करा)'
+                                                    : 'Listen to Echo (Tap to hear)'))
+                                            : 'Listen to Echo (Tap to hear)',
                                         style: GoogleFonts.plusJakartaSans(
                                           fontSize: 11,
                                           fontWeight: FontWeight.w700,
@@ -3298,7 +3928,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                                 }
 
                                 return GestureDetector(
-                                  onTap: () => TtsService().speakGerman(w.word),
+                                  onTap: () => TtsService().speakWord(w.word),
                                   child: AnimatedContainer(
                                     duration: const Duration(milliseconds: 160),
                                     padding: EdgeInsets.symmetric(
@@ -3385,7 +4015,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                 const SizedBox(height: 12),
                 Center(
                   child: Text(
-                    _isSpeaking ? 'Listening to your pronunciation...' : 'Tap Mic to Speak',
+                    _isSpeaking ? _getSprechenListeningText() : _getSprechenTapToSpeakText(),
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
@@ -3476,7 +4106,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                     },
                     icon: const Icon(Icons.volume_off_rounded, size: 16, color: Color(0xFF94A3B8)),
                     label: Text(
-                      "CAN'T SPEAK RIGHT NOW",
+                      _getSprechenSkipText(),
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
@@ -3494,8 +4124,20 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         if (_speechPassed == true)
           DuoFeedbackSheet(
             isSuccess: true,
-            title: 'Native-Level Pronunciation!',
-            subtitle: 'Echo is proud of your German accent! ($_speechAccuracy% match)',
+            title: _isTargetEnglish
+                ? (_nativeLang == 'hi'
+                    ? 'शानदार उच्चारण!'
+                    : (_nativeLang == 'mr'
+                        ? 'उत्कृष्ट उच्चार!'
+                        : 'Native-Level Pronunciation!'))
+                : 'Native-Level Pronunciation!',
+            subtitle: _isTargetEnglish
+                ? (_nativeLang == 'hi'
+                    ? 'इको को आपके उच्चारण पर गर्व है! ($_speechAccuracy% मैच)'
+                    : (_nativeLang == 'mr'
+                        ? 'इकोला तुमच्या इंग्रजी उच्चाराचा अभिमान आहे! ($_speechAccuracy% मॅच)'
+                        : 'Echo is proud of your English accent! ($_speechAccuracy% match)'))
+                : 'Echo is proud of your German accent! ($_speechAccuracy% match)',
             buttonText: 'SEE RESULTS 🎉',
             onContinue: _nextStage,
           ),
