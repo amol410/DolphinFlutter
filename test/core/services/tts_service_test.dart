@@ -70,7 +70,7 @@ void main() {
             "features": "[female, notInstalled]",
           },
           {
-            "name": "en-us-x-sfg-local",
+            "name": "en-us-x-iom-local",
             "locale": "en-US",
             "features": "[male, notInstalled]",
           },
@@ -83,7 +83,7 @@ void main() {
 
         final selected = tts.selectBestVoiceForLocale(mockVoices, 'en-US');
         expect(selected, isNotNull);
-        expect(selected!['name'], 'en-us-x-sfg-local');
+        expect(selected!['name'], 'en-us-x-iom-local');
         expect(selected['locale'], 'en-US');
       });
 
@@ -164,7 +164,7 @@ void main() {
     });
 
     group('Cache Wiping & Invalidation', () {
-      test('cleanStaleCache removes unversioned and old version files while preserving v2', () async {
+      test('cleanStaleCache removes unversioned and old version files while preserving current cache version', () async {
         final tempDir = await Directory.systemTemp.createTemp('tts_cache_test_');
         try {
           final staleUnversioned = File('${tempDir.path}/tts_en_us_hello_abc123.wav');

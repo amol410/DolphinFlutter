@@ -15,19 +15,17 @@ class TtsService {
   TtsService._internal();
 
   /// Cache version - increment to invalidate old synthesized audio files on device.
-  static const int _cacheVersion = 2;
+  static const int _cacheVersion = 3;
 
   /// High-priority male voice identifiers for Android (Google TTS), iOS, macOS, Windows.
   static const List<String> _preferredMaleVoiceIdentifiers = [
-    'en-us-x-sfg', // Google US English Male (resonant, deep, studio quality)
-    'en-us-x-iom', // Google US English Male
-    'en-us-x-iob', // Google US English Male
+    'en-us-x-iom', // Google US English Male (Voice II - studio quality, resonant narrator)
+    'en-us-x-tpd', // Google US English Male (Voice IV - clear natural studio narrator)
     'en-us-x-tpc', // Google US English Male
-    'en-us-x-iol', // Google US English Male
-    'en-gb-x-rjd', // Google UK English Male
-    'en-gb-x-fis', // Google UK English Male
-    'en-in-x-cnd', // Google India English Male
-    'en-in-x-ene', // Google India English Male
+    'en-us-x-iog', // Google US English Male
+    'en-gb-x-rjd', // Google UK English Male (Voice II - authoritative, natural British male)
+    'en-in-x-end', // Google India English Male (natural Indian narrator)
+    'en-in-x-enc', // Google India English Male
     'daniel',       // iOS / macOS British Male
     'david',        // Windows / Android Male
     'oliver',       // iOS British Male
@@ -321,7 +319,19 @@ class TtsService {
             features.contains('female') ||
             gender.contains('female') ||
             name.contains('woman') ||
-            name.contains('girl');
+            name.contains('girl') ||
+            name.contains('-sfg') || // Google US Voice I (Female)
+            name.contains('-iob') || // Google US Voice III (Female)
+            name.contains('-iol') || // Google US Voice V (Female)
+            name.contains('-rjs') || // Google UK Voice I (Female)
+            name.contains('-fis') || // Google UK Voice II (Female)
+            name.contains('-gda') || // Google UK Female
+            name.contains('-cnd') || // Google IN Voice I (Female)
+            name.contains('-ene') || // Google IN Voice II (Female)
+            name.contains('-ahp') || // Google IN Voice III (Female)
+            name.contains('samantha') ||
+            name.contains('victoria') ||
+            name.contains('karen');
         if (isFemale) {
           continue;
         }

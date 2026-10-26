@@ -1223,8 +1223,21 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   Future<void> _initSpeechRecognizer() async {
     try {
       _speechInitialized = await _speech.initialize(
-        onError: (val) => debugPrint('STT pre-init error: ${val.errorMsg}'),
+        onError: (val) {
+          debugPrint('🗣️ [STT] Error: ${val.errorMsg} (permanent: ${val.permanent})');
+          if (mounted && _isSpeaking) {
+            _silenceTimer?.cancel();
+            setState(() => _isSpeaking = false);
+            if (_spokenText.trim().isNotEmpty) {
+              _evaluateSpeechPronunciation();
+            }
+          }
+        },
         onStatus: (val) => _onSpeechStatus(val),
+        options: [
+          stt.SpeechToText.androidIntentLookup,
+          stt.SpeechToText.androidNoBluetooth,
+        ],
       );
       debugPrint('🗣️ [STT] Pre-initialized speech recognition engine: $_speechInitialized');
     } catch (e) {
@@ -1264,8 +1277,8 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       return;
     }
 
-    // Give Android audio hardware 150ms to release audio focus before mic starts
-    await Future.delayed(const Duration(milliseconds: 150));
+    // Give Android audio hardware 200ms to release audio focus before mic starts
+    await Future.delayed(const Duration(milliseconds: 200));
 
     // Ensure microphone permission is granted before starting STT
     try {
@@ -1309,11 +1322,22 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       if (!_speechInitialized) {
         _speechInitialized = await _speech.initialize(
           onError: (val) {
-            debugPrint('STT runtime error: ${val.errorMsg}');
+            debugPrint('🗣️ [STT] Error: ${val.errorMsg} (permanent: ${val.permanent})');
+            if (mounted && _isSpeaking) {
+              _silenceTimer?.cancel();
+              setState(() => _isSpeaking = false);
+              if (_spokenText.trim().isNotEmpty) {
+                _evaluateSpeechPronunciation();
+              }
+            }
           },
           onStatus: (val) => _onSpeechStatus(val),
+          options: [
+            stt.SpeechToText.androidIntentLookup,
+            stt.SpeechToText.androidNoBluetooth,
+          ],
         );
-        await Future.delayed(const Duration(milliseconds: 120));
+        await Future.delayed(const Duration(milliseconds: 150));
       }
 
       if (!_speechInitialized) {
@@ -1402,8 +1426,8 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       }
 
       if (_speech.isListening) {
-        await _speech.stop();
-        await Future.delayed(const Duration(milliseconds: 100));
+        await _speech.cancel();
+        await Future.delayed(const Duration(milliseconds: 200));
       }
 
       await _speech.listen(
@@ -1415,17 +1439,27 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           }
           if (_spokenText.trim().isNotEmpty) {
             _silenceTimer?.cancel();
-            _silenceTimer = Timer(const Duration(milliseconds: 2500), () {
-              if (mounted && _isSpeaking && _spokenText.trim().isNotEmpty) {
-                _speech.stop();
-                setState(() => _isSpeaking = false);
-                _evaluateSpeechPronunciation();
-              }
-            });
+            if (result.finalResult) {
+              _silenceTimer = Timer(const Duration(milliseconds: 700), () {
+                if (mounted && _isSpeaking && _spokenText.trim().isNotEmpty) {
+                  _speech.stop();
+                  setState(() => _isSpeaking = false);
+                  _evaluateSpeechPronunciation();
+                }
+              });
+            } else {
+              _silenceTimer = Timer(const Duration(milliseconds: 2500), () {
+                if (mounted && _isSpeaking && _spokenText.trim().isNotEmpty) {
+                  _speech.stop();
+                  setState(() => _isSpeaking = false);
+                  _evaluateSpeechPronunciation();
+                }
+              });
+            }
           }
         },
         listenOptions: stt.SpeechListenOptions(
-          listenMode: stt.ListenMode.dictation,
+          listenMode: stt.ListenMode.confirmation,
           cancelOnError: false,
           partialResults: true,
           onDevice: false,
