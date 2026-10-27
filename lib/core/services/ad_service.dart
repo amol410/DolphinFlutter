@@ -21,9 +21,22 @@ class AdService {
 
   // Duolingo-style Lesson Frequency Counter
   static const String _kLessonCounterKey = 'lessons_completed_since_last_ad';
-  static const int _kLessonsPerAd = 2; // Show interstitial ad every 2 completed lessons
+  static const int _kLessonsPerAd = 3; // Show interstitial ad every 3 completed lessons
 
   static int get lessonsPerAd => _kLessonsPerAd;
+
+  // Daily Rewarded Ads Cap (Max 6 per day)
+  static const int maxRewardedAdsPerDay = 6;
+  static const String _kRewardedAdCountKey = 'rewarded_ads_count_today';
+  static const String _kRewardedAdDateKey = 'rewarded_ads_date_today';
+
+  int _rewardedAdsToday = 0;
+  String _todayDateStr = '';
+
+  int get rewardedAdsToday => _rewardedAdsToday;
+  bool get canWatchRewardedAdToday => _rewardedAdsToday < maxRewardedAdsPerDay;
+  int get remainingRewardedAdsToday =>
+      (maxRewardedAdsPerDay - _rewardedAdsToday).clamp(0, maxRewardedAdsPerDay);
 
   /// Ad Unit ID for rewarded ads
   static String get rewardedAdUnitId {
@@ -53,11 +66,52 @@ class AdService {
   Future<void> init() async {
     try {
       await MobileAds.instance.initialize();
+      await loadDailyRewardedAdCount();
       loadRewardedAd();
       await loadInterstitialAd();
     } catch (e) {
       debugPrint('AdService init error: $e');
     }
+  }
+
+  /// Load daily rewarded ad count from SharedPreferences
+  Future<int> loadDailyRewardedAdCount() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now();
+      final today = '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      _todayDateStr = today;
+      final storedDate = prefs.getString(_kRewardedAdDateKey);
+      if (storedDate != today) {
+        await prefs.setString(_kRewardedAdDateKey, today);
+        await prefs.setInt(_kRewardedAdCountKey, 0);
+        _rewardedAdsToday = 0;
+      } else {
+        _rewardedAdsToday = prefs.getInt(_kRewardedAdCountKey) ?? 0;
+      }
+    } catch (e) {
+      debugPrint('Error loading daily rewarded ad count: $e');
+    }
+    return _rewardedAdsToday;
+  }
+
+  /// Increment rewarded ad count after completing an ad
+  Future<int> incrementRewardedAdCount() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now();
+      final today = '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      if (_todayDateStr != today) {
+        _todayDateStr = today;
+        _rewardedAdsToday = 0;
+      }
+      _rewardedAdsToday++;
+      await prefs.setString(_kRewardedAdDateKey, today);
+      await prefs.setInt(_kRewardedAdCountKey, _rewardedAdsToday);
+    } catch (e) {
+      debugPrint('Error incrementing daily rewarded ad count: $e');
+    }
+    return _rewardedAdsToday;
   }
 
   // ==========================================
@@ -104,6 +158,11 @@ class AdService {
     Function(String message)? onAdDismissed,
     Function(String error)? onAdFailed,
   }) {
+    if (!canWatchRewardedAdToday) {
+      onAdFailed?.call('Daily ad limit reached (6/6). Come back tomorrow or refill with Pearls!');
+      return;
+    }
+
     if (_rewardedAd == null) {
       loadRewardedAd();
       onAdFailed?.call('Ad is preparing, please try again in a few seconds.');
@@ -130,8 +189,9 @@ class AdService {
 
     _rewardedAd!.setImmersiveMode(true);
     _rewardedAd!.show(
-      onUserEarnedReward: (AdWithoutView ad, RewardItem reward) {
+      onUserEarnedReward: (AdWithoutView ad, RewardItem reward) async {
         debugPrint('User earned reward: ${reward.amount} ${reward.type}');
+        await incrementRewardedAdCount();
         onUserEarnedReward();
       },
     );

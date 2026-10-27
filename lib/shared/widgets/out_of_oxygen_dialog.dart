@@ -41,14 +41,14 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
         if (!mounted) return;
         setState(() => _isLoadingAd = false);
 
-        await ref.read(gamificationStatusProvider.notifier).claimAdReward('oxygen', 1);
+        await ref.read(gamificationStatusProvider.notifier).claimAdReward('oxygen', 2);
 
         if (!mounted) return;
         Navigator.of(context).pop();
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('🎉 Ad reward granted! +1 Oxygen bubble added! 🫧'),
+            content: Text('🎉 Ad reward granted! +2 Oxygen bubbles added! 🫧'),
             backgroundColor: Color(0xFF059669),
             behavior: SnackBarBehavior.floating,
           ),
@@ -76,10 +76,10 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
     final status = ref.read(gamificationStatusProvider).value;
     final pearls = status?.pearls ?? 0;
 
-    if (pearls < 250) {
+    if (pearls < 50) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Not enough pearls! Watch a quick video to refill for free 🎬'),
+          content: Text('Not enough pearls (need 50 💎)! Watch a quick video to refill for free 🎬'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -151,7 +151,7 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
 
           // Header Title
           Text(
-            'Watch Ad: +1 Oxygen Bubble',
+            'Watch Ad: +2 Oxygen Bubbles',
             textAlign: TextAlign.center,
             style: GoogleFonts.plusJakartaSans(
               fontSize: 22,
@@ -163,15 +163,23 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
           const SizedBox(height: 8),
 
           // Subtitle
-          Text(
-            'Restore +1 bubble for free without spending pearls ($oxygen/5 currently)',
-            textAlign: TextAlign.center,
-            style: GoogleFonts.outfit(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: const Color(0xFF94A3B8),
-              height: 1.4,
-            ),
+          Builder(
+            builder: (context) {
+              final canWatch = AdService().canWatchRewardedAdToday;
+              final adsRemaining = AdService().remainingRewardedAdsToday;
+              return Text(
+                canWatch
+                    ? 'Restore +2 bubbles for free without spending pearls ($oxygen/5 currently • $adsRemaining/6 ads left today)'
+                    : 'Daily ad limit reached (6/6). Refill with pearls or wait for passive regen ($oxygen/5 currently)',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.outfit(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF94A3B8),
+                  height: 1.4,
+                ),
+              );
+            },
           ),
           const SizedBox(height: 20),
 
@@ -211,23 +219,30 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
           ),
           const SizedBox(height: 24),
 
-          // PRIMARY OPT-IN: Watch Rewarded Ad (Free +1 Oxygen Bubble)
-          TactileGameButton(
-            text: 'WATCH AD: +1 OXYGEN BUBBLE (+1 🫧)',
-            icon: Icons.play_circle_fill_rounded,
-            variant: GameButtonVariant.success,
-            height: 54,
-            fontSize: 15,
-            isLoading: _isLoadingAd,
-            onPressed: _isLoadingAd ? null : _watchAdToRefill,
+          // PRIMARY OPT-IN: Watch Rewarded Ad (Free +2 Oxygen Bubbles, max 6/day)
+          Builder(
+            builder: (context) {
+              final canWatch = AdService().canWatchRewardedAdToday;
+              return TactileGameButton(
+                text: canWatch
+                    ? 'WATCH AD: +2 OXYGEN BUBBLES (+2 🫧)'
+                    : 'DAILY AD LIMIT REACHED (6/6 TODAY)',
+                icon: canWatch ? Icons.play_circle_fill_rounded : Icons.lock_clock_rounded,
+                variant: canWatch ? GameButtonVariant.success : GameButtonVariant.outline,
+                height: 54,
+                fontSize: 15,
+                isLoading: _isLoadingAd,
+                onPressed: (!canWatch || _isLoadingAd) ? null : _watchAdToRefill,
+              );
+            },
           ),
           const SizedBox(height: 12),
 
-          // SECONDARY OPT-IN: Pay with Pearls
+          // SECONDARY OPT-IN: Pay with Pearls (Cost: 50 Pearls)
           TactileGameButton(
-            text: 'REFILL WITH 250 💎 (You have $pearls)',
+            text: 'REFILL WITH 50 💎 (You have $pearls)',
             icon: Icons.diamond_rounded,
-            variant: pearls >= 250 ? GameButtonVariant.primary : GameButtonVariant.outline,
+            variant: pearls >= 50 ? GameButtonVariant.primary : GameButtonVariant.outline,
             height: 48,
             fontSize: 14,
             isLoading: _isSpendingPearls,

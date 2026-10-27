@@ -111,37 +111,47 @@ class ShopScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 10),
 
-            // Ad Reward 1: Free +1 Oxygen Bubble
-            _buildRewardedShopItem(
-              context,
-              icon: '🎬',
-              badge: '+1 BUBBLE',
-              title: 'Watch Ad: +1 Oxygen Bubble',
-              subtitle: 'Restore +1 bubble for free without spending pearls ($oxygen/5 currently)',
-              buttonText: oxygen >= 5 ? 'FULL' : 'WATCH AD',
-              isActionable: oxygen < 5,
-              buttonColor: const Color(0xFF10B981),
-              shadowColor: const Color(0xFF059669),
-              onWatch: () {
-                AdService().showRewardedAd(
-                  onUserEarnedReward: () async {
-                    await ref.read(gamificationStatusProvider.notifier).claimAdReward('oxygen', 1);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('🎉 Ad reward granted! +1 Oxygen bubble added! 🫧'),
-                          backgroundColor: Color(0xFF059669),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    }
-                  },
-                  onAdFailed: (error) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(error), behavior: SnackBarBehavior.floating),
-                      );
-                    }
+            // Ad Reward 1: Free +2 Oxygen Bubbles (Max 6 ads/day)
+            Builder(
+              builder: (context) {
+                final canWatchOxygenAd = AdService().canWatchRewardedAdToday;
+                final adsRemaining = AdService().remainingRewardedAdsToday;
+                return _buildRewardedShopItem(
+                  context,
+                  icon: '🎬',
+                  badge: '+2 BUBBLES',
+                  title: 'Watch Ad: +2 Oxygen Bubbles',
+                  subtitle: canWatchOxygenAd
+                      ? 'Restore +2 bubbles for free without spending pearls ($oxygen/5 currently • $adsRemaining/6 ads left today)'
+                      : 'Daily ad limit reached (6/6). Refill with pearls or wait for passive regen ($oxygen/5 currently)',
+                  buttonText: oxygen >= 5
+                      ? 'FULL'
+                      : (!canWatchOxygenAd ? 'MAX (6/6)' : 'WATCH AD'),
+                  isActionable: oxygen < 5 && canWatchOxygenAd,
+                  buttonColor: const Color(0xFF10B981),
+                  shadowColor: const Color(0xFF059669),
+                  onWatch: () {
+                    AdService().showRewardedAd(
+                      onUserEarnedReward: () async {
+                        await ref.read(gamificationStatusProvider.notifier).claimAdReward('oxygen', 2);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('🎉 Ad reward granted! +2 Oxygen bubbles added! 🫧'),
+                              backgroundColor: Color(0xFF059669),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      },
+                      onAdFailed: (error) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(error), behavior: SnackBarBehavior.floating),
+                          );
+                        }
+                      },
+                    );
                   },
                 );
               },

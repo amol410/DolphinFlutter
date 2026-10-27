@@ -9,10 +9,10 @@
         android:label="LingoDolphy"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
-        <!-- Google Mobile Ads App ID -->
+        <!-- Google Mobile Ads App ID (Verified Google Play Listing) -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-6038618318911032~7984081507"/>
+            android:value="ca-app-pub-6038618318911032~9968150974"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"
