@@ -16,6 +16,7 @@ import '../../notes/data/models/karaoke_model.dart';
 import '../data/models/gamification_models.dart';
 import '../providers/gamification_provider.dart';
 import '../../../core/services/tts_service.dart';
+import '../../../core/services/pronunciation_evaluator.dart';
 import '../../../core/providers/speech_preferences_provider.dart';
 import '../../../core/services/cache_service.dart';
 import '../../../core/services/prefetch_service.dart';
@@ -132,7 +133,6 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   int _sprechenMinAccuracy = 75;
   bool _hasPlayedSprechenDemo = false;
   bool _isSprechenDemoPlaying = false;
-  int _activeSprechenWordIndex = -1;
   Timer? _sprechenAutoPlayTimer;
   Timer? _ttsHighlightTimer;
 
@@ -144,6 +144,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   bool? _speechPassed;
   String _spokenText = '';
   int _speechAccuracy = 0;
+  List<EvaluatedToken> _evaluatedTokens = [];
   Timer? _silenceTimer;
 
   // ── Stage 4: Cloze Test (Fill in the Blank) ───────────────────────
@@ -205,7 +206,6 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
         setState(() {
           _isPlayingAudio = false;
           _isSprechenDemoPlaying = false;
-          _activeSprechenWordIndex = -1;
         });
       }
     });
@@ -216,7 +216,6 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
           _isPlayingAudio = (state == PlayerState.playing);
           if (state != PlayerState.playing) {
             _isSprechenDemoPlaying = false;
-            _activeSprechenWordIndex = -1;
           }
         });
       }
@@ -224,25 +223,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
 
     _positionSub = _audioPlayer.onPositionChanged.listen((pos) {
       if (!mounted) return;
-      final currentType = (!_isCelebrationStage && _currentStage < _activeStageTypes.length)
-          ? _activeStageTypes[_currentStage]
-          : null;
-      if (currentType == 'sprechen' && _isSprechenDemoPlaying && _sprechenKaraokeWords.isNotEmpty) {
-        final sec = pos.inMilliseconds / 1000.0;
-        int activeIdx = -1;
-        for (int i = 0; i < _sprechenKaraokeWords.length; i++) {
-          final w = _sprechenKaraokeWords[i];
-          if (sec >= w.start && sec <= w.end) {
-            activeIdx = i;
-            break;
-          }
-        }
-        if (activeIdx != _activeSprechenWordIndex) {
-          setState(() {
-            _activeSprechenWordIndex = activeIdx;
-          });
-        }
-      }
+      // Machine reference audio playback remains calm and stationary
     });
 
     _initStagesData();
@@ -259,7 +240,6 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       setState(() {
         _isPlayingAudio = false;
         _isSprechenDemoPlaying = false;
-        _activeSprechenWordIndex = -1;
       });
     }
   }
@@ -1081,7 +1061,6 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
         if (!mounted) return;
         setState(() {
           _isSprechenDemoPlaying = true;
-          _activeSprechenWordIndex = -1;
         });
         if (!mounted) return;
         if (cachedFile != null) {
@@ -1098,176 +1077,20 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       }
     }
 
-    // Smart Hybrid TTS demo with word-by-word karaoke highlighting
+    // Machine TTS reference playback (stationary text, no artificial desynced timer)
     if (_sprechenPrompt.isNotEmpty) {
       if (!mounted) return;
       setState(() {
         _isSprechenDemoPlaying = true;
-        _activeSprechenWordIndex = 0;
-      });
-
-      final wordCount = _sprechenKaraokeWords.length;
-      int currentWord = 0;
-      const wordDuration = Duration(milliseconds: 460);
-
-      _ttsHighlightTimer = Timer.periodic(wordDuration, (timer) {
-        if (!mounted || !_isSprechenDemoPlaying) {
-          timer.cancel();
-          return;
-        }
-        currentWord++;
-        if (currentWord < wordCount) {
-          if (!mounted) {
-            timer.cancel();
-            return;
-          }
-          setState(() {
-            _activeSprechenWordIndex = currentWord;
-          });
-        } else {
-          timer.cancel();
-          if (mounted) {
-            setState(() {
-              _isSprechenDemoPlaying = false;
-              _activeSprechenWordIndex = -1;
-            });
-          }
-        }
       });
 
       await TtsService().speakSentence(_sprechenPrompt);
-    }
-  }
-
-  String _normalizeNumbers(String text) {
-    final currentTarget = ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
-    final isEnglish = currentTarget == 'en';
-
-    const germanDigits = {
-      '0': 'null',
-      '1': 'eins',
-      '2': 'zwei',
-      '3': 'drei',
-      '4': 'vier',
-      '5': 'fünf',
-      '6': 'sechs',
-      '7': 'sieben',
-      '8': 'acht',
-      '9': 'neun',
-    };
-
-    const englishDigits = {
-      '0': 'zero',
-      '1': 'one',
-      '2': 'two',
-      '3': 'three',
-      '4': 'four',
-      '5': 'five',
-      '6': 'six',
-      '7': 'seven',
-      '8': 'eight',
-      '9': 'nine',
-    };
-
-    final digitMap = isEnglish ? englishDigits : germanDigits;
-
-    const germanCompounds = {
-      '10': 'zehn',
-      '11': 'elf',
-      '12': 'zwölf',
-      '13': 'dreizehn',
-      '14': 'vierzehn',
-      '15': 'fünfzehn',
-      '16': 'sechzehn',
-      '17': 'siebzehn',
-      '18': 'achtzehn',
-      '19': 'neunzehn',
-      '20': 'zwanzig',
-      '30': 'dreißig',
-      '40': 'vierzig',
-      '50': 'fünfzig',
-      '60': 'sechzig',
-      '70': 'siebzig',
-      '80': 'achtzig',
-      '90': 'neunzig',
-      '100': 'hundert',
-    };
-
-    const englishCompounds = {
-      '10': 'ten',
-      '11': 'eleven',
-      '12': 'twelve',
-      '13': 'thirteen',
-      '14': 'fourteen',
-      '15': 'fifteen',
-      '16': 'sixteen',
-      '17': 'seventeen',
-      '18': 'eighteen',
-      '19': 'nineteen',
-      '20': 'twenty',
-      '30': 'thirty',
-      '40': 'forty',
-      '50': 'fifty',
-      '60': 'sixty',
-      '70': 'seventy',
-      '80': 'eighty',
-      '90': 'ninety',
-      '100': 'hundred',
-    };
-
-    final compoundMap = isEnglish ? englishCompounds : germanCompounds;
-
-    return text.replaceAllMapped(RegExp(r'\d+'), (match) {
-      final numStr = match.group(0)!;
-      // If recognized as known compound word (e.g., 10 -> zehn), provide both compound and single digits
-      if (compoundMap.containsKey(numStr)) {
-        final comp = compoundMap[numStr]!;
-        final single = numStr.split('').map((d) => digitMap[d] ?? d).join(' ');
-        return ' $comp $single ';
+      if (mounted) {
+        setState(() {
+          _isSprechenDemoPlaying = false;
+        });
       }
-      // For phone numbers, codes, or digit sequences (e.g. 0172 -> null eins sieben zwei)
-      final expanded = numStr.split('').map((d) => digitMap[d] ?? d).join(' ');
-      return ' $expanded ';
-    });
-  }
-
-  List<String> _cleanWords(String text) {
-    final normalized = _normalizeNumbers(text);
-    return normalized
-        .toLowerCase()
-        .replaceAll(RegExp(r"[.,/#!$%^&*;:{}=\-_`~()?'«»„“”’]"), '')
-        .trim()
-        .split(RegExp(r'\s+'))
-        .where((s) => s.isNotEmpty)
-        .toList();
-  }
-
-  bool _isFuzzyMatch(String w1, String w2) {
-    if (w1 == w2) return true;
-    // Spoken number variants
-    if ((w1 == 'zwei' && w2 == 'zwo') || (w1 == 'zwo' && w2 == 'zwei')) return true;
-    if ((w1 == 'eins' && w2 == 'ein') || (w1 == 'ein' && w2 == 'eins')) return true;
-    // English contractions and variants
-    if ((w1 == 'im' && w2 == 'i') || (w1 == 'i' && w2 == 'im')) return true;
-    if ((w1 == 'dont' && w2 == 'do') || (w1 == 'cant' && w2 == 'can')) return true;
-    if ((w1 == 'whats' && w2 == 'what') || (w1 == 'what' && w2 == 'whats')) return true;
-    // Gender/inflection lenient matches
-    if ((w1 == 'meine' && w2 == 'mein') || (w1 == 'mein' && w2 == 'meine')) return true;
-    if ((w1 == 'deine' && w2 == 'dein') || (w1 == 'dein' && w2 == 'deine')) return true;
-    if ((w1 == 'seine' && w2 == 'sein') || (w1 == 'sein' && w2 == 'seine')) return true;
-
-    final norm1 = w1.replaceAll('ä', 'ae').replaceAll('ö', 'oe').replaceAll('ü', 'ue').replaceAll('ß', 'ss');
-    final norm2 = w2.replaceAll('ä', 'ae').replaceAll('ö', 'oe').replaceAll('ü', 'ue').replaceAll('ß', 'ss');
-    if (norm1 == norm2) return true;
-    if ((norm1.length - norm2.length).abs() <= 1) {
-      int diff = 0;
-      int minLen = norm1.length < norm2.length ? norm1.length : norm2.length;
-      for (int i = 0; i < minLen; i++) {
-        if (norm1[i] != norm2[i]) diff++;
-      }
-      return diff <= 1;
     }
-    return false;
   }
 
   Future<void> _toggleSpeaking() async {
@@ -1278,7 +1101,6 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       if (mounted) {
         setState(() {
           _isSprechenDemoPlaying = false;
-          _activeSprechenWordIndex = -1;
         });
       }
     }
@@ -1336,6 +1158,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       _spokenText = '';
       _speechAccuracy = 0;
       _speechPassed = null;
+      _evaluatedTokens = [];
     });
 
     try {
@@ -1472,30 +1295,28 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     if (!mounted) return;
 
     final targetText = _sprechenPrompt.isNotEmpty ? _sprechenPrompt : 'Guten Tag! Wie geht es dir?';
-    final targetWords = _cleanWords(targetText);
-    final spokenWords = _cleanWords(_spokenText);
-
-    debugPrint('🗣️ [_evaluateSpeechPronunciation] Target: $targetWords | Spoken: $spokenWords');
-
-    int matches = 0;
-    for (final tWord in targetWords) {
-      if (spokenWords.any((sWord) => _isFuzzyMatch(tWord, sWord))) {
-        matches++;
-      }
-    }
-
-    final accuracy = targetWords.isEmpty ? 100 : ((matches / targetWords.length) * 100).round();
+    final currentTarget = ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
     final threshold = _sprechenMinAccuracy > 0 ? _sprechenMinAccuracy : 75;
-    // Parity with Web notes section: >= 75% passes
-    final isPassed = accuracy >= threshold;
+
+    final evalResult = PronunciationEvaluator.evaluate(
+      targetSentence: targetText,
+      spokenSentence: _spokenText,
+      language: currentTarget,
+      minAccuracyThreshold: threshold,
+    );
+
+    final accuracy = evalResult.accuracyPercentage;
+    final isPassed = evalResult.isPassed;
+
+    debugPrint('🗣️ [_evaluateSpeechPronunciation] Target: "$targetText" | Spoken: "$_spokenText" | Accuracy: $accuracy% | Passed: $isPassed');
 
     setState(() {
       _speechAccuracy = accuracy;
       _speechPassed = isPassed;
+      _evaluatedTokens = evalResult.tokens;
     });
     _triggerPrewarmForNext();
 
-    final currentTarget = ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
     final isEn = currentTarget == 'en';
     final nLang = ref.read(gamificationStatusProvider).value?.nativeLanguage ?? (isEn ? 'hi' : 'en');
 
@@ -1745,7 +1566,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
         _speechPassed = null;
         _speechSessionState = SpeechSessionState.idle;
         _hasPlayedSprechenDemo = false;
-        _activeSprechenWordIndex = -1;
+        _evaluatedTokens = [];
         break;
     }
   }
@@ -1760,7 +1581,6 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     setState(() {
       _isPlayingAudio = false;
       _isSprechenDemoPlaying = false;
-      _activeSprechenWordIndex = -1;
       _currentStage++;
     });
     if (_currentStage < _activeStageTypes.length) {
@@ -4065,61 +3885,66 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
                                 ),
                               ),
                             Wrap(
-                              spacing: 6,
+                              spacing: 8,
                               runSpacing: 8,
                               children: _sprechenKaraokeWords.asMap().entries.map((entry) {
                                 final idx = entry.key;
                                 final w = entry.value;
 
-                                // 1. Is Echo demonstrating this word right now?
-                                final isDemoActive = (_isSprechenDemoPlaying && idx == _activeSprechenWordIndex);
-
-                                // 2. Has the student pronounced this word into the microphone?
-                                final spokenWords = _cleanWords(_spokenText);
-                                final isPronounced = spokenWords.any((sw) => _isFuzzyMatch(sw, w.clean.toLowerCase()));
+                                // End-of-Sentence Evaluation Scorecard:
+                                // Words remain calm and stationary while machine or student speaks.
+                                // Green and Orange feedback pills appear ONLY after the student finishes speaking!
+                                final isGraded = _speechPassed != null;
+                                final token = (idx < _evaluatedTokens.length) ? _evaluatedTokens[idx] : null;
+                                final isPronounced = token != null ? token.isPassed : false;
+                                final isMissed = isGraded && !isPronounced;
 
                                 Color bgColor = Colors.transparent;
                                 Color textColor = const Color(0xFF0284C7);
                                 Border? border;
                                 List<BoxShadow>? shadows;
 
-                                if (isDemoActive) {
-                                  // Echo karaoke speaking wave (Dolphin Blue)
-                                  bgColor = const Color(0xFF0284C7);
-                                  textColor = Colors.white;
-                                  border = Border.all(color: const Color(0xFF0369A1), width: 1.5);
-                                  shadows = [
-                                    BoxShadow(
-                                      color: const Color(0xFF0284C7).withValues(alpha: 0.35),
-                                      blurRadius: 6,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ];
-                                } else if (isPronounced) {
-                                  // Student successfully pronounced word (Emerald Green)
-                                  bgColor = const Color(0xFF10B981);
-                                  textColor = Colors.white;
-                                  border = Border.all(color: const Color(0xFF059669), width: 1.5);
-                                  shadows = [
-                                    BoxShadow(
-                                      color: const Color(0xFF10B981).withValues(alpha: 0.35),
-                                      blurRadius: 6,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ];
+                                if (isGraded) {
+                                  if (isPronounced) {
+                                    // Student successfully pronounced word (Emerald Green Pill)
+                                    bgColor = const Color(0xFFECFDF5);
+                                    textColor = const Color(0xFF047857);
+                                    border = Border.all(color: const Color(0xFF10B981), width: 1.5);
+                                    shadows = [
+                                      BoxShadow(
+                                        color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ];
+                                  } else {
+                                    // Student missed or mispronounced word (Amber/Orange Pill)
+                                    bgColor = const Color(0xFFFFF7ED);
+                                    textColor = const Color(0xFFC2410C);
+                                    border = Border.all(color: const Color(0xFFF97316), width: 1.5);
+                                    shadows = [
+                                      BoxShadow(
+                                        color: const Color(0xFFF97316).withValues(alpha: 0.15),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ];
+                                  }
+                                } else {
+                                  textColor = const Color(0xFF0284C7);
                                 }
 
                                 return GestureDetector(
                                   onTap: () => TtsService().speakWord(w.word),
                                   child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 160),
+                                    duration: const Duration(milliseconds: 200),
                                     padding: EdgeInsets.symmetric(
-                                      horizontal: (isDemoActive || isPronounced) ? 8 : 4,
-                                      vertical: (isDemoActive || isPronounced) ? 4 : 2,
+                                      horizontal: isGraded ? 8 : 4,
+                                      vertical: isGraded ? 4 : 2,
                                     ),
                                     decoration: BoxDecoration(
                                       color: bgColor,
-                                      borderRadius: BorderRadius.circular(8),
+                                      borderRadius: BorderRadius.circular(10),
                                       border: border,
                                       boxShadow: shadows,
                                     ),
@@ -4134,9 +3959,12 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
                                             color: textColor,
                                           ),
                                         ),
-                                        if (isPronounced) ...[
-                                          const SizedBox(width: 3),
-                                          const Icon(Icons.check_rounded, color: Colors.white, size: 14),
+                                        if (isGraded && isPronounced) ...[
+                                          const SizedBox(width: 4),
+                                          const Icon(Icons.check_rounded, color: Color(0xFF10B981), size: 15),
+                                        ] else if (isGraded && isMissed) ...[
+                                          const SizedBox(width: 4),
+                                          const Icon(Icons.volume_up_rounded, color: Color(0xFFF97316), size: 14),
                                         ],
                                       ],
                                     ),
@@ -4273,13 +4101,19 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
                                     color: const Color(0xFFDC2626),
                                   ),
                                 ),
-                                const SizedBox(height: 2),
+                                const SizedBox(height: 4),
                                 Text(
-                                  'Need > 70% match to pass. Tap mic to try again!',
+                                  _isTargetEnglish
+                                      ? (_nativeLang == 'hi'
+                                          ? 'नारंगी शब्दों पर टैप करके सही उच्चारण सुनें, फिर पुनः प्रयास करें!'
+                                          : (_nativeLang == 'mr'
+                                              ? 'नारंगी शब्दांवर टॅप करून योग्य उच्चार ऐका, नंतर पुन्हा प्रयत्न करा!'
+                                              : 'Tap orange words to hear pronunciation, then try again!'))
+                                      : 'Tap orange words to hear pronunciation, then try again!',
                                   style: GoogleFonts.plusJakartaSans(
                                     fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: const Color(0xFF991B1B),
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFFC2410C),
                                   ),
                                 ),
                               ],
