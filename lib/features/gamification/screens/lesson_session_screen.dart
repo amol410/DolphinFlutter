@@ -185,6 +185,21 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     _audioPlayer = AudioPlayer();
     TtsService().warmUp();
 
+    // Register Duolingo-Parity Audio Focus and BECOMING_NOISY Listeners
+    SpeechLifecycleBridge.registerAudioLifecycleListeners(
+      onAudioBecomingNoisy: () {
+        if (!mounted) return;
+        debugPrint('🎧 [LessonSessionScreen] Headphones disconnected -> Pausing audio immediately');
+        _pauseAllAudio();
+      },
+      onAudioFocusLost: () {
+        if (!mounted) return;
+        debugPrint('🔇 [LessonSessionScreen] Audio focus lost (phone call/alarm) -> Pausing audio & releasing speech');
+        _pauseAllAudio();
+        _forceReleaseSpeechRecognizer();
+      },
+    );
+
     _playerCompleteSub = _audioPlayer.onPlayerComplete.listen((_) {
       if (mounted) {
         setState(() {
@@ -234,6 +249,18 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
 
     if (!_isLoadingLessonDetails) {
       _startFirstStage();
+    }
+  }
+
+  void _pauseAllAudio() {
+    _audioPlayer.pause();
+    TtsService().stop();
+    if (mounted) {
+      setState(() {
+        _isPlayingAudio = false;
+        _isSprechenDemoPlaying = false;
+        _activeSprechenWordIndex = -1;
+      });
     }
   }
 

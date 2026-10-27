@@ -96,6 +96,21 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
     WidgetsBinding.instance.addObserver(this);
     _audioPlayer = AudioPlayer();
 
+    // Register Duolingo-Parity Audio Focus and BECOMING_NOISY Listeners
+    SpeechLifecycleBridge.registerAudioLifecycleListeners(
+      onAudioBecomingNoisy: () {
+        if (!mounted) return;
+        debugPrint('🎧 [KaraokeNoteReaderScreen] Headphones disconnected -> Pausing audio immediately');
+        _audioPlayer.pause();
+      },
+      onAudioFocusLost: () {
+        if (!mounted) return;
+        debugPrint('🔇 [KaraokeNoteReaderScreen] Audio focus lost -> Pausing audio & releasing speech');
+        _audioPlayer.pause();
+        _forceReleaseSpeechRecognizer();
+      },
+    );
+
     _isSprechenMode = _story.isSprechen;
     if (_isSprechenMode) {
       _playbackRate = 0.75;

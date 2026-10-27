@@ -86,6 +86,11 @@ class SpeechRecognitionService {
   Timer? _maxListenTimer;
   String _lastRecognizedText = '';
   List<stt.LocaleName> _cachedLocales = [];
+  DateTime? _listenStartTime;
+
+  /// Duolingo Parity: recognizerPreRoll calibration window (250ms)
+  /// Discards speaker ring, button clicks, and acoustic reverberation before speech scoring.
+  static const Duration recognizerPreRoll = Duration(milliseconds: 250);
 
   void _setState(SpeechServiceState newState) {
     _state = newState;
@@ -202,8 +207,17 @@ class SpeechRecognitionService {
 
     // 1. Acoustic Feedback Prevention: Halt TTS and audio players completely
     await TtsService().stop();
-    // 2. 200ms hardware settling guard to allow audio line to switch from DAC to ADC
-    await Future.delayed(const Duration(milliseconds: 200));
+
+    // 2. Duolingo Parity: Check Bluetooth Headset & activate SCO voice routing if connected
+    final hasBluetoothHeadset = await SpeechLifecycleBridge.isBluetoothHeadsetConnected();
+    if (hasBluetoothHeadset) {
+      await SpeechLifecycleBridge.startBluetoothSco();
+    }
+    await SpeechLifecycleBridge.requestAudioFocus();
+
+    // 3. Duolingo Pre-Roll Settling: 250ms hardware settling guard to allow audio line to switch from DAC to ADC
+    await Future.delayed(recognizerPreRoll);
+    _listenStartTime = DateTime.now();
 
     if (!_isInitialized) {
       final ok = await initialize();
@@ -262,6 +276,15 @@ class SpeechRecognitionService {
     SpeechRecognitionResult result,
     Function(SpeechTranscriptionPayload)? onResultCallback,
   ) {
+    // Duolingo Pre-Roll: Discard early speech recognition packets during the first 250ms
+    // to prevent chassis vibration, button tap clicks, or residual speaker ring from corrupting recognition
+    if (_listenStartTime != null &&
+        DateTime.now().difference(_listenStartTime!) < recognizerPreRoll) {
+      debugPrint(
+          '🛡️ [SpeechRecognitionService] Discarding pre-roll audio sample (${DateTime.now().difference(_listenStartTime!).inMilliseconds}ms < ${recognizerPreRoll.inMilliseconds}ms)');
+      return;
+    }
+
     final text = result.recognizedWords.trim();
     if (text.isNotEmpty) {
       _lastRecognizedText = text;
@@ -315,6 +338,10 @@ class SpeechRecognitionService {
       await _speech.stop();
     } catch (_) {}
 
+    // Release Bluetooth SCO voice routing and audio focus
+    await SpeechLifecycleBridge.stopBluetoothSco();
+    await SpeechLifecycleBridge.abandonAudioFocus();
+
     final text = _lastRecognizedText;
     return text;
   }
@@ -329,6 +356,10 @@ class SpeechRecognitionService {
     try {
       await _speech.cancel();
     } catch (_) {}
+
+    // Release Bluetooth SCO voice routing and audio focus
+    await SpeechLifecycleBridge.stopBluetoothSco();
+    await SpeechLifecycleBridge.abandonAudioFocus();
     await SpeechLifecycleBridge.destroyNativeRecognizer();
   }
 
