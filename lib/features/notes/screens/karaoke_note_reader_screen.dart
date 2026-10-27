@@ -4,14 +4,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../../../core/constants/api_constants.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/services/speech_lifecycle_bridge.dart';
+import '../../../core/services/pronunciation_evaluator.dart';
+import '../../gamification/providers/gamification_provider.dart';
 import '../data/models/karaoke_model.dart';
 import '../data/models/note_model.dart';
 import '../providers/notes_provider.dart';
 import '../widgets/animated_karaoke_character.dart';
-import '../widgets/karaoke_speech_bubble.dart';
+
+enum SpeechSessionState {
+  idle,
+  listening,
+  stopping,
+  error,
+}
 
 class KaraokeNoteReaderScreen extends ConsumerStatefulWidget {
   final NoteModel note;
@@ -22,9 +32,12 @@ class KaraokeNoteReaderScreen extends ConsumerStatefulWidget {
   ConsumerState<KaraokeNoteReaderScreen> createState() => _KaraokeNoteReaderScreenState();
 }
 
-class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScreen> {
+class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScreen>
+    with WidgetsBindingObserver {
   late final AudioPlayer _audioPlayer;
-  late final stt.SpeechToText _speech;
+  stt.SpeechToText? _speech;
+  SpeechSessionState _speechSessionState = SpeechSessionState.idle;
+  DateTime _lastSpeechErrorTime = DateTime.fromMillisecondsSinceEpoch(0);
   final ScrollController _scrollController = ScrollController();
   final Map<int, GlobalKey> _sentenceKeys = {};
   int _lastScrolledSentenceIdx = -1;
@@ -44,7 +57,7 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
   // Sprechen state
   int _sprechenIndex = 0;
   int? _activeSprechenIndex;
-  bool _isListening = false;
+  bool get _isListening => _speechSessionState == SpeechSessionState.listening;
   String _spokenText = '';
   int _speechAccuracy = 0;
   bool? _speechPassed;
@@ -80,8 +93,8 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _audioPlayer = AudioPlayer();
-    _speech = stt.SpeechToText();
 
     _isSprechenMode = _story.isSprechen;
     if (_isSprechenMode) {
@@ -91,7 +104,16 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
     }
 
     _initAudio();
-    _initSpeech();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      debugPrint('📱 [KaraokeNoteReaderScreen] Lifecycle $state -> releasing SpeechRecognizer');
+      _forceReleaseSpeechRecognizer();
+    }
   }
 
   String _resolveAudioUrl(String? rawUrl) {
@@ -140,29 +162,6 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
       await _audioPlayer.setPlaybackRate(_playbackRate);
     } catch (e) {
       debugPrint('Audio set source error: $e');
-    }
-  }
-
-  Future<void> _initSpeech() async {
-    try {
-      await _speech.initialize(
-        onError: (val) => debugPrint('Speech error: ${val.errorMsg}'),
-        onStatus: (val) {
-          debugPrint('Speech status: $val');
-          if (val == 'done' || val == 'notListening') {
-            if (_isListening && _spokenText.isNotEmpty) {
-              _silenceTimer?.cancel();
-              _silenceTimer = Timer(const Duration(milliseconds: 1500), () {
-                if (mounted && _isListening && _spokenText.isNotEmpty) {
-                  _handleAutoSubmit();
-                }
-              });
-            }
-          }
-        },
-      );
-    } catch (e) {
-      debugPrint('Speech init failed: $e');
     }
   }
 
@@ -228,68 +227,185 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
     await _audioPlayer.setPlaybackRate(rate);
   }
 
-  void _cleanupListening() {
+  Future<void> _forceReleaseSpeechRecognizer() async {
     _silenceTimer?.cancel();
     _silenceTimer = null;
-    if (_speech.isListening) {
-      _speech.stop();
-    }
+    final speechToRelease = _speech;
+    _speech = null;
     if (mounted) {
-      setState(() {
-        _isListening = false;
-      });
+      setState(() => _speechSessionState = SpeechSessionState.idle);
+    } else {
+      _speechSessionState = SpeechSessionState.idle;
     }
+
+    if (speechToRelease != null) {
+      try {
+        await speechToRelease.cancel();
+      } catch (e) {
+        debugPrint('⚠️ [KaraokeNoteReaderScreen] Speech cancel note: $e');
+      }
+    }
+    await SpeechLifecycleBridge.destroyNativeRecognizer();
   }
 
-  void _startListening(int sIdx) async {
-    _cleanupListening();
-    _lastScrolledSentenceIdx = -1;
-    _scrollToActiveSentence(sIdx);
+  void _cleanupListening() {
+    _forceReleaseSpeechRecognizer();
+  }
 
-    final available = await _speech.initialize();
-    if (!available) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Speech recognition not available on this device')),
-        );
-      }
+  Future<void> _startListening(int sIdx) async {
+    // 1. Guard against overlapping sessions: reject calls if state != idle
+    if (_speechSessionState != SpeechSessionState.idle) {
+      debugPrint('⚠️ [KaraokeNoteReaderScreen] Speech session already in state $_speechSessionState, rejecting call');
       return;
     }
 
+    // 2. Enforce 400ms cooldown after any error or busy condition
+    final cooldownRemaining =
+        400 - DateTime.now().difference(_lastSpeechErrorTime).inMilliseconds;
+    if (cooldownRemaining > 0) {
+      await Future.delayed(Duration(milliseconds: cooldownRemaining));
+    }
+
+    // 3. Verify runtime microphone permission
+    final micPerm = await Permission.microphone.request();
+    if (!mounted) return;
+    if (!micPerm.isGranted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Color(0xFFDC2626),
+          content: Text('Microphone permission is required for speech recognition.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    // 4. Verify native recognition availability
+    final isAvail = await SpeechLifecycleBridge.isRecognitionAvailable();
+    if (!mounted) return;
+    if (!isAvail) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Color(0xFFDC2626),
+          content: Text('Speech recognition is not available on this device.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    if (_speechSessionState != SpeechSessionState.idle) return;
+
     setState(() {
-      _isListening = true;
+      _speechSessionState = SpeechSessionState.listening;
       _spokenText = '';
       _speechAccuracy = 0;
       _speechPassed = null;
     });
 
-    _speech.listen(
-      localeId: 'de_DE',
-      listenFor: const Duration(seconds: 90),
-      pauseFor: const Duration(seconds: 6),
-      listenOptions: stt.SpeechListenOptions(
-        listenMode: stt.ListenMode.dictation,
-        cancelOnError: false,
-        partialResults: true,
-      ),
-      onResult: (result) {
-        final text = result.recognizedWords.trim();
-        if (mounted) {
-          setState(() {
-            _spokenText = text;
-          });
-        }
+    _lastScrolledSentenceIdx = -1;
+    _scrollToActiveSentence(sIdx);
 
-        if (text.isNotEmpty) {
-          _resetSilenceTimer(sIdx);
+    try {
+      // 5. Fresh nullable recognizer instance created for each session
+      _speech = stt.SpeechToText();
+      final available = await _speech!.initialize(
+        onError: (val) {
+          debugPrint('STT error: ${val.errorMsg}');
+          final msg = val.errorMsg.toLowerCase();
+          if (msg.contains('error_busy') || msg.contains('busy')) {
+            debugPrint('⚠️ [STT] Recognizer busy: releasing and backing off');
+            _lastSpeechErrorTime = DateTime.now();
+            _forceReleaseSpeechRecognizer();
+          } else if (msg.contains('error_permission')) {
+            _lastSpeechErrorTime = DateTime.now();
+            _forceReleaseSpeechRecognizer();
+          } else {
+            _lastSpeechErrorTime = DateTime.now();
+          }
+        },
+        onStatus: (val) {
+          debugPrint('STT status: $val');
+          if (val == 'done' || val == 'notListening') {
+            if (mounted && _isListening) {
+              if (_spokenText.isNotEmpty) {
+                _silenceTimer?.cancel();
+                _silenceTimer = Timer(const Duration(milliseconds: 1500), () {
+                  if (mounted && _isListening && _spokenText.isNotEmpty) {
+                    _handleAutoSubmit();
+                  }
+                });
+              } else {
+                _forceReleaseSpeechRecognizer();
+              }
+            }
+          }
+        },
+      );
+
+      if (!available) {
+        debugPrint('⚠️ Speech recognition initialize returned false');
+        _lastSpeechErrorTime = DateTime.now();
+        await _forceReleaseSpeechRecognizer();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              backgroundColor: Color(0xFFDC2626),
+              content: Text('Speech recognition not available on this device'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
         }
-      },
-    );
+        return;
+      }
+
+      if (!mounted || _speechSessionState != SpeechSessionState.listening) {
+        await _forceReleaseSpeechRecognizer();
+        return;
+      }
+
+      final currentTarget =
+          ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
+      final isEnglish = currentTarget == 'en';
+      final targetLocaleId = isEnglish ? 'en_GB' : 'de_DE';
+
+      await _speech!.listen(
+        listenOptions: stt.SpeechListenOptions(
+          listenMode: stt.ListenMode.dictation,
+          cancelOnError: false,
+          partialResults: true,
+          localeId: targetLocaleId,
+          listenFor: const Duration(seconds: 90),
+          pauseFor: const Duration(seconds: 6),
+        ),
+        onResult: (result) {
+          final text = result.recognizedWords.trim();
+          if (mounted) {
+            setState(() {
+              _spokenText = text;
+            });
+          }
+
+          if (text.isNotEmpty) {
+            _resetSilenceTimer(sIdx);
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('Speech listen exception: $e');
+      _lastSpeechErrorTime = DateTime.now();
+      if (mounted) {
+        setState(() => _speechSessionState = SpeechSessionState.error);
+      } else {
+        _speechSessionState = SpeechSessionState.error;
+      }
+      await _forceReleaseSpeechRecognizer();
+    }
   }
 
   void _resetSilenceTimer(int sIdx) {
     _silenceTimer?.cancel();
-    _silenceTimer = Timer(const Duration(milliseconds: 3000), () {
+    _silenceTimer = Timer(const Duration(milliseconds: 2500), () {
       if (mounted && _isListening && _spokenText.isNotEmpty) {
         _handleAutoSubmit();
       }
@@ -304,7 +420,7 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
   void _handleManualSubmit(int sIdx) {
     if (_spokenText.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please speak in German before submitting!')),
+        const SnackBar(content: Text('Please speak clearly before submitting!')),
       );
       return;
     }
@@ -316,19 +432,18 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
     if (sIdx >= _sentences.length) return;
 
     final targetText = _sentences[sIdx].text;
-    final targetWords = _cleanWords(targetText);
-    final spokenWords = _cleanWords(_spokenText);
+    final currentTarget =
+        ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
 
-    int matches = 0;
-    for (var tWord in targetWords) {
-      if (spokenWords.any((sWord) => _isFuzzyMatch(tWord, sWord))) {
-        matches++;
-      }
-    }
+    final result = PronunciationEvaluator.evaluate(
+      targetSentence: targetText,
+      spokenSentence: _spokenText,
+      language: currentTarget,
+      minAccuracyThreshold: 70,
+    );
 
-    final accuracy = targetWords.isEmpty ? 100 : ((matches / targetWords.length) * 100).round();
-    final isMatch = accuracy >= 75;
-
+    final accuracy = result.accuracyPercentage;
+    final isMatch = result.isPassed;
     final chances = (_sentenceChances[sIdx] ?? 3);
 
     setState(() {
@@ -342,10 +457,14 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
     });
 
     if (isMatch) {
+      final successMsg = currentTarget == 'en'
+          ? 'Great pronunciation! ($accuracy%) 🎉'
+          : 'Ausgezeichnet! Great pronunciation! ($accuracy%) 🎉';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           backgroundColor: AppColors.success,
-          content: Text('Ausgezeichnet! Great pronunciation! 🎉'),
+          content: Text(successMsg),
+          behavior: SnackBarBehavior.floating,
         ),
       );
 
@@ -360,32 +479,10 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
         SnackBar(
           backgroundColor: AppColors.warning,
           content: Text('Not quite ($accuracy%). $left chances remaining!'),
+          behavior: SnackBarBehavior.floating,
         ),
       );
     }
-  }
-
-  List<String> _cleanWords(String text) {
-    return text
-        .toLowerCase()
-        .replaceAll(RegExp(r'[.,/#!$%^&*;:{}=\-_`~()?"«»„“]'), '')
-        .trim()
-        .split(RegExp(r'\s+'))
-        .where((s) => s.isNotEmpty)
-        .toList();
-  }
-
-  bool _isFuzzyMatch(String w1, String w2) {
-    if (w1 == w2) return true;
-    if ((w1.length - w2.length).abs() <= 1) {
-      int diff = 0;
-      int minLen = w1.length < w2.length ? w1.length : w2.length;
-      for (int i = 0; i < minLen; i++) {
-        if (w1[i] != w2[i]) diff++;
-      }
-      return diff <= 1;
-    }
-    return false;
   }
 
   void _playSentence(int sIdx) async {
@@ -417,10 +514,11 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _playerStateSub?.cancel();
     _positionSub?.cancel();
     _durationSub?.cancel();
-    _cleanupListening();
+    _forceReleaseSpeechRecognizer();
     _audioPlayer.stop();
     _audioPlayer.dispose();
     _scrollController.dispose();
@@ -2050,7 +2148,11 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
                       color: Colors.white,
                     ),
                     label: Text(
-                      _isListening ? 'Done Speaking (Check Now ✓)' : 'Start Speaking Auf Deutsch',
+                      _isListening
+                          ? 'Done Speaking (Check Now ✓)'
+                          : (ref.read(gamificationStatusProvider).value?.targetLanguage == 'en'
+                              ? 'Start Speaking (English)'
+                              : 'Start Speaking Auf Deutsch'),
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,

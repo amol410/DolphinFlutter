@@ -4,8 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../../../core/constants/api_constants.dart';
+import '../../../core/services/speech_lifecycle_bridge.dart';
 import '../../../shared/widgets/animated_dolphin_mascot.dart';
 import '../../../shared/widgets/tactile_game_button.dart';
 import '../../../shared/widgets/duo_feedback_sheet.dart';
@@ -14,6 +16,7 @@ import '../../notes/data/models/karaoke_model.dart';
 import '../data/models/gamification_models.dart';
 import '../providers/gamification_provider.dart';
 import '../../../core/services/tts_service.dart';
+import '../../../core/providers/speech_preferences_provider.dart';
 import '../../../core/services/cache_service.dart';
 import '../../../core/services/prefetch_service.dart';
 import '../../../core/services/ad_service.dart';
@@ -36,7 +39,15 @@ class LessonSessionScreen extends ConsumerStatefulWidget {
   ConsumerState<LessonSessionScreen> createState() => _LessonSessionScreenState();
 }
 
-class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
+enum SpeechSessionState {
+  idle,
+  listening,
+  stopping,
+  error,
+}
+
+class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
+    with WidgetsBindingObserver {
   int _currentStage = 0;
   List<String> _activeStageTypes = [];
   int get _totalStages => _activeStageTypes.length;
@@ -125,9 +136,11 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   Timer? _sprechenAutoPlayTimer;
   Timer? _ttsHighlightTimer;
 
-  late final stt.SpeechToText _speech;
+  stt.SpeechToText? _speech;
   bool _speechInitialized = false;
-  bool _isSpeaking = false;
+  SpeechSessionState _speechSessionState = SpeechSessionState.idle;
+  bool get _isSpeaking => _speechSessionState == SpeechSessionState.listening;
+  DateTime _lastSpeechErrorTime = DateTime.fromMillisecondsSinceEpoch(0);
   bool? _speechPassed;
   String _spokenText = '';
   int _speechAccuracy = 0;
@@ -168,7 +181,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   @override
   void initState() {
     super.initState();
-    _speech = stt.SpeechToText();
+    WidgetsBinding.instance.addObserver(this);
     _audioPlayer = AudioPlayer();
     TtsService().warmUp();
 
@@ -225,16 +238,47 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      debugPrint('📱 [LessonSessionScreen] Lifecycle $state -> releasing SpeechRecognizer');
+      _forceReleaseSpeechRecognizer();
+    }
+  }
+
+  Future<void> _forceReleaseSpeechRecognizer() async {
+    _silenceTimer?.cancel();
+    _silenceTimer = null;
+    final speechToRelease = _speech;
+    _speech = null;
+    _speechInitialized = false;
+    if (mounted) {
+      setState(() => _speechSessionState = SpeechSessionState.idle);
+    } else {
+      _speechSessionState = SpeechSessionState.idle;
+    }
+
+    if (speechToRelease != null) {
+      try {
+        await speechToRelease.cancel();
+      } catch (e) {
+        debugPrint('⚠️ [LessonSessionScreen] Speech cancel note: $e');
+      }
+    }
+    await SpeechLifecycleBridge.destroyNativeRecognizer();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _silenceTimer?.cancel();
     _ttsHighlightTimer?.cancel();
     _sprechenAutoPlayTimer?.cancel();
-    _silenceTimer?.cancel();
     _playerCompleteSub?.cancel();
     _playerStateSub?.cancel();
     _positionSub?.cancel();
-    try {
-      _speech.stop();
-    } catch (_) {}
+    _forceReleaseSpeechRecognizer();
     TtsService().stop();
     _audioPlayer.stop();
     _typeWordController.dispose();
@@ -1072,7 +1116,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
     final currentTarget = ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
     final isEnglish = currentTarget == 'en';
 
-    final germanDigits = const {
+    const germanDigits = {
       '0': 'null',
       '1': 'eins',
       '2': 'zwei',
@@ -1085,7 +1129,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       '9': 'neun',
     };
 
-    final englishDigits = const {
+    const englishDigits = {
       '0': 'zero',
       '1': 'one',
       '2': 'two',
@@ -1100,7 +1144,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
     final digitMap = isEnglish ? englishDigits : germanDigits;
 
-    final germanCompounds = const {
+    const germanCompounds = {
       '10': 'zehn',
       '11': 'elf',
       '12': 'zwölf',
@@ -1122,7 +1166,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       '100': 'hundert',
     };
 
-    final englishCompounds = const {
+    const englishCompounds = {
       '10': 'ten',
       '11': 'eleven',
       '12': 'twelve',
@@ -1212,30 +1256,86 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       }
     }
 
-    if (_isSpeaking) {
-      _silenceTimer?.cancel();
-      try {
-        await _speech.stop();
-      } catch (_) {}
+    // 1. Prevent Overlapping Sessions
+    if (_speechSessionState != SpeechSessionState.idle) {
+      if (_speechSessionState == SpeechSessionState.listening) {
+        _silenceTimer?.cancel();
+        _speechSessionState = SpeechSessionState.stopping;
+        try {
+          await _speech?.stop();
+        } catch (_) {}
+        if (mounted) {
+          setState(() => _speechSessionState = SpeechSessionState.idle);
+          _evaluateSpeechPronunciation();
+        }
+      }
+      return;
+    }
+
+    // 2. Cooldown check: 300ms - 500ms safety backoff after any error
+    final cooldownRemaining =
+        400 - DateTime.now().difference(_lastSpeechErrorTime).inMilliseconds;
+    if (cooldownRemaining > 0) {
+      await Future.delayed(Duration(milliseconds: cooldownRemaining));
+    }
+
+    // 3. Runtime Permission Verification
+    final micPerm = await Permission.microphone.request();
+    if (!micPerm.isGranted) {
       if (mounted) {
-        setState(() => _isSpeaking = false);
-        _evaluateSpeechPronunciation();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Color(0xFFDC2626),
+            content: Text(
+                'Microphone permission is required for speech recognition.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+
+    // 4. Native Recognition Availability Check
+    final isAvail = await SpeechLifecycleBridge.isRecognitionAvailable();
+    if (!isAvail) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Color(0xFFDC2626),
+            content:
+                Text('Speech recognition is not available on this device.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
       return;
     }
 
     setState(() {
-      _isSpeaking = true;
+      _speechSessionState = SpeechSessionState.listening;
       _spokenText = '';
       _speechAccuracy = 0;
       _speechPassed = null;
     });
 
     try {
+      // 5. Create a fresh recognizer instance for this listening session
+      _speech ??= stt.SpeechToText();
       bool available = _speechInitialized;
       if (!available) {
-        available = await _speech.initialize(
-          onError: (val) => debugPrint('STT error: ${val.errorMsg}'),
+        available = await _speech!.initialize(
+          onError: (val) {
+            debugPrint('STT error: ${val.errorMsg}');
+            final msg = val.errorMsg.toLowerCase();
+            if (msg.contains('error_busy') || msg.contains('busy')) {
+              debugPrint('⚠️ [STT] Recognizer busy: releasing and backing off');
+              _lastSpeechErrorTime = DateTime.now();
+              _forceReleaseSpeechRecognizer();
+            } else if (msg.contains('error_permission')) {
+              _lastSpeechErrorTime = DateTime.now();
+              _forceReleaseSpeechRecognizer();
+            }
+          },
           onStatus: (val) {
             debugPrint('STT status: $val');
             if (val == 'done' || val == 'notListening') {
@@ -1243,7 +1343,8 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                 _silenceTimer?.cancel();
                 _silenceTimer = Timer(const Duration(milliseconds: 2000), () {
                   if (mounted && _isSpeaking) {
-                    setState(() => _isSpeaking = false);
+                    setState(
+                        () => _speechSessionState = SpeechSessionState.idle);
                     _evaluateSpeechPronunciation();
                   }
                 });
@@ -1255,12 +1356,13 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       }
 
       if (!available) {
-        debugPrint('⚠️ Speech recognition unavailable; fallback test simulation');
+        debugPrint(
+            '⚠️ Speech recognition unavailable; fallback test simulation');
         _silenceTimer?.cancel();
         _silenceTimer = Timer(const Duration(milliseconds: 1800), () {
           if (mounted && _isSpeaking) {
             setState(() {
-              _isSpeaking = false;
+              _speechSessionState = SpeechSessionState.idle;
               _spokenText = _sprechenPrompt;
             });
             _evaluateSpeechPronunciation();
@@ -1269,34 +1371,41 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         return;
       }
 
-      final currentTarget = ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
+      final currentTarget =
+          ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
       final isEnglish = currentTarget == 'en';
       String targetLocaleId = isEnglish ? 'en_GB' : 'de_DE';
       try {
-        final locales = await _speech.locales();
+        final locales = await _speech!.locales();
         if (isEnglish) {
-          final inMatch = locales.where((l) => l.localeId.toLowerCase().contains('en_in') || l.localeId.toLowerCase().contains('en-in')).firstOrNull;
-          final gbMatch = locales.where((l) => l.localeId.toLowerCase().contains('en_gb') || l.localeId.toLowerCase().contains('en-gb')).firstOrNull;
-          final anyEn = locales.where((l) => l.localeId.toLowerCase().startsWith('en')).firstOrNull;
-          if (inMatch != null) {
-            targetLocaleId = inMatch.localeId;
-          } else if (gbMatch != null) {
+          final gbMatch = locales
+              .where((l) =>
+                  l.localeId.toLowerCase().contains('en_gb') ||
+                  l.localeId.toLowerCase().contains('en-gb'))
+              .firstOrNull;
+          final anyEn = locales
+              .where((l) => l.localeId.toLowerCase().startsWith('en'))
+              .firstOrNull;
+          if (gbMatch != null) {
             targetLocaleId = gbMatch.localeId;
           } else if (anyEn != null) {
             targetLocaleId = anyEn.localeId;
           }
         } else {
-          final deMatch = locales.where((l) => l.localeId.toLowerCase().startsWith('de')).firstOrNull;
+          final deMatch = locales
+              .where((l) => l.localeId.toLowerCase().startsWith('de'))
+              .firstOrNull;
           if (deMatch != null) {
             targetLocaleId = deMatch.localeId;
           }
         }
-        debugPrint('🗣️ [Speech Recognition] Using target locale: $targetLocaleId (isEnglish: $isEnglish)');
+        debugPrint(
+            '🗣️ [Speech Recognition] Using target locale: $targetLocaleId (isEnglish: $isEnglish)');
       } catch (e) {
         debugPrint('⚠️ Error querying locales: $e');
       }
 
-      await _speech.listen(
+      await _speech!.listen(
         onResult: (result) {
           if (mounted) {
             setState(() {
@@ -1307,8 +1416,8 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
             _silenceTimer?.cancel();
             _silenceTimer = Timer(const Duration(milliseconds: 3000), () {
               if (mounted && _isSpeaking) {
-                _speech.stop();
-                setState(() => _isSpeaking = false);
+                _speech?.stop();
+                setState(() => _speechSessionState = SpeechSessionState.idle);
                 _evaluateSpeechPronunciation();
               }
             });
@@ -1320,14 +1429,16 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           partialResults: true,
           localeId: targetLocaleId,
           listenFor: const Duration(seconds: 30),
-          pauseFor: const Duration(seconds: 4),
+          pauseFor: const Duration(seconds: 3),
         ),
       );
     } catch (e) {
       debugPrint('Speech listen exception: $e');
+      _lastSpeechErrorTime = DateTime.now();
+      await _forceReleaseSpeechRecognizer();
       if (mounted) {
         setState(() {
-          _isSpeaking = false;
+          _speechSessionState = SpeechSessionState.idle;
           _spokenText = _sprechenPrompt;
         });
         _evaluateSpeechPronunciation();
@@ -1337,6 +1448,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
 
   void _evaluateSpeechPronunciation() {
     _silenceTimer?.cancel();
+    _forceReleaseSpeechRecognizer();
     if (!mounted) return;
 
     final targetText = _sprechenPrompt.isNotEmpty ? _sprechenPrompt : 'Guten Tag! Wie geht es dir?';
@@ -1380,6 +1492,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           backgroundColor: const Color(0xFF15803D),
           content: Text(successText),
           duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
         ),
       );
     } else {
@@ -1395,6 +1508,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
           backgroundColor: const Color(0xFFDC2626),
           content: Text(retryText),
           duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
         ),
       );
     }
@@ -1483,7 +1597,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
         _spokenText = '';
         _speechAccuracy = 0;
         _speechPassed = null;
-        _isSpeaking = false;
+        _speechSessionState = SpeechSessionState.idle;
         _hasPlayedSprechenDemo = false;
         _activeSprechenWordIndex = -1;
         break;
@@ -1493,7 +1607,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
   void _nextStage() {
     _ttsHighlightTimer?.cancel();
     _sprechenAutoPlayTimer?.cancel();
-    _silenceTimer?.cancel();
+    _forceReleaseSpeechRecognizer();
     _audioPlayer.pause();
     TtsService().stop();
     _currentStageReEnqueued = false;
@@ -2085,6 +2199,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
       case 'listen_comprehension':
         return _buildListenSelectStage();
       case 'sprechen':
+        if (ref.watch(speechPreferencesProvider).isCurrentlyMuted) {
+          return _buildSnoozedSprechenStage();
+        }
         return _buildSprechenStage();
       default:
         return _buildCelebrationStage();
@@ -2426,7 +2543,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
               onPressed: _listenSelectedIndices.isEmpty
                   ? null
                   : () {
-                      final selectedWords = _listenSelectedIndices.map((i) => _listenBank[i]).toList();
+                      final selectedWords = _listenSelected;
                       final selectedClean = selectedWords.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
                       final targetClean = _listenTarget.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
                       final isMatch = selectedClean == targetClean || selectedWords.join(' ') == _listenTarget.join(' ');
@@ -2874,7 +2991,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
               onPressed: _builderSelectedIndices.isEmpty
                   ? null
                   : () {
-                      final selectedWords = _builderSelectedIndices.map((i) => _builderBank[i]).toList();
+                      final selectedWords = _builderSelected;
                       final selClean = selectedWords.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
                       final tgtClean = _builderTarget.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
                       final isMatch = selClean == tgtClean || selectedWords.join(' ') == _builderTarget.join(' ');
@@ -3901,7 +4018,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                 ),
                 const SizedBox(height: 36),
 
-                // Large Microphone Button (No replay button anywhere on this stage)
+                // Large Tactile Microphone Button (from 062815a)
                 Center(
                   child: GestureDetector(
                     onTap: _toggleSpeaking,
@@ -3910,20 +4027,26 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                       height: 90,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: _isSpeaking ? const Color(0xFFEF4444) : const Color(0xFF0284C7),
+                        color: _isSpeaking
+                            ? const Color(0xFFEF4444)
+                            : const Color(0xFF0284C7),
                         boxShadow: [
                           BoxShadow(
                             color: _isSpeaking
                                 ? const Color(0x66EF4444)
                                 : const Color(0xFF0369A1),
                             blurRadius: _isSpeaking ? 16 : 0,
-                            offset: _isSpeaking ? const Offset(0, 4) : const Offset(0, 5),
+                            offset: _isSpeaking
+                                ? const Offset(0, 4)
+                                : const Offset(0, 5),
                           ),
                         ],
                       ),
                       child: Center(
                         child: Icon(
-                          _isSpeaking ? Icons.mic_rounded : Icons.mic_none_rounded,
+                          _isSpeaking
+                              ? Icons.mic_rounded
+                              : Icons.mic_none_rounded,
                           color: Colors.white,
                           size: 42,
                         ),
@@ -3934,11 +4057,15 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                 const SizedBox(height: 12),
                 Center(
                   child: Text(
-                    _isSpeaking ? _getSprechenListeningText() : _getSprechenTapToSpeakText(),
+                    _isSpeaking
+                        ? _getSprechenListeningText()
+                        : _getSprechenTapToSpeakText(),
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
-                      color: _isSpeaking ? const Color(0xFFEF4444) : const Color(0xFF64748B),
+                      color: _isSpeaking
+                          ? const Color(0xFFEF4444)
+                          : const Color(0xFF64748B),
                     ),
                   ),
                 ),
@@ -3952,11 +4079,13 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                       decoration: BoxDecoration(
                         color: const Color(0xFFDCFCE7),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFF86EFAC), width: 1.5),
+                        border: Border.all(
+                            color: const Color(0xFF86EFAC), width: 1.5),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.check_circle_rounded, color: Color(0xFF15803D), size: 24),
+                          const Icon(Icons.check_circle_rounded,
+                              color: Color(0xFF15803D), size: 24),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
@@ -3978,11 +4107,13 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                       decoration: BoxDecoration(
                         color: const Color(0xFFFEF2F2),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFFFCA5A5), width: 1.5),
+                        border: Border.all(
+                            color: const Color(0xFFFCA5A5), width: 1.5),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.cancel_outlined, color: Color(0xFFDC2626), size: 24),
+                          const Icon(Icons.info_outline_rounded,
+                              color: Color(0xFFDC2626), size: 24),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(
@@ -3998,7 +4129,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  'Need > 75% match to pass. Tap mic to try again!',
+                                  'Need > 70% match to pass. Tap mic to try again!',
                                   style: GoogleFonts.plusJakartaSans(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
@@ -4016,14 +4147,36 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
                 const SizedBox(height: 24),
                 Center(
                   child: TextButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _speechAccuracy = 100;
-                        _speechPassed = true;
-                      });
-                      _nextStage();
+                    onPressed: () async {
+                      await ref
+                          .read(speechPreferencesProvider.notifier)
+                          .snoozeSpeakingExercises(
+                            duration: const Duration(hours: 1),
+                          );
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              _isTargetEnglish
+                                  ? (_nativeLang == 'hi'
+                                      ? 'बोलने के अभ्यास 1 घंटे के लिए बंद कर दिए गए हैं।'
+                                      : (_nativeLang == 'mr'
+                                          ? 'बोलण्याचे सराव 1 तासासाठी बंद केले आहेत.'
+                                          : 'Speaking exercises snoozed for 1 hour.'))
+                                  : 'Speaking exercises snoozed for 1 hour.',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            duration: const Duration(seconds: 3),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                        _nextStage();
+                      }
                     },
-                    icon: const Icon(Icons.volume_off_rounded, size: 16, color: Color(0xFF94A3B8)),
+                    icon: const Icon(Icons.volume_off_rounded,
+                        size: 16, color: Color(0xFF94A3B8)),
                     label: Text(
                       _getSprechenSkipText(),
                       style: GoogleFonts.plusJakartaSans(
@@ -4060,6 +4213,124 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
             buttonText: 'SEE RESULTS 🎉',
             onContinue: _nextStage,
           ),
+      ],
+    );
+  }
+
+  Widget _buildSnoozedSprechenStage() {
+    return Column(
+      key: const ValueKey('sprechen_snoozed'),
+      children: [
+        Expanded(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: const Color(0xFFE2E8F0), width: 2),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0xFFE2E8F0),
+                      blurRadius: 0,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFF1F5F9),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.volume_off_rounded,
+                        color: Color(0xFF64748B),
+                        size: 40,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Speaking Exercises Paused',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: const Color(0xFF1E293B),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Speaking challenges are snoozed for 1 hour. You can resume them anytime or continue with the lesson.',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        color: const Color(0xFF64748B),
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () async {
+                              await ref
+                                  .read(speechPreferencesProvider.notifier)
+                                  .unmuteSpeakingExercises();
+                              if (mounted) setState(() {});
+                            },
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(
+                                  color: Color(0xFF0284C7), width: 1.5),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            child: Text(
+                              'Resume Speaking',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF0284C7),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: _nextStage,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0284C7),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            child: Text(
+                              'Continue',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -4160,9 +4431,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
-                color: const Color(0xFF10B981).withOpacity(0.12),
+                color: const Color(0xFF10B981).withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFF10B981).withOpacity(0.4)),
+                border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
