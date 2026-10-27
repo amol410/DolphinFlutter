@@ -1322,18 +1322,11 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       return;
     }
 
-    // 4. Native Recognition Availability Check
-    final isAvail = await SpeechLifecycleBridge.isRecognitionAvailable();
-    if (!isAvail) {
+    // 4. Native Recognition Availability Check (3-Tier Engine Resolution)
+    final engineRes = await SpeechLifecycleBridge.ensureOptimalSpeechEngine();
+    if (!engineRes.isAvailable) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: Color(0xFFDC2626),
-            content:
-                Text('Speech recognition is not available on this device.'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        _showSpeechUnavailableDialog();
       }
       return;
     }
@@ -1577,6 +1570,132 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
         if (mounted) {
           setState(() {});
         }
+      },
+    );
+  }
+
+  void _showSpeechUnavailableDialog() {
+    _forceReleaseSpeechRecognizer();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 48,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFCBD5E1),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Icon(
+                  Icons.mic_off_rounded,
+                  size: 48,
+                  color: Color(0xFFE11D48),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Speech Recognition Unavailable',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Your device does not have a compatible speech recognition engine installed. You can still complete this lesson without speaking.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF64748B),
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Action 1: Duolingo Parity letPass = true (Pass this exercise & proceed)
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      if (mounted) {
+                        setState(() {
+                          _spokenText = _sprechenPrompt;
+                          _speechSessionState = SpeechSessionState.idle;
+                        });
+                        _evaluateSpeechPronunciation();
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF00C9A7),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: const Text(
+                      'PASS THIS EXERCISE & CONTINUE',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Action 2: Snooze speaking exercises
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      await ref
+                          .read(speechPreferencesProvider.notifier)
+                          .snoozeSpeakingExercises();
+                      if (mounted) {
+                        setState(() {
+                          _spokenText = _sprechenPrompt;
+                          _speechSessionState = SpeechSessionState.idle;
+                        });
+                        _evaluateSpeechPronunciation();
+                      }
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF64748B),
+                      side: const BorderSide(color: Color(0xFFE2E8F0)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: const Text(
+                      'TURN OFF SPEAKING FOR 1 HOUR',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
       },
     );
   }

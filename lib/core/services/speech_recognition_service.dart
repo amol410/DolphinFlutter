@@ -130,6 +130,16 @@ class SpeechRecognitionService {
         return false;
       }
 
+      // 3-Tier Speech Engine Resolution (Tier 1: Google -> Tier 2: OEM -> Tier 3: Safety Net)
+      final engineRes = await SpeechLifecycleBridge.ensureOptimalSpeechEngine();
+      if (!engineRes.isAvailable) {
+        debugPrint(
+            '⚠️ [SpeechRecognitionService] Tier 3: No valid speech engine available on device');
+        _setState(SpeechServiceState.error);
+        _errorController.add(SpeechRecognitionErrorType.notAvailable);
+        return false;
+      }
+
       final available = await _speech.initialize(
         onError: _handleNativeError,
         onStatus: _handleNativeStatus,
@@ -222,6 +232,8 @@ class SpeechRecognitionService {
     if (!_isInitialized) {
       final ok = await initialize();
       if (!ok) return false;
+    } else {
+      await SpeechLifecycleBridge.ensureOptimalSpeechEngine();
     }
 
     if (_speech.isListening) {

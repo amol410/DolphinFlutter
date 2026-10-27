@@ -8,7 +8,7 @@ class AppConstants {
   static const String apiBaseUrlKey = 'api_base_url';
 
   // Version & Update Control
-  static const int currentBuildNumber = 17;
+  static const int currentBuildNumber = 18;
   static const String versionCheckUrl = 'https://dolphincoder.com/app_version.json';
   static const String playStoreUrl = 'https://play.google.com/store/apps/details?id=com.dolphincoder.lms';
 

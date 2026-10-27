@@ -322,7 +322,26 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
     _scrollToActiveSentence(sIdx);
 
     try {
-      // 5. Fresh nullable recognizer instance created for each session
+      // 5. Ensure optimal 3-tier speech engine (Google -> OEM -> Safety Net)
+      final engineRes = await SpeechLifecycleBridge.ensureOptimalSpeechEngine();
+      if (!engineRes.isAvailable) {
+        debugPrint(
+            '⚠️ [KaraokeNoteReader] Speech recognition unavailable on device');
+        _lastSpeechErrorTime = DateTime.now();
+        await _forceReleaseSpeechRecognizer();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              backgroundColor: Color(0xFFDC2626),
+              content: Text('Speech recognition not available on this device'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+
+      // 6. Fresh nullable recognizer instance created for each session
       _speech = stt.SpeechToText();
       final available = await _speech!.initialize(
         onError: (val) {

@@ -1,6 +1,7 @@
 package com.dolphincoder.lms
 
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -10,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.speech.RecognitionListener
 import android.speech.SpeechRecognizer
 import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
@@ -72,9 +74,15 @@ class MainActivity : FlutterActivity() {
                         forceReleaseRecognizer()
                         result.success(true)
                     }
+                    "ensureOptimalSpeechEngine" -> {
+                        val res = resolveAndPrepareOptimalSpeechEngine()
+                        Log.d(TAG, "MethodChannel: ensureOptimalSpeechEngine -> $res")
+                        result.success(res)
+                    }
                     "isRecognitionAvailable" -> {
-                        val available = SpeechRecognizer.isRecognitionAvailable(this@MainActivity)
-                        Log.d(TAG, "MethodChannel: isRecognitionAvailable -> $available")
+                        val res = resolveAndPrepareOptimalSpeechEngine()
+                        val available = res["isAvailable"] as? Boolean ?: false
+                        Log.d(TAG, "MethodChannel: isRecognitionAvailable -> $available (${res["tier"]})")
                         result.success(available)
                     }
                     "isBluetoothHeadsetConnected" -> {
@@ -234,6 +242,144 @@ class MainActivity : FlutterActivity() {
         abandonAppAudioFocus()
         forceReleaseRecognizer()
         super.onDestroy()
+    }
+
+    // 3. TIERED SPEECH ENGINE RESOLUTION (Tier 1: Google -> Tier 2: OEM -> Tier 3: Safety Net)
+    private fun resolveAndPrepareOptimalSpeechEngine(): Map<String, Any> {
+        val pm = packageManager
+        val intent = Intent("android.speech.RecognitionService")
+        val services = pm.queryIntentServices(intent, 0)
+
+        Log.d(TAG, "Speech Recognition Services detected on device: ${services.size}")
+        services.forEach {
+            Log.d(TAG, "  -> Service: ${it.serviceInfo.packageName} / ${it.serviceInfo.name}")
+        }
+
+        var selectedComponent: ComponentName? = null
+        var selectedTier = "none"
+        var selectedPackage = ""
+        var selectedServiceName = ""
+
+        // Tier 1: Try Google's official Speech Recognition Service
+        // Searches for Google App (com.google.android.googlequicksearchbox) or Pixel Speech (com.google.android.as)
+        val googlePackages = listOf(
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.as"
+        )
+        for (pkg in googlePackages) {
+            val match = services.firstOrNull { it.serviceInfo.packageName == pkg }
+            if (match != null) {
+                try {
+                    val comp = ComponentName(match.serviceInfo.packageName, match.serviceInfo.name)
+                    // Zero-Cost try-catch preflight check
+                    val testRecognizer = SpeechRecognizer.createSpeechRecognizer(this@MainActivity, comp)
+                    testRecognizer.destroy()
+                    selectedComponent = comp
+                    selectedTier = "tier1_google"
+                    selectedPackage = pkg
+                    selectedServiceName = match.serviceInfo.name
+                    Log.d(TAG, "Tier 1 SUCCESS: Verified Google Speech Recognition ($pkg)")
+                    break
+                } catch (e: Exception) {
+                    Log.w(TAG, "Tier 1: Google package $pkg failed test initialization: ${e.message}")
+                }
+            }
+        }
+
+        // Tier 2: Catch & Fallback to Phone's Native OEM Engine (Samsung, Xiaomi, Huawei, etc.)
+        if (selectedComponent == null) {
+            Log.d(TAG, "Tier 1 not available. Executing Tier 2 (OEM engine fallback)...")
+            for (service in services) {
+                val pkg = service.serviceInfo.packageName
+                val name = service.serviceInfo.name
+
+                // CRITICAL SAFETY FILTER: Skip Text-To-Speech dummy recognition service (e.g., com.google.android.tts)
+                // which only speaks audio out and cannot transcribe microphone input
+                if (pkg.contains("tts", ignoreCase = true) || name.contains("tts", ignoreCase = true)) {
+                    Log.d(TAG, "Tier 2: Skipping dummy Text-To-Speech service ($pkg)")
+                    continue
+                }
+
+                try {
+                    val comp = ComponentName(pkg, name)
+                    val testRecognizer = SpeechRecognizer.createSpeechRecognizer(this@MainActivity, comp)
+                    testRecognizer.destroy()
+                    selectedComponent = comp
+                    selectedTier = "tier2_oem"
+                    selectedPackage = pkg
+                    selectedServiceName = name
+                    Log.d(TAG, "Tier 2 SUCCESS: Verified OEM Speech Recognition ($pkg)")
+                    break
+                } catch (e: Exception) {
+                    Log.w(TAG, "Tier 2: OEM service $pkg failed test initialization: ${e.message}")
+                }
+            }
+
+            // If no specific OEM component matched, attempt generic platform recognizer
+            if (selectedComponent == null) {
+                try {
+                    val defaultRecognizer = SpeechRecognizer.createSpeechRecognizer(this@MainActivity)
+                    defaultRecognizer.destroy()
+                    selectedTier = "tier2_default"
+                    selectedPackage = "android.platform.default"
+                    Log.d(TAG, "Tier 2 SUCCESS: Verified generic default platform SpeechRecognizer")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Tier 2: Generic default platform SpeechRecognizer failed: ${e.message}")
+                }
+            }
+        }
+
+        val isAvailable = selectedTier != "none"
+        var injected = false
+        if (isAvailable) {
+            injected = injectOptimalRecognizerIntoPlugin(selectedComponent)
+        }
+
+        return mapOf(
+            "isAvailable" to isAvailable,
+            "tier" to selectedTier,
+            "packageName" to selectedPackage,
+            "serviceName" to selectedServiceName,
+            "injected" to injected
+        )
+    }
+
+    private fun injectOptimalRecognizerIntoPlugin(component: ComponentName?): Boolean {
+        return try {
+            val engine = flutterEngine ?: return false
+            val pluginClass = try {
+                Class.forName("com.csdcorp.speech_to_text.SpeechToTextPlugin")
+            } catch (e: ClassNotFoundException) {
+                null
+            } ?: return false
+
+            @Suppress("UNCHECKED_CAST")
+            val plugin = engine.plugins.get(pluginClass as Class<out io.flutter.embedding.engine.plugins.FlutterPlugin>)
+                ?: return false
+
+            val field = plugin.javaClass.getDeclaredField("speechRecognizer")
+            field.isAccessible = true
+            val existing = field.get(plugin) as? SpeechRecognizer
+            if (existing != null) {
+                try {
+                    existing.cancel()
+                    existing.destroy()
+                } catch (_: Exception) {}
+            }
+
+            val newRecognizer = if (component != null) {
+                SpeechRecognizer.createSpeechRecognizer(this@MainActivity, component)
+            } else {
+                SpeechRecognizer.createSpeechRecognizer(this@MainActivity)
+            }
+            newRecognizer.setRecognitionListener(plugin as RecognitionListener)
+            field.set(plugin, newRecognizer)
+            Log.d(TAG, "Injected optimal SpeechRecognizer (component=$component) into SpeechToTextPlugin")
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "Notice on SpeechToTextPlugin recognizer injection: ${e.message}")
+            false
+        }
     }
 
     private fun forceReleaseRecognizer() {

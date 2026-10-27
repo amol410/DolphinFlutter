@@ -4,6 +4,45 @@ import 'package:flutter/services.dart';
 
 /// Bridge between Flutter and Android native platform for strict SpeechRecognizer,
 /// Audio Focus, ACTION_AUDIO_BECOMING_NOISY, and Bluetooth SCO lifecycle management.
+class SpeechEngineResolution {
+  final bool isAvailable;
+  final String tier; // 'tier1_google', 'tier2_oem', 'tier2_default', 'none'
+  final String packageName;
+  final String serviceName;
+  final bool injected;
+
+  const SpeechEngineResolution({
+    required this.isAvailable,
+    required this.tier,
+    required this.packageName,
+    required this.serviceName,
+    required this.injected,
+  });
+
+  factory SpeechEngineResolution.fromMap(Map<dynamic, dynamic>? map) {
+    if (map == null) {
+      return const SpeechEngineResolution(
+        isAvailable: false,
+        tier: 'none',
+        packageName: '',
+        serviceName: '',
+        injected: false,
+      );
+    }
+    return SpeechEngineResolution(
+      isAvailable: map['isAvailable'] as bool? ?? false,
+      tier: map['tier'] as String? ?? 'none',
+      packageName: map['packageName'] as String? ?? '',
+      serviceName: map['serviceName'] as String? ?? '',
+      injected: map['injected'] as bool? ?? false,
+    );
+  }
+
+  @override
+  String toString() =>
+      'SpeechEngineResolution(tier: $tier, package: $packageName, isAvailable: $isAvailable, injected: $injected)';
+}
+
 class SpeechLifecycleBridge {
   static const MethodChannel _channel =
       MethodChannel('com.dolphincoder.lms/speech_lifecycle');
@@ -12,6 +51,8 @@ class SpeechLifecycleBridge {
   static VoidCallback? _onAudioFocusLost;
   static VoidCallback? _onAudioFocusGained;
   static bool _listenersInitialized = false;
+  static SpeechEngineResolution? _lastResolution;
+  static SpeechEngineResolution? get lastResolution => _lastResolution;
 
   /// Register native lifecycle callbacks (Headphone unplug, phone call, alarm interruption)
   static void registerAudioLifecycleListeners({
@@ -56,13 +97,45 @@ class SpeechLifecycleBridge {
     }
   }
 
+  /// Resolves and prepares the optimal speech recognition engine across 3 Tiers:
+  /// - Tier 1: Try Google Speech Services (com.google.android.googlequicksearchbox)
+  /// - Tier 2: Catch & Fallback to OEM Engine (Samsung, Xiaomi, Huawei, etc., skipping dummy TTS)
+  /// - Tier 3: Pedagogical Safety Net if no speech engine is available
+  static Future<SpeechEngineResolution> ensureOptimalSpeechEngine() async {
+    if (!Platform.isAndroid) {
+      return const SpeechEngineResolution(
+        isAvailable: true,
+        tier: 'ios_native',
+        packageName: 'apple.speech',
+        serviceName: '',
+        injected: false,
+      );
+    }
+    try {
+      final res = await _channel
+          .invokeMethod<Map<dynamic, dynamic>>('ensureOptimalSpeechEngine');
+      _lastResolution = SpeechEngineResolution.fromMap(res);
+      debugPrint('🎙️ [SpeechLifecycleBridge] $_lastResolution');
+      return _lastResolution!;
+    } catch (e) {
+      debugPrint('⚠️ [SpeechLifecycleBridge] ensureOptimalSpeechEngine error: $e');
+      _lastResolution = const SpeechEngineResolution(
+        isAvailable: false,
+        tier: 'none',
+        packageName: '',
+        serviceName: '',
+        injected: false,
+      );
+      return _lastResolution!;
+    }
+  }
+
   /// Verifies if SpeechRecognizer is available on the device via native Android API.
   static Future<bool> isRecognitionAvailable() async {
     if (!Platform.isAndroid) return true;
     try {
-      final bool? available =
-          await _channel.invokeMethod<bool>('isRecognitionAvailable');
-      return available ?? false;
+      final resolution = await ensureOptimalSpeechEngine();
+      return resolution.isAvailable;
     } catch (e) {
       debugPrint('⚠️ [SpeechLifecycleBridge] isRecognitionAvailable error: $e');
       return false;
