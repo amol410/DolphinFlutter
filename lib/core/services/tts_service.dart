@@ -710,8 +710,15 @@ class TtsService {
   /// Alias for backward compatibility.
   Future<void> speakGerman(String text) => speakWord(text);
 
-  /// Speak a full sentence and optionally await its completion
-  Future<void> speakSentence(String text) async {
+  @visibleForTesting
+  static double calculateSpeechRate(double rate) {
+    return (rate < 0.9) ? 0.32 : (0.48 * rate).clamp(0.2, 1.0);
+  }
+
+  /// Speak a full sentence and optionally await its completion.
+  /// Supports variable playback [rate] (e.g. 0.75 for Turtle mode -> sets TTS speech rate to 0.32;
+  /// 1.0 for normal speed -> restores default TTS speech rate of 0.48).
+  Future<void> speakSentence(String text, {double rate = 1.0}) async {
     final cleaned = text.trim();
     if (cleaned.isEmpty) return;
 
@@ -728,7 +735,12 @@ class TtsService {
 
       final isEnglish = locale.toLowerCase().startsWith('en');
       await _flutterTts.setPitch(isEnglish ? 0.88 : 1.0);
-      await _flutterTts.setSpeechRate(0.48);
+
+      // Normal speech rate is 0.48. If rate < 0.9 (Turtle mode), slow down to 0.32.
+      // Otherwise scale proportionately or use normal 0.48.
+      // Explicitly setting rate every time ensures previous turtle rates never pollute normal speech.
+      final double speechRate = calculateSpeechRate(rate);
+      await _flutterTts.setSpeechRate(speechRate);
       await _flutterTts.setVolume(1.0);
 
       // Stop any active word sound before sentence playback

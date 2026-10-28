@@ -61,6 +61,20 @@ void main() {
       expect(tts.currentLanguageCode, 'en');
     });
 
+    test('calculateSpeechRate returns 0.32 for turtle mode (rate < 0.9) and 0.48 for normal mode (1.0)', () {
+      // Normal speech rate
+      expect(TtsService.calculateSpeechRate(1.0), closeTo(0.48, 0.001));
+
+      // Turtle / slow mode
+      expect(TtsService.calculateSpeechRate(0.75), closeTo(0.32, 0.001));
+      expect(TtsService.calculateSpeechRate(0.5), closeTo(0.32, 0.001));
+      expect(TtsService.calculateSpeechRate(0.89), closeTo(0.32, 0.001));
+
+      // Normal or custom rate >= 0.9
+      expect(TtsService.calculateSpeechRate(0.9), closeTo(0.48 * 0.9, 0.001));
+      expect(TtsService.calculateSpeechRate(1.2), closeTo(0.48 * 1.2, 0.001));
+    });
+
     group('Android Google TTS Male Voice Matching', () {
       test('selects known high quality Google male voice over female voice', () {
         final mockVoices = [

@@ -21,6 +21,7 @@ import '../../../core/providers/speech_preferences_provider.dart';
 import '../../../core/services/cache_service.dart';
 import '../../../core/services/prefetch_service.dart';
 import '../../../core/services/ad_service.dart';
+import '../../../core/services/sound_effects_service.dart';
 
 /// Interactive Lesson Session Screen
 /// Multi-stage interactive tasks based on Basics & Greetings and backend notes.
@@ -104,6 +105,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   final Set<String> _matchedEnglish = {};
   String? _selectedGerman;
   String? _selectedEnglish;
+  String? _wrongGermanWord;
+  String? _wrongEnglishWord;
+  String? _correctGermanWord;
+  String? _correctEnglishWord;
   bool _matchFinished = false;
   bool _isEvaluatingMatch = false;
 
@@ -320,7 +325,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     }
   }
 
-  Future<void> _playListenAudio() async {
+  Future<void> _playListenAudio({double speed = 1.0}) async {
     final rawUrl = _listenAudioUrl.trim();
     final url = _resolveAudioUrl(rawUrl);
 
@@ -331,11 +336,13 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
         if (!mounted) return;
         await _audioPlayer.stop();
         if (!mounted) return;
+        await _audioPlayer.setPlaybackRate(speed);
+        if (!mounted) return;
         if (cachedFile != null) {
-          debugPrint('🔊 [_playListenAudio] Playing from Tier-2 disk audio cache: ${cachedFile.path}');
+          debugPrint('🔊 [_playListenAudio] Playing from Tier-2 disk audio cache: ${cachedFile.path} (speed: $speed)');
           await _audioPlayer.play(DeviceFileSource(cachedFile.path));
         } else {
-          debugPrint('🔊 [_playListenAudio] Playing studio audio: $url');
+          debugPrint('🔊 [_playListenAudio] Playing studio audio: $url (speed: $speed)');
           await _audioPlayer.play(UrlSource(url));
           PrefetchService().prefetchAudioUrl(url);
         }
@@ -350,10 +357,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
 
     // Smart Hybrid Fallback: Native German TTS for this specific lesson!
     if (_listenTargetSentence.isNotEmpty) {
-      debugPrint('🔊 [_playListenAudio] Smart Hybrid TTS speaking: $_listenTargetSentence');
+      debugPrint('🔊 [_playListenAudio] Smart Hybrid TTS speaking: $_listenTargetSentence (speed: $speed)');
       if (!mounted) return;
       if (mounted) setState(() => _isPlayingAudio = true);
-      await TtsService().speakSentence(_listenTargetSentence);
+      await TtsService().speakSentence(_listenTargetSentence, rate: speed);
       if (!mounted) return;
       if (mounted) setState(() => _isPlayingAudio = false);
     }
@@ -389,10 +396,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     }
 
     if (_listenSelectSentence.isNotEmpty) {
-      debugPrint('🔊 [_playListenSelectAudio] Smart Hybrid TTS speaking: $_listenSelectSentence');
+      debugPrint('🔊 [_playListenSelectAudio] Smart Hybrid TTS speaking: $_listenSelectSentence (speed: $speed)');
       if (!mounted) return;
       if (mounted) setState(() => _isPlayingAudio = true);
-      await TtsService().speakSentence(_listenSelectSentence);
+      await TtsService().speakSentence(_listenSelectSentence, rate: speed);
       if (!mounted) return;
       if (mounted) setState(() => _isPlayingAudio = false);
     }
@@ -879,6 +886,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   void _onGermanMatchTap(String word) {
     if (_isEvaluatingMatch) return;
     if (_matchedGerman.contains(word)) return;
+    SoundEffectsService().playPop();
     TtsService().speakWord(word);
     setState(() {
       _selectedGerman = word;
@@ -889,6 +897,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   void _onEnglishMatchTap(String word) {
     if (_isEvaluatingMatch) return;
     if (_matchedEnglish.contains(word)) return;
+    SoundEffectsService().playPop();
     setState(() {
       _selectedEnglish = word;
       _evaluateMatch();
@@ -898,24 +907,49 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   void _evaluateMatch() {
     if (_selectedGerman != null && _selectedEnglish != null) {
       _isEvaluatingMatch = true;
-      if (_solutionPairs[_selectedGerman] == _selectedEnglish) {
-        _matchedGerman.add(_selectedGerman!);
-        _matchedEnglish.add(_selectedEnglish!);
+      final german = _selectedGerman!;
+      final english = _selectedEnglish!;
+
+      if (_solutionPairs[german] == english) {
+        // Correct Match: Flashes Emerald Green, triggers SoundEffectsService().playCorrect(), smoothly transitions to completed state
+        _correctGermanWord = german;
+        _correctEnglishWord = english;
         _selectedGerman = null;
         _selectedEnglish = null;
-        _isEvaluatingMatch = false;
+        SoundEffectsService().playCorrect();
 
-        if (_matchedGerman.length == _germanWords.length) {
-          _matchFinished = true;
-          _triggerPrewarmForNext();
-        }
-      } else {
-        _handleIncorrectAnswer();
         Future.delayed(const Duration(milliseconds: 350), () {
           if (mounted) {
             setState(() {
-              _selectedGerman = null;
-              _selectedEnglish = null;
+              _matchedGerman.add(german);
+              _matchedEnglish.add(english);
+              _correctGermanWord = null;
+              _correctEnglishWord = null;
+              _isEvaluatingMatch = false;
+
+              // Stage Complete: When all pairs match (including 5th pair), trigger fanfare
+              if (_matchedGerman.length == _germanWords.length) {
+                _matchFinished = true;
+                SoundEffectsService().playFanfare();
+                _triggerPrewarmForNext();
+              }
+            });
+          }
+        });
+      } else {
+        // Wrong Mismatch: Flashes Soft Red (#FEF2F2, border #EF4444, 2.5px width), triggers SoundEffectsService().playWrong(), subtle shake animation (250ms), smoothly clears after 400ms
+        _wrongGermanWord = german;
+        _wrongEnglishWord = english;
+        SoundEffectsService().playWrong();
+        _handleIncorrectAnswer();
+
+        Future.delayed(const Duration(milliseconds: 400), () {
+          if (mounted) {
+            setState(() {
+              if (_selectedGerman == german) _selectedGerman = null;
+              if (_selectedEnglish == english) _selectedEnglish = null;
+              _wrongGermanWord = null;
+              _wrongEnglishWord = null;
               _isEvaluatingMatch = false;
             });
           }
@@ -1529,6 +1563,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
         _matchedEnglish.clear();
         _selectedGerman = null;
         _selectedEnglish = null;
+        _wrongGermanWord = null;
+        _wrongEnglishWord = null;
+        _correctGermanWord = null;
+        _correctEnglishWord = null;
         _matchFinished = false;
         _isEvaluatingMatch = false;
         break;
@@ -2215,10 +2253,14 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
                         children: _germanWords.map((word) {
                           final isMatched = _matchedGerman.contains(word);
                           final isSelected = _selectedGerman == word;
+                          final isWrong = _wrongGermanWord == word;
+                          final isCorrect = _correctGermanWord == word;
                           return _buildMatchTile(
                             text: word,
                             isSelected: isSelected,
                             isMatched: isMatched,
+                            isWrong: isWrong,
+                            isCorrect: isCorrect,
                             onTap: () => _onGermanMatchTap(word),
                           );
                         }).toList(),
@@ -2232,10 +2274,14 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
                         children: _englishWords.map((word) {
                           final isMatched = _matchedEnglish.contains(word);
                           final isSelected = _selectedEnglish == word;
+                          final isWrong = _wrongEnglishWord == word;
+                          final isCorrect = _correctEnglishWord == word;
                           return _buildMatchTile(
                             text: word,
                             isSelected: isSelected,
                             isMatched: isMatched,
+                            isWrong: isWrong,
+                            isCorrect: isCorrect,
                             onTap: () => _onEnglishMatchTap(word),
                           );
                         }).toList(),
@@ -2277,51 +2323,107 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     required String text,
     required bool isSelected,
     required bool isMatched,
+    bool isWrong = false,
+    bool isCorrect = false,
     required VoidCallback onTap,
   }) {
-    Color bg = Colors.white;
-    Color border = const Color(0xFFE2E8F0);
-    Color textColor = const Color(0xFF1E293B);
+    Color bg;
+    Color border;
+    double borderWidth;
+    Color textColor;
+    List<BoxShadow>? boxShadow;
 
-    if (isMatched) {
+    if (isWrong) {
+      // Wrong Mismatch: Flashes Soft Red (#FEF2F2, border #EF4444, 2.5px width)
+      bg = const Color(0xFFFEF2F2);
+      border = const Color(0xFFEF4444);
+      borderWidth = 2.5;
+      textColor = const Color(0xFFEF4444);
+      boxShadow = const [
+        BoxShadow(
+          color: Color(0xFFDC2626),
+          offset: Offset(0, 3.5),
+          blurRadius: 0,
+        ),
+      ];
+    } else if (isCorrect) {
+      // Correct Match: Flashes Emerald Green (#ECFDF5, border #10B981, shadow #059669)
+      bg = const Color(0xFFECFDF5);
+      border = const Color(0xFF10B981);
+      borderWidth = 2.5;
+      textColor = const Color(0xFF059669);
+      boxShadow = const [
+        BoxShadow(
+          color: Color(0xFF059669),
+          offset: Offset(0, 3.5),
+          blurRadius: 0,
+        ),
+      ];
+    } else if (isMatched) {
+      // Completed state: Smoothly transitions to completed state
       bg = const Color(0xFFF1F5F9);
       border = const Color(0xFFCBD5E1);
+      borderWidth = 1.5;
       textColor = const Color(0xFF94A3B8);
+      boxShadow = null;
     } else if (isSelected) {
-      bg = const Color(0xFFE0F2FE);
+      // Selected: Blue 3D border (#0284C7), soft blue background (#F0F9FF), bottom shadow (#0369A1)
+      bg = const Color(0xFFF0F9FF);
       border = const Color(0xFF0284C7);
+      borderWidth = 2.5;
       textColor = const Color(0xFF0284C7);
+      boxShadow = const [
+        BoxShadow(
+          color: Color(0xFF0369A1),
+          offset: Offset(0, 3.5),
+          blurRadius: 0,
+        ),
+      ];
+    } else {
+      // Default: Solid 3.5px physical bevel BoxShadow(color: Color(0xFFCBD5E1), offset: Offset(0, 3.5), blurRadius: 0), white background, rounded 16px
+      bg = Colors.white;
+      border = const Color(0xFFE2E8F0);
+      borderWidth = 1.5;
+      textColor = const Color(0xFF1E293B);
+      boxShadow = const [
+        BoxShadow(
+          color: Color(0xFFCBD5E1),
+          offset: Offset(0, 3.5),
+          blurRadius: 0,
+        ),
+      ];
     }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: GestureDetector(
-        onTap: isMatched ? null : onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          width: double.infinity,
-          height: 60,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: border, width: isSelected ? 2.5 : 1.5),
-            boxShadow: isMatched
-                ? null
-                : [
-                    BoxShadow(
-                      color: isSelected ? const Color(0xFFBAE6FD) : const Color(0xFFE2E8F0),
-                      blurRadius: 0,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-          ),
-          child: Text(
-            text,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              color: textColor,
+      child: _MatchTileShake(
+        shake: isWrong,
+        duration: const Duration(milliseconds: 250),
+        child: GestureDetector(
+          onTap: (isMatched || isCorrect || isWrong) ? null : onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+            width: double.infinity,
+            height: 60,
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: border, width: borderWidth),
+              boxShadow: boxShadow,
+            ),
+            child: Text(
+              text,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: textColor,
+              ),
             ),
           ),
         ),
@@ -2361,7 +2463,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
                 ),
                 const SizedBox(height: 20),
 
-                // Center Stage: Dolphin Mascot + Speaker Button
+                // Center Stage: Dolphin Mascot + Speaker Buttons (Normal & Turtle)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -2371,8 +2473,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
                       isListening: _isPlayingAudio,
                     ),
                     const SizedBox(width: 16),
+                    // Normal Speed Play Button
                     GestureDetector(
-                      onTap: _playListenAudio,
+                      onTap: () => _playListenAudio(speed: 1.0),
                       child: Container(
                         width: 58,
                         height: 58,
@@ -2393,6 +2496,30 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
                             color: Colors.white,
                             size: 30,
                           ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    // Slow (Turtle) Play Button
+                    GestureDetector(
+                      onTap: () => _playListenAudio(speed: 0.75),
+                      child: Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(0xFFF1F5F9),
+                          border: Border.all(color: const Color(0xFFCBD5E1), width: 1.5),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0xFFCBD5E1),
+                              blurRadius: 0,
+                              offset: Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: const Center(
+                          child: Text('🐢', style: TextStyle(fontSize: 24)),
                         ),
                       ),
                     ),
@@ -4523,6 +4650,72 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Subtle 250ms horizontal shake animation for word mismatch feedback
+class _MatchTileShake extends StatefulWidget {
+  final Widget child;
+  final bool shake;
+  final Duration duration;
+
+  const _MatchTileShake({
+    required this.child,
+    required this.shake,
+    this.duration = const Duration(milliseconds: 250),
+  });
+
+  @override
+  State<_MatchTileShake> createState() => _MatchTileShakeState();
+}
+
+class _MatchTileShakeState extends State<_MatchTileShake> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _offsetAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: widget.duration);
+    _offsetAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: -6.0), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: -6.0, end: 6.0), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: 6.0, end: -4.0), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: -4.0, end: 4.0), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: 4.0, end: 0.0), weight: 1),
+    ]).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+
+    if (widget.shake) {
+      _controller.forward(from: 0.0);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _MatchTileShake oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.shake && !oldWidget.shake) {
+      _controller.forward(from: 0.0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _offsetAnimation,
+      builder: (context, child) {
+        return Transform.translate(
+          offset: Offset(_offsetAnimation.value, 0),
+          child: child,
+        );
+      },
+      child: widget.child,
     );
   }
 }
