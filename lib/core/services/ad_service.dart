@@ -9,6 +9,10 @@ class AdService {
   factory AdService() => _instance;
   AdService._internal();
 
+  /// Master switch to enable/disable ads without removing any code.
+  /// Set to false only for test APK builds so zero real ads appear.
+  static const bool adsEnabled = true;
+
   RewardedAd? _rewardedAd;
   bool _isRewardedLoading = false;
   int _numConsecutiveLoadAttempts = 0;
@@ -64,6 +68,10 @@ class AdService {
 
   /// Initialize Google Mobile Ads SDK and preload rewarded & interstitial ads
   Future<void> init() async {
+    if (!adsEnabled) {
+      debugPrint('AdService: Ads are temporarily disabled for this test APK.');
+      return;
+    }
     try {
       await MobileAds.instance.initialize();
       await loadDailyRewardedAdCount();
@@ -123,6 +131,7 @@ class AdService {
 
   /// Preload a rewarded ad into memory
   void loadRewardedAd() {
+    if (!adsEnabled) return;
     if (_rewardedAd != null || _isRewardedLoading) return;
     _isRewardedLoading = true;
 
@@ -158,6 +167,13 @@ class AdService {
     Function(String message)? onAdDismissed,
     Function(String error)? onAdFailed,
   }) {
+    if (!adsEnabled) {
+      debugPrint('AdService: Ads disabled for this test APK — reward granted directly.');
+      onUserEarnedReward();
+      onAdDismissed?.call('Ads disabled for testing');
+      return;
+    }
+
     if (!canWatchRewardedAdToday) {
       onAdFailed?.call('Daily ad limit reached (6/6). Come back tomorrow or refill with Pearls!');
       return;
@@ -206,6 +222,7 @@ class AdService {
 
   /// Preload an interstitial ad into memory
   Future<void> loadInterstitialAd() async {
+    if (!adsEnabled) return;
     if (_interstitialAd != null || _isInterstitialAdLoading) return;
     _isInterstitialAdLoading = true;
 
@@ -245,6 +262,11 @@ class AdService {
     VoidCallback? onAdDismissed,
     Function(String error)? onAdFailed,
   }) {
+    if (!adsEnabled) {
+      onAdDismissed?.call();
+      return;
+    }
+
     if (_interstitialAd == null) {
       loadInterstitialAd();
       onAdFailed?.call('Interstitial ad is preparing, please try again in a few seconds.');
@@ -331,6 +353,10 @@ class AdService {
   /// If eligible and an ad is cached, it resets the counter and presents the ad.
   /// Once dismissed or failed (or if ineligible), [onDone] is guaranteed to be invoked.
   Future<void> showInterstitialIfEligible({VoidCallback? onDone}) async {
+    if (!adsEnabled) {
+      onDone?.call();
+      return;
+    }
     try {
       final eligible = await shouldShowLessonInterstitial();
       if (!eligible) {

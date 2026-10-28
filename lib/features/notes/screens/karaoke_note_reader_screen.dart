@@ -322,75 +322,85 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
     _scrollToActiveSentence(sIdx);
 
     try {
-      // 5. Ensure optimal 3-tier speech engine (Google -> OEM -> Safety Net)
-      final engineRes = await SpeechLifecycleBridge.ensureOptimalSpeechEngine();
-      if (!engineRes.isAvailable) {
-        debugPrint(
-            '⚠️ [KaraokeNoteReader] Speech recognition unavailable on device');
-        _lastSpeechErrorTime = DateTime.now();
-        await _forceReleaseSpeechRecognizer();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              backgroundColor: Color(0xFFDC2626),
-              content: Text('Speech recognition not available on this device'),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-        return;
-      }
-
-      // 6. Fresh nullable recognizer instance created for each session
-      _speech = stt.SpeechToText();
-      final available = await _speech!.initialize(
-        onError: (val) {
-          debugPrint('STT error: ${val.errorMsg}');
-          final msg = val.errorMsg.toLowerCase();
-          if (msg.contains('error_busy') || msg.contains('busy')) {
-            debugPrint('⚠️ [STT] Recognizer busy: releasing and backing off');
-            _lastSpeechErrorTime = DateTime.now();
-            _forceReleaseSpeechRecognizer();
-          } else if (msg.contains('error_permission')) {
-            _lastSpeechErrorTime = DateTime.now();
-            _forceReleaseSpeechRecognizer();
-          } else {
-            _lastSpeechErrorTime = DateTime.now();
+      // 5. Ensure optimal 3-tier speech engine if not already initialized
+      if (_speech == null) {
+        final engineRes = await SpeechLifecycleBridge.ensureOptimalSpeechEngine();
+        if (!engineRes.isAvailable) {
+          debugPrint(
+              '⚠️ [KaraokeNoteReader] Speech recognition unavailable on device');
+          _lastSpeechErrorTime = DateTime.now();
+          await _forceReleaseSpeechRecognizer();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                backgroundColor: Color(0xFFDC2626),
+                content: Text('Speech recognition not available on this device'),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
           }
-        },
-        onStatus: (val) {
-          debugPrint('STT status: $val');
-          if (val == 'done' || val == 'notListening') {
-            if (mounted && _isListening) {
-              if (_spokenText.isNotEmpty) {
-                _silenceTimer?.cancel();
-                _silenceTimer = Timer(const Duration(milliseconds: 1500), () {
-                  if (mounted && _isListening && _spokenText.isNotEmpty) {
-                    _handleAutoSubmit();
-                  }
-                });
-              } else {
-                _forceReleaseSpeechRecognizer();
+          return;
+        }
+
+        _speech = stt.SpeechToText();
+        final available = await _speech!.initialize(
+          onError: (val) {
+            debugPrint('STT error: ${val.errorMsg}');
+            final msg = val.errorMsg.toLowerCase();
+            if (msg.contains('error_busy') || msg.contains('busy')) {
+              debugPrint('⚠️ [STT] Recognizer busy: silent self-healing backoff');
+              _lastSpeechErrorTime = DateTime.now();
+              _silenceTimer?.cancel();
+              try {
+                _speech?.cancel();
+              } catch (_) {}
+              if (mounted) {
+                setState(() => _speechSessionState = SpeechSessionState.idle);
+              }
+            } else if (msg.contains('error_permission')) {
+              _lastSpeechErrorTime = DateTime.now();
+              _forceReleaseSpeechRecognizer();
+            } else {
+              _lastSpeechErrorTime = DateTime.now();
+              if (mounted) {
+                setState(() => _speechSessionState = SpeechSessionState.idle);
               }
             }
-          }
-        },
-      );
+          },
+          onStatus: (val) {
+            debugPrint('STT status: $val');
+            if (val == 'done' || val == 'notListening') {
+              if (mounted && _isListening) {
+                if (_spokenText.isNotEmpty) {
+                  _silenceTimer?.cancel();
+                  _silenceTimer = Timer(const Duration(milliseconds: 1500), () {
+                    if (mounted && _isListening && _spokenText.isNotEmpty) {
+                      _handleAutoSubmit();
+                    }
+                  });
+                } else {
+                  setState(() => _speechSessionState = SpeechSessionState.idle);
+                }
+              }
+            }
+          },
+        );
 
-      if (!available) {
-        debugPrint('⚠️ Speech recognition initialize returned false');
-        _lastSpeechErrorTime = DateTime.now();
-        await _forceReleaseSpeechRecognizer();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              backgroundColor: Color(0xFFDC2626),
-              content: Text('Speech recognition not available on this device'),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+        if (!available) {
+          debugPrint('⚠️ Speech recognition initialize returned false');
+          _lastSpeechErrorTime = DateTime.now();
+          await _forceReleaseSpeechRecognizer();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                backgroundColor: Color(0xFFDC2626),
+                content: Text('Speech recognition not available on this device'),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          return;
         }
-        return;
       }
 
       if (!mounted || _speechSessionState != SpeechSessionState.listening) {
@@ -462,7 +472,15 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
   }
 
   void _evaluatePronunciation(int sIdx) {
-    _cleanupListening();
+    _silenceTimer?.cancel();
+    if (_speech != null && _speech!.isListening) {
+      try {
+        _speech!.stop();
+      } catch (_) {}
+    }
+    if (mounted) {
+      setState(() => _speechSessionState = SpeechSessionState.idle);
+    }
     if (sIdx >= _sentences.length) return;
 
     final targetText = _sentences[sIdx].text;

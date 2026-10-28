@@ -232,8 +232,6 @@ class SpeechRecognitionService {
     if (!_isInitialized) {
       final ok = await initialize();
       if (!ok) return false;
-    } else {
-      await SpeechLifecycleBridge.ensureOptimalSpeechEngine();
     }
 
     if (_speech.isListening) {

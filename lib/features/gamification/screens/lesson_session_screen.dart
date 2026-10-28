@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -44,8 +45,10 @@ class LessonSessionScreen extends ConsumerStatefulWidget {
 
 enum SpeechSessionState {
   idle,
+  starting,
   listening,
   stopping,
+  checking,
   error,
 }
 
@@ -147,11 +150,14 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   SpeechSessionState _speechSessionState = SpeechSessionState.idle;
   bool get _isSpeaking => _speechSessionState == SpeechSessionState.listening;
   DateTime _lastSpeechErrorTime = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime? _listeningStartTime;
   bool? _speechPassed;
   String _spokenText = '';
   int _speechAccuracy = 0;
   List<EvaluatedToken> _evaluatedTokens = [];
   Timer? _silenceTimer;
+  bool _showConfetti = false;
+  Timer? _confettiTimer;
 
   // ── Stage 4: Cloze Test (Fill in the Blank) ───────────────────────
   String _clozeSentence = 'Ich _____ aus Indien.';
@@ -260,9 +266,31 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     }
   }
 
+  Future<void> _cancelOrStopActiveListeningOnly() async {
+    _silenceTimer?.cancel();
+    _silenceTimer = null;
+    _confettiTimer?.cancel();
+    _showConfetti = false;
+    if (mounted) {
+      setState(() => _speechSessionState = SpeechSessionState.idle);
+    } else {
+      _speechSessionState = SpeechSessionState.idle;
+    }
+    try {
+      if (_speech != null && _speech!.isListening) {
+        await _speech!.stop();
+      }
+    } catch (e) {
+      debugPrint('⚠️ [LessonSessionScreen] Speech stop note: $e');
+    }
+    // Preserves native recognizer connection for upcoming speech stage (Scenario 2)
+  }
+
   Future<void> _forceReleaseSpeechRecognizer() async {
     _silenceTimer?.cancel();
     _silenceTimer = null;
+    _confettiTimer?.cancel();
+    _showConfetti = false;
     final speechToRelease = _speech;
     _speech = null;
     _speechInitialized = false;
@@ -286,6 +314,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _silenceTimer?.cancel();
+    _confettiTimer?.cancel();
     _ttsHighlightTimer?.cancel();
     _sprechenAutoPlayTimer?.cancel();
     _playerCompleteSub?.cancel();
@@ -1105,6 +1134,26 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   }
 
   Future<void> _toggleSpeaking() async {
+    // 1. Gating: Ignore rapid taps during non-idle transitional phases
+    if (_speechSessionState == SpeechSessionState.starting ||
+        _speechSessionState == SpeechSessionState.stopping ||
+        _speechSessionState == SpeechSessionState.checking) {
+      debugPrint('🛑 [STT] Tap ignored during phase: $_speechSessionState');
+      return;
+    }
+
+    // 2. Active listening: handle graceful stop with double-tap protection
+    if (_speechSessionState == SpeechSessionState.listening) {
+      // Accidental double-tap guard: swallow taps within 500ms of entering listening mode
+      if (_listeningStartTime != null &&
+          DateTime.now().difference(_listeningStartTime!).inMilliseconds < 500) {
+        debugPrint('🛑 [STT] Quick double-tap ignored (<500ms into listening)');
+        return;
+      }
+      await _stopListeningGracefully();
+      return;
+    }
+
     if (_isSprechenDemoPlaying) {
       _ttsHighlightTimer?.cancel();
       await _audioPlayer.stop();
@@ -1114,32 +1163,18 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
           _isSprechenDemoPlaying = false;
         });
       }
+      // Scenario 4: Hardware settling guard (150ms) to let DAC finish before ADC opens
+      await Future.delayed(const Duration(milliseconds: 150));
     }
 
-    // 1. Prevent Overlapping Sessions
-    if (_speechSessionState != SpeechSessionState.idle) {
-      if (_speechSessionState == SpeechSessionState.listening) {
-        _silenceTimer?.cancel();
-        _speechSessionState = SpeechSessionState.stopping;
-        try {
-          await _speech?.stop();
-        } catch (_) {}
-        if (mounted) {
-          setState(() => _speechSessionState = SpeechSessionState.idle);
-          _evaluateSpeechPronunciation();
-        }
-      }
-      return;
-    }
-
-    // 2. Cooldown check: 300ms - 500ms safety backoff after any error
+    // 3. Cooldown check: 300ms - 500ms safety backoff after any error
     final cooldownRemaining =
         400 - DateTime.now().difference(_lastSpeechErrorTime).inMilliseconds;
     if (cooldownRemaining > 0) {
       await Future.delayed(Duration(milliseconds: cooldownRemaining));
     }
 
-    // 3. Runtime Permission Verification
+    // 4. Runtime Permission Verification
     final micPerm = await Permission.microphone.request();
     if (!micPerm.isGranted) {
       if (mounted) {
@@ -1155,25 +1190,38 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       return;
     }
 
-    // 4. Native Recognition Availability Check (3-Tier Engine Resolution)
-    final engineRes = await SpeechLifecycleBridge.ensureOptimalSpeechEngine();
-    if (!engineRes.isAvailable) {
-      if (mounted) {
-        _showSpeechUnavailableDialog();
-      }
-      return;
+    // Phase 1: STARTING (Warming up, 300ms)
+    if (mounted) {
+      setState(() {
+        _speechSessionState = SpeechSessionState.starting;
+        _spokenText = '';
+        _speechAccuracy = 0;
+        _speechPassed = null;
+        _evaluatedTokens = [];
+      });
     }
 
-    setState(() {
-      _speechSessionState = SpeechSessionState.listening;
-      _spokenText = '';
-      _speechAccuracy = 0;
-      _speechPassed = null;
-      _evaluatedTokens = [];
-    });
+    // 5. Native Recognition Availability Check (Only initialize engine if not yet ready)
+    if (!_speechInitialized || _speech == null) {
+      final engineRes = await SpeechLifecycleBridge.ensureOptimalSpeechEngine();
+      if (!engineRes.isAvailable) {
+        if (mounted) {
+          setState(() => _speechSessionState = SpeechSessionState.idle);
+          _showSpeechUnavailableDialog();
+        }
+        return;
+      }
+    }
 
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted || _speechSessionState != SpeechSessionState.starting) return;
+
+    // Phase 2: Enter actual listening
+    await _startActualListening();
+  }
+
+  Future<void> _startActualListening() async {
     try {
-      // 5. Create a fresh recognizer instance for this listening session
       _speech ??= stt.SpeechToText();
       bool available = _speechInitialized;
       if (!available) {
@@ -1182,24 +1230,31 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
             debugPrint('STT error: ${val.errorMsg}');
             final msg = val.errorMsg.toLowerCase();
             if (msg.contains('error_busy') || msg.contains('busy')) {
-              debugPrint('⚠️ [STT] Recognizer busy: releasing and backing off');
+              debugPrint('⚠️ [STT] Recognizer busy: silent self-healing backoff');
               _lastSpeechErrorTime = DateTime.now();
-              _forceReleaseSpeechRecognizer();
+              _silenceTimer?.cancel();
+              try { _speech?.cancel(); } catch (_) {}
+              if (mounted) {
+                setState(() => _speechSessionState = SpeechSessionState.idle);
+              }
             } else if (msg.contains('error_permission')) {
               _lastSpeechErrorTime = DateTime.now();
               _forceReleaseSpeechRecognizer();
+            } else {
+              _silenceTimer?.cancel();
+              if (mounted) {
+                setState(() => _speechSessionState = SpeechSessionState.idle);
+              }
             }
           },
           onStatus: (val) {
             debugPrint('STT status: $val');
             if (val == 'done' || val == 'notListening') {
-              if (mounted && _isSpeaking) {
+              if (mounted && _speechSessionState == SpeechSessionState.listening) {
                 _silenceTimer?.cancel();
-                _silenceTimer = Timer(const Duration(milliseconds: 2000), () {
-                  if (mounted && _isSpeaking) {
-                    setState(
-                        () => _speechSessionState = SpeechSessionState.idle);
-                    _evaluateSpeechPronunciation();
+                _silenceTimer = Timer(const Duration(milliseconds: 1500), () {
+                  if (mounted && _speechSessionState == SpeechSessionState.listening) {
+                    _stopListeningGracefully();
                   }
                 });
               }
@@ -1214,12 +1269,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
             '⚠️ Speech recognition unavailable; fallback test simulation');
         _silenceTimer?.cancel();
         _silenceTimer = Timer(const Duration(milliseconds: 1800), () {
-          if (mounted && _isSpeaking) {
-            setState(() {
-              _speechSessionState = SpeechSessionState.idle;
-              _spokenText = _sprechenPrompt;
-            });
-            _evaluateSpeechPronunciation();
+          if (mounted && _speechSessionState == SpeechSessionState.listening) {
+            _spokenText = _sprechenPrompt;
+            _stopListeningGracefully();
           }
         });
         return;
@@ -1259,6 +1311,12 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
         debugPrint('⚠️ Error querying locales: $e');
       }
 
+      if (!mounted) return;
+      setState(() {
+        _speechSessionState = SpeechSessionState.listening;
+        _listeningStartTime = DateTime.now();
+      });
+
       await _speech!.listen(
         onResult: (result) {
           if (mounted) {
@@ -1268,11 +1326,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
           }
           if (_spokenText.isNotEmpty) {
             _silenceTimer?.cancel();
-            _silenceTimer = Timer(const Duration(milliseconds: 3000), () {
-              if (mounted && _isSpeaking) {
-                _speech?.stop();
-                setState(() => _speechSessionState = SpeechSessionState.idle);
-                _evaluateSpeechPronunciation();
+            // 2.0s silence wait after speech detected
+            _silenceTimer = Timer(const Duration(milliseconds: 2000), () {
+              if (mounted && _speechSessionState == SpeechSessionState.listening) {
+                _stopListeningGracefully();
               }
             });
           }
@@ -1283,7 +1340,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
           partialResults: true,
           localeId: targetLocaleId,
           listenFor: const Duration(seconds: 30),
-          pauseFor: const Duration(seconds: 3),
+          pauseFor: const Duration(seconds: 2),
         ),
       );
     } catch (e) {
@@ -1300,9 +1357,45 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     }
   }
 
+  Future<void> _stopListeningGracefully() async {
+    _silenceTimer?.cancel();
+    _silenceTimer = null;
+    if (!mounted) return;
+
+    // Phase 3: STOPPING (600ms graceful wind-down)
+    setState(() {
+      _speechSessionState = SpeechSessionState.stopping;
+    });
+
+    try {
+      await _speech?.stop();
+    } catch (_) {}
+
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
+
+    // Phase 4: CHECKING (500ms pronunciation evaluation animation)
+    setState(() {
+      _speechSessionState = SpeechSessionState.checking;
+    });
+
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+
+    setState(() {
+      _speechSessionState = SpeechSessionState.idle;
+    });
+    _evaluateSpeechPronunciation();
+  }
+
   void _evaluateSpeechPronunciation() {
     _silenceTimer?.cancel();
-    _forceReleaseSpeechRecognizer();
+    if (_speech != null && _speech!.isListening) {
+      try {
+        _speech!.stop();
+      } catch (_) {}
+    }
+    // Scenario 1: Do NOT call _forceReleaseSpeechRecognizer() here so the student can retry freely!
     if (!mounted) return;
 
     final targetText = _sprechenPrompt.isNotEmpty ? _sprechenPrompt : 'Guten Tag! Wie geht es dir?';
@@ -1332,6 +1425,19 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     final nLang = ref.read(gamificationStatusProvider).value?.nativeLanguage ?? (isEn ? 'hi' : 'en');
 
     if (isPassed) {
+      if (mounted) {
+        setState(() {
+          _showConfetti = true;
+        });
+        _confettiTimer?.cancel();
+        _confettiTimer = Timer(const Duration(milliseconds: 2400), () {
+          if (mounted) {
+            setState(() {
+              _showConfetti = false;
+            });
+          }
+        });
+      }
       final successText = isEn
           ? (nLang == 'hi'
               ? 'शानदार उच्चारण! ($accuracy% मैच) 🎉'
@@ -1348,6 +1454,11 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
         ),
       );
     } else {
+      if (mounted && _showConfetti) {
+        setState(() {
+          _showConfetti = false;
+        });
+      }
       final retryText = isEn
           ? (nLang == 'hi'
               ? 'मैच $accuracy% — पास होने के लिए $threshold% आवश्यक है। पुनः प्रयास करें!'
@@ -1582,6 +1693,8 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
         _speechSessionState = SpeechSessionState.idle;
         _hasPlayedSprechenDemo = false;
         _evaluatedTokens = [];
+        _showConfetti = false;
+        _confettiTimer?.cancel();
         break;
     }
   }
@@ -1589,7 +1702,21 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   void _nextStage() {
     _ttsHighlightTimer?.cancel();
     _sprechenAutoPlayTimer?.cancel();
-    _forceReleaseSpeechRecognizer();
+    _confettiTimer?.cancel();
+    _showConfetti = false;
+
+    // Lookahead for next stage (Scenario 2 vs Scenario 3)
+    final nextIndex = _currentStage + 1;
+    final isNextStageSpeech = (nextIndex < _activeStageTypes.length && _activeStageTypes[nextIndex] == 'sprechen');
+
+    if (!isNextStageSpeech) {
+      // Scenario 1 & 3: Moving to non-speech stage (e.g. matching pairs or quiz) -> Clean unbind & disconnect
+      _forceReleaseSpeechRecognizer();
+    } else {
+      // Scenario 2: Moving to another speaking stage -> Keep connection warm! Just stop active recording
+      _cancelOrStopActiveListeningOnly();
+    }
+
     _audioPlayer.pause();
     TtsService().stop();
     _currentStageReEnqueued = false;
@@ -1752,9 +1879,19 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
             )
           : null,
       body: SafeArea(
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
-          child: _buildCurrentStageView(),
+        child: Stack(
+          children: [
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: _buildCurrentStageView(),
+            ),
+            if (_showConfetti)
+              const Positioned.fill(
+                child: IgnorePointer(
+                  child: _CelebratoryConfettiRain(),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -2113,31 +2250,129 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     }
   }
 
-  String _getSprechenListeningText() {
-    final isEn = _isTargetEnglish;
+  String _getSprechenStatusText() {
     final nLang = _nativeLang;
-    if (isEn) {
-      if (nLang == 'hi') return 'आपकी आवाज़ सुनी जा रही है...';
-      if (nLang == 'mr') return 'तुमचा आवाज ऐकत आहे...';
-      return 'Listening to your pronunciation...';
-    } else {
-      if (nLang == 'hi') return 'आपकी आवाज़ सुनी जा रही है...';
-      if (nLang == 'mr') return 'तुमचा आवाज ऐकत आहे...';
-      return 'Listening to your pronunciation...';
+
+    switch (_speechSessionState) {
+      case SpeechSessionState.starting:
+        if (nLang == 'hi') return 'माइक तैयार हो रहा है...';
+        if (nLang == 'mr') return 'माइक तयार होत आहे...';
+        return 'Getting mic ready...';
+
+      case SpeechSessionState.listening:
+        if (nLang == 'hi') return 'आपकी आवाज़ सुनी जा रही है... (रोकने के लिए दबाएं)';
+        if (nLang == 'mr') return 'तुमचा आवाज ऐकत आहे... (थांबवण्यासाठी टॅप करा)';
+        return 'Listening... tap to stop';
+
+      case SpeechSessionState.stopping:
+        if (nLang == 'hi') return 'समाप्त हो रहा है...';
+        if (nLang == 'mr') return 'थांबवत आहे...';
+        return 'Stopping...';
+
+      case SpeechSessionState.checking:
+        if (nLang == 'hi') return 'उच्चारण की जाँच हो रही है...';
+        if (nLang == 'mr') return 'उच्चार तपासत आहे...';
+        return 'Checking pronunciation...';
+
+      case SpeechSessionState.error:
+        if (nLang == 'hi') return 'त्रुटि हुई, पुनः प्रयास करें';
+        if (nLang == 'mr') return 'त्रुटी आली, पुन्हा प्रयत्न करा';
+        return 'Tap to try again';
+
+      case SpeechSessionState.idle:
+        if (nLang == 'hi') return 'बोलने के लिए माइक दबाएं';
+        if (nLang == 'mr') return 'बोलण्यासाठी माइक टॅप करा';
+        return 'Tap mic to speak';
     }
   }
 
-  String _getSprechenTapToSpeakText() {
-    final isEn = _isTargetEnglish;
-    final nLang = _nativeLang;
-    if (isEn) {
-      if (nLang == 'hi') return 'बोलने के लिए माइक दबाएं';
-      if (nLang == 'mr') return 'बोलण्यासाठी माइक टॅप करा';
-      return 'Tap Mic to Speak';
-    } else {
-      if (nLang == 'hi') return 'बोलने के लिए माइक दबाएं';
-      if (nLang == 'mr') return 'बोलण्यासाठी माइक टॅप करा';
-      return 'Tap Mic to Speak';
+  Color _getSprechenStatusTextColor() {
+    switch (_speechSessionState) {
+      case SpeechSessionState.starting:
+        return const Color(0xFF0284C7);
+      case SpeechSessionState.listening:
+        return const Color(0xFFEF4444);
+      case SpeechSessionState.stopping:
+        return const Color(0xFFD97706);
+      case SpeechSessionState.checking:
+        return const Color(0xFF4F46E5);
+      case SpeechSessionState.error:
+        return const Color(0xFFDC2626);
+      case SpeechSessionState.idle:
+        return const Color(0xFF64748B);
+    }
+  }
+
+  Color _getMicButtonColor(SpeechSessionState state) {
+    switch (state) {
+      case SpeechSessionState.starting:
+        return const Color(0xFF0284C7);
+      case SpeechSessionState.listening:
+        return const Color(0xFFEF4444);
+      case SpeechSessionState.stopping:
+        return const Color(0xFFF59E0B);
+      case SpeechSessionState.checking:
+        return const Color(0xFF6366F1);
+      case SpeechSessionState.error:
+        return const Color(0xFFDC2626);
+      case SpeechSessionState.idle:
+        return const Color(0xFF0284C7);
+    }
+  }
+
+  Color _getMicButtonShadowColor(SpeechSessionState state) {
+    switch (state) {
+      case SpeechSessionState.starting:
+        return const Color(0xFF0369A1);
+      case SpeechSessionState.listening:
+        return const Color(0x66EF4444);
+      case SpeechSessionState.stopping:
+        return const Color(0x66F59E0B);
+      case SpeechSessionState.checking:
+        return const Color(0x666366F1);
+      case SpeechSessionState.error:
+        return const Color(0x66DC2626);
+      case SpeechSessionState.idle:
+        return const Color(0xFF0369A1);
+    }
+  }
+
+  Widget _buildMicButtonContent(SpeechSessionState state) {
+    switch (state) {
+      case SpeechSessionState.checking:
+        return const SizedBox(
+          width: 36,
+          height: 36,
+          child: CircularProgressIndicator(
+            strokeWidth: 3.5,
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+          ),
+        );
+      case SpeechSessionState.stopping:
+        return const Icon(
+          Icons.stop_rounded,
+          color: Colors.white,
+          size: 42,
+        );
+      case SpeechSessionState.listening:
+      case SpeechSessionState.starting:
+        return const Icon(
+          Icons.mic_rounded,
+          color: Colors.white,
+          size: 42,
+        );
+      case SpeechSessionState.error:
+        return const Icon(
+          Icons.refresh_rounded,
+          color: Colors.white,
+          size: 42,
+        );
+      case SpeechSessionState.idle:
+        return const Icon(
+          Icons.mic_none_rounded,
+          color: Colors.white,
+          size: 42,
+        );
     }
   }
 
@@ -4096,37 +4331,31 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
                 ),
                 const SizedBox(height: 36),
 
-                // Large Tactile Microphone Button (from 062815a)
+                // Large Tactile Microphone Button with 5-phase visualization
                 Center(
                   child: GestureDetector(
                     onTap: _toggleSpeaking,
-                    child: Container(
-                      width: 90,
-                      height: 90,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _isSpeaking
-                            ? const Color(0xFFEF4444)
-                            : const Color(0xFF0284C7),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _isSpeaking
-                                ? const Color(0x66EF4444)
-                                : const Color(0xFF0369A1),
-                            blurRadius: _isSpeaking ? 16 : 0,
-                            offset: _isSpeaking
-                                ? const Offset(0, 4)
-                                : const Offset(0, 5),
-                          ),
-                        ],
-                      ),
-                      child: Center(
-                        child: Icon(
-                          _isSpeaking
-                              ? Icons.mic_rounded
-                              : Icons.mic_none_rounded,
-                          color: Colors.white,
-                          size: 42,
+                    child: _SpeechRippleWave(
+                      sessionState: _speechSessionState,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 250),
+                        width: 90,
+                        height: 90,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _getMicButtonColor(_speechSessionState),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _getMicButtonShadowColor(_speechSessionState),
+                              blurRadius: _speechSessionState == SpeechSessionState.listening ? 18 : 0,
+                              offset: _speechSessionState == SpeechSessionState.listening
+                                  ? const Offset(0, 4)
+                                  : const Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: _buildMicButtonContent(_speechSessionState),
                         ),
                       ),
                     ),
@@ -4134,99 +4363,19 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
                 ),
                 const SizedBox(height: 12),
                 Center(
-                  child: Text(
-                    _isSpeaking
-                        ? _getSprechenListeningText()
-                        : _getSprechenTapToSpeakText(),
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: _isSpeaking
-                          ? const Color(0xFFEF4444)
-                          : const Color(0xFF64748B),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: Text(
+                      _getSprechenStatusText(),
+                      key: ValueKey<SpeechSessionState>(_speechSessionState),
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: _getSprechenStatusTextColor(),
+                      ),
                     ),
                   ),
                 ),
-
-                if (_spokenText.isNotEmpty) ...[
-                  const SizedBox(height: 24),
-                  if (_speechPassed == true)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFDCFCE7),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                            color: const Color(0xFF86EFAC), width: 1.5),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.check_circle_rounded,
-                              color: Color(0xFF15803D), size: 24),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'Recognized $_speechAccuracy%: "$_spokenText"',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                                color: const Color(0xFF15803D),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFEF2F2),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                            color: const Color(0xFFFCA5A5), width: 1.5),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.info_outline_rounded,
-                              color: Color(0xFFDC2626), size: 24),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Match $_speechAccuracy%: "$_spokenText"',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w800,
-                                    color: const Color(0xFFDC2626),
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  _isTargetEnglish
-                                      ? (_nativeLang == 'hi'
-                                          ? 'नारंगी शब्दों पर टैप करके सही उच्चारण सुनें, फिर पुनः प्रयास करें!'
-                                          : (_nativeLang == 'mr'
-                                              ? 'नारंगी शब्दांवर टॅप करून योग्य उच्चार ऐका, नंतर पुन्हा प्रयत्न करा!'
-                                              : 'Tap orange words to hear pronunciation, then try again!'))
-                                      : 'Tap orange words to hear pronunciation, then try again!',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: const Color(0xFFC2410C),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
 
                 const SizedBox(height: 24),
                 Center(
@@ -4694,5 +4843,273 @@ class _MatchTileShakeState extends State<_MatchTileShake> with SingleTickerProvi
       },
       child: widget.child,
     );
+  }
+}
+
+/// Animated sound wave ripples around the microphone button during listening
+class _SpeechRippleWave extends StatefulWidget {
+  final SpeechSessionState sessionState;
+  final Widget child;
+
+  const _SpeechRippleWave({
+    required this.sessionState,
+    required this.child,
+  });
+
+  @override
+  State<_SpeechRippleWave> createState() => _SpeechRippleWaveState();
+}
+
+class _SpeechRippleWaveState extends State<_SpeechRippleWave>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _waveController;
+
+  @override
+  void initState() {
+    super.initState();
+    _waveController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    if (widget.sessionState == SpeechSessionState.listening) {
+      _waveController.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _SpeechRippleWave oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.sessionState == SpeechSessionState.listening) {
+      if (!_waveController.isAnimating) {
+        _waveController.repeat();
+      }
+    } else {
+      if (_waveController.isAnimating) {
+        _waveController.stop();
+        _waveController.reset();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _waveController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _waveController,
+      builder: (context, child) {
+        return CustomPaint(
+          painter: _SpeechRipplePainter(
+            progress: _waveController.value,
+            isActive: widget.sessionState == SpeechSessionState.listening,
+          ),
+          child: child,
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
+class _SpeechRipplePainter extends CustomPainter {
+  final double progress;
+  final bool isActive;
+
+  _SpeechRipplePainter({
+    required this.progress,
+    required this.isActive,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (!isActive) return;
+
+    final center = Offset(size.width / 2, size.height / 2);
+    final baseRadius = size.width / 2;
+
+    // Outer expanding wave 1
+    final wave1Progress = progress;
+    final wave1Radius = baseRadius + (wave1Progress * 28.0);
+    final wave1Opacity = (1.0 - wave1Progress).clamp(0.0, 1.0) * 0.42;
+    final paint1 = Paint()
+      ..color = const Color(0xFFEF4444).withValues(alpha: wave1Opacity)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0;
+    canvas.drawCircle(center, wave1Radius, paint1);
+
+    // Inner delayed wave 2
+    final wave2Progress = (progress + 0.5) % 1.0;
+    final wave2Radius = baseRadius + (wave2Progress * 28.0);
+    final wave2Opacity = (1.0 - wave2Progress).clamp(0.0, 1.0) * 0.42;
+    final paint2 = Paint()
+      ..color = const Color(0xFFEF4444).withValues(alpha: wave2Opacity)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+    canvas.drawCircle(center, wave2Radius, paint2);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SpeechRipplePainter oldDelegate) {
+    return oldDelegate.progress != progress || oldDelegate.isActive != isActive;
+  }
+}
+
+/// Celebratory colorful confetti pellets shower ("shower of flowers")
+class _CelebratoryConfettiRain extends StatefulWidget {
+  const _CelebratoryConfettiRain();
+
+  @override
+  State<_CelebratoryConfettiRain> createState() => _CelebratoryConfettiRainState();
+}
+
+class _CelebratoryConfettiRainState extends State<_CelebratoryConfettiRain>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late List<_ConfettiParticle> _particles;
+
+  @override
+  void initState() {
+    super.initState();
+    final random = math.Random();
+    const colors = [
+      Color(0xFF4C6EF5), // Blue
+      Color(0xFFFAB005), // Gold / Sun
+      Color(0xFF40C057), // Green
+      Color(0xFFFA5252), // Red
+      Color(0xFFBE4BDB), // Purple
+      Color(0xFFFF6B6B), // Coral
+      Color(0xFF20C997), // Teal
+      Color(0xFFFF922B), // Orange
+    ];
+
+    _particles = List.generate(48, (index) {
+      return _ConfettiParticle(
+        relativeX: random.nextDouble(),
+        startY: -random.nextDouble() * 0.3 - 0.05,
+        speed: 0.85 + random.nextDouble() * 0.55,
+        swayAmplitude: 14.0 + random.nextDouble() * 16.0,
+        swayFrequency: 2.0 + random.nextDouble() * 3.0,
+        swayPhase: random.nextDouble() * 2 * math.pi,
+        rotationSpeed: (random.nextBool() ? 1 : -1) * (2.0 + random.nextDouble() * 4.0),
+        initialAngle: random.nextDouble() * 2 * math.pi,
+        width: 7.0 + random.nextDouble() * 5.0,
+        height: 10.0 + random.nextDouble() * 6.0,
+        isCircle: random.nextDouble() > 0.65,
+        color: colors[index % colors.length],
+      );
+    });
+
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2300),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return CustomPaint(
+          size: Size.infinite,
+          painter: _ConfettiPainter(
+            progress: _controller.value,
+            particles: _particles,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ConfettiParticle {
+  final double relativeX;
+  final double startY;
+  final double speed;
+  final double swayAmplitude;
+  final double swayFrequency;
+  final double swayPhase;
+  final double rotationSpeed;
+  final double initialAngle;
+  final double width;
+  final double height;
+  final bool isCircle;
+  final Color color;
+
+  _ConfettiParticle({
+    required this.relativeX,
+    required this.startY,
+    required this.speed,
+    required this.swayAmplitude,
+    required this.swayFrequency,
+    required this.swayPhase,
+    required this.rotationSpeed,
+    required this.initialAngle,
+    required this.width,
+    required this.height,
+    required this.isCircle,
+    required this.color,
+  });
+}
+
+class _ConfettiPainter extends CustomPainter {
+  final double progress;
+  final List<_ConfettiParticle> particles;
+
+  _ConfettiPainter({
+    required this.progress,
+    required this.particles,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (progress >= 1.0) return;
+
+    for (final p in particles) {
+      final yProgress = progress * p.speed;
+      final y = (p.startY + yProgress) * size.height;
+      final sway = math.sin(progress * p.swayFrequency * 2 * math.pi + p.swayPhase) * p.swayAmplitude;
+      final x = (p.relativeX * size.width) + sway;
+
+      double opacity = 1.0;
+      if (progress > 0.75) {
+        opacity = ((1.0 - progress) / 0.25).clamp(0.0, 1.0);
+      }
+      if (opacity <= 0.0) continue;
+
+      final paint = Paint()
+        ..color = p.color.withValues(alpha: opacity)
+        ..style = PaintingStyle.fill;
+
+      canvas.save();
+      canvas.translate(x, y);
+      canvas.rotate(p.initialAngle + (progress * p.rotationSpeed * math.pi));
+
+      if (p.isCircle) {
+        canvas.drawCircle(Offset.zero, p.width / 2, paint);
+      } else {
+        final rrect = RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset.zero, width: p.width, height: p.height),
+          const Radius.circular(2.0),
+        );
+        canvas.drawRRect(rrect, paint);
+      }
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ConfettiPainter oldDelegate) {
+    return oldDelegate.progress != progress;
   }
 }

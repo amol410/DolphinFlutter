@@ -30,6 +30,13 @@ class MainActivity : FlutterActivity() {
     private var isBecomingNoisyRegistered = false
     private var isScoActive = false
 
+    // Cached optimal speech recognition engine to prevent repeated IPC test queries and AIDL churn
+    private var cachedOptimalComponent: ComponentName? = null
+    private var cachedTier: String = "none"
+    private var cachedPackage: String = ""
+    private var cachedServiceName: String = ""
+    private var hasResolvedOptimalEngine: Boolean = false
+
     // 1. BECOMING NOISY: Dispatched by Android when headphones/Bluetooth disconnect during playback
     private val becomingNoisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -246,6 +253,21 @@ class MainActivity : FlutterActivity() {
 
     // 3. TIERED SPEECH ENGINE RESOLUTION (Tier 1: Google -> Tier 2: OEM -> Tier 3: Safety Net)
     private fun resolveAndPrepareOptimalSpeechEngine(): Map<String, Any> {
+        if (hasResolvedOptimalEngine) {
+            val isAvailable = cachedTier != "none"
+            var injected = false
+            if (isAvailable) {
+                injected = injectOptimalRecognizerIntoPlugin(cachedOptimalComponent)
+            }
+            return mapOf(
+                "isAvailable" to isAvailable,
+                "tier" to cachedTier,
+                "packageName" to cachedPackage,
+                "serviceName" to cachedServiceName,
+                "injected" to injected
+            )
+        }
+
         val pm = packageManager
         val intent = Intent("android.speech.RecognitionService")
         val services = pm.queryIntentServices(intent, 0)
@@ -329,6 +351,12 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        cachedOptimalComponent = selectedComponent
+        cachedTier = selectedTier
+        cachedPackage = selectedPackage
+        cachedServiceName = selectedServiceName
+        hasResolvedOptimalEngine = true
+
         val isAvailable = selectedTier != "none"
         var injected = false
         if (isAvailable) {
@@ -361,10 +389,9 @@ class MainActivity : FlutterActivity() {
             field.isAccessible = true
             val existing = field.get(plugin) as? SpeechRecognizer
             if (existing != null) {
-                try {
-                    existing.cancel()
-                    existing.destroy()
-                } catch (_: Exception) {}
+                // Already injected and active: reuse to prevent Google App IPC churn
+                Log.d(TAG, "Reusing existing active SpeechRecognizer in SpeechToTextPlugin")
+                return true
             }
 
             val newRecognizer = if (component != null) {
