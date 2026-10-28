@@ -158,6 +158,8 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   Timer? _silenceTimer;
   bool _showConfetti = false;
   Timer? _confettiTimer;
+  /// Prevents two concurrent _toggleSpeaking async flows from racing
+  bool _isSpeechToggling = false;
 
   // ── Stage 4: Cloze Test (Fill in the Blank) ───────────────────────
   String _clozeSentence = 'Ich _____ aus Indien.';
@@ -1134,6 +1136,13 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   }
 
   Future<void> _toggleSpeaking() async {
+    // Concurrency guard: prevent two taps from both entering the async flow
+    // while one is awaiting permission/engine check (Verified Issue #5)
+    if (_isSpeechToggling) {
+      debugPrint('🛑 [STT] Tap ignored: _toggleSpeaking already in progress');
+      return;
+    }
+
     // 1. Gating: Ignore rapid taps during non-idle transitional phases
     if (_speechSessionState == SpeechSessionState.starting ||
         _speechSessionState == SpeechSessionState.stopping ||
@@ -1154,6 +1163,15 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       return;
     }
 
+    _isSpeechToggling = true;
+    try {
+      await _toggleSpeakingInner();
+    } finally {
+      _isSpeechToggling = false;
+    }
+  }
+
+  Future<void> _toggleSpeakingInner() async {
     if (_isSprechenDemoPlaying) {
       _ttsHighlightTimer?.cancel();
       await _audioPlayer.stop();
@@ -1228,6 +1246,15 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
         available = await _speech!.initialize(
           onError: (val) {
             debugPrint('STT error: ${val.errorMsg}');
+            // VERIFIED FIX #1: During stopping/checking phases, Android fires
+            // error_client when stop() is called on an already-finished recognizer.
+            // These errors are expected and must NOT reset the state machine,
+            // otherwise the evaluation pipeline gets destroyed mid-flight.
+            if (_speechSessionState == SpeechSessionState.stopping ||
+                _speechSessionState == SpeechSessionState.checking) {
+              debugPrint('ℹ️ [STT] Error during $_speechSessionState phase (expected, ignoring): ${val.errorMsg}');
+              return;
+            }
             final msg = val.errorMsg.toLowerCase();
             if (msg.contains('error_busy') || msg.contains('busy')) {
               debugPrint('⚠️ [STT] Recognizer busy: silent self-healing backoff');
@@ -1242,17 +1269,30 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
               _forceReleaseSpeechRecognizer();
             } else {
               _silenceTimer?.cancel();
-              if (mounted) {
+              _lastSpeechErrorTime = DateTime.now();
+              if (mounted && _speechSessionState == SpeechSessionState.listening) {
                 setState(() => _speechSessionState = SpeechSessionState.idle);
               }
             }
           },
           onStatus: (val) {
             debugPrint('STT status: $val');
+            // VERIFIED FIX #4: Only handle done/notListening during listening phase.
+            // During stopping/checking, Android fires these again after we call
+            // _speech.stop() — re-triggering timers that call _stopListeningGracefully
+            // a second time, causing double-evaluation and state corruption.
+            if (_speechSessionState != SpeechSessionState.listening) {
+              debugPrint('ℹ️ [STT] Status "$val" ignored (current phase: $_speechSessionState)');
+              return;
+            }
             if (val == 'done' || val == 'notListening') {
+              // Android's recognizer has auto-stopped (pauseFor expired or silence detected).
+              // If we already have spoken text, evaluate quickly.
+              // If not, wait a bit for any late partial results.
               if (mounted && _speechSessionState == SpeechSessionState.listening) {
                 _silenceTimer?.cancel();
-                _silenceTimer = Timer(const Duration(milliseconds: 1500), () {
+                final waitMs = _spokenText.isNotEmpty ? 600 : 1500;
+                _silenceTimer = Timer(Duration(milliseconds: waitMs), () {
                   if (mounted && _speechSessionState == SpeechSessionState.listening) {
                     _stopListeningGracefully();
                   }
@@ -1267,6 +1307,16 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       if (!available) {
         debugPrint(
             '⚠️ Speech recognition unavailable; fallback test simulation');
+        // VERIFIED FIX #3: Must transition to listening state BEFORE setting
+        // the timer. Previously, state was still 'starting' here, so the timer's
+        // guard (_speechSessionState == listening) was always false → timer was
+        // a no-op → state stuck at 'starting' forever → mic button permanently frozen.
+        if (mounted) {
+          setState(() {
+            _speechSessionState = SpeechSessionState.listening;
+            _listeningStartTime = DateTime.now();
+          });
+        }
         _silenceTimer?.cancel();
         _silenceTimer = Timer(const Duration(milliseconds: 1800), () {
           if (mounted && _speechSessionState == SpeechSessionState.listening) {
@@ -1319,15 +1369,16 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
 
       await _speech!.listen(
         onResult: (result) {
-          if (mounted) {
-            setState(() {
-              _spokenText = result.recognizedWords.trim();
-            });
-          }
+          // VERIFIED FIX: Only accept results while genuinely in listening state.
+          // Late results arriving during stopping/checking would restart silence timers.
+          if (!mounted || _speechSessionState != SpeechSessionState.listening) return;
+          setState(() {
+            _spokenText = result.recognizedWords.trim();
+          });
           if (_spokenText.isNotEmpty) {
             _silenceTimer?.cancel();
-            // 2.0s silence wait after speech detected
-            _silenceTimer = Timer(const Duration(milliseconds: 2000), () {
+            // 2.5s silence wait after speech detected
+            _silenceTimer = Timer(const Duration(milliseconds: 2500), () {
               if (mounted && _speechSessionState == SpeechSessionState.listening) {
                 _stopListeningGracefully();
               }
@@ -1340,7 +1391,12 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
           partialResults: true,
           localeId: targetLocaleId,
           listenFor: const Duration(seconds: 30),
-          pauseFor: const Duration(seconds: 2),
+          // VERIFIED FIX #4: pauseFor was 2s, same as the app's silence timer.
+          // Android's native recognizer fires 'done' status at ~2s of silence,
+          // racing with our timer. Both trigger _stopListeningGracefully() causing
+          // double-stop. Set pauseFor much higher so our app-level timer (2.5s)
+          // is the sole controller of when to stop.
+          pauseFor: const Duration(seconds: 10),
         ),
       );
     } catch (e) {
@@ -1358,28 +1414,44 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   }
 
   Future<void> _stopListeningGracefully() async {
+    // VERIFIED FIX #2: Re-entry guard. This method can be called from:
+    // 1) The onResult silence timer (2.5s)
+    // 2) The onStatus 'done' timer
+    // 3) The user tapping the mic button
+    // Without this guard, multiple callers can overlap, causing double-evaluation
+    // and calling _speech.stop() on an already-stopped recognizer.
+    if (_speechSessionState != SpeechSessionState.listening) {
+      debugPrint('ℹ️ [STT] _stopListeningGracefully called from state $_speechSessionState, ignoring');
+      return;
+    }
+
     _silenceTimer?.cancel();
     _silenceTimer = null;
     if (!mounted) return;
 
-    // Phase 3: STOPPING (600ms graceful wind-down)
+    // Phase 3: STOPPING (400ms graceful wind-down)
     setState(() {
       _speechSessionState = SpeechSessionState.stopping;
     });
 
+    // Only call stop() if the recognizer is genuinely still listening.
+    // Calling stop() on an already-finished recognizer triggers error_client
+    // on Samsung OneUI, Xiaomi MIUI, and other Android ROMs.
     try {
-      await _speech?.stop();
+      if (_speech != null && _speech!.isListening) {
+        await _speech!.stop();
+      }
     } catch (_) {}
 
-    await Future.delayed(const Duration(milliseconds: 600));
+    await Future.delayed(const Duration(milliseconds: 400));
     if (!mounted) return;
 
-    // Phase 4: CHECKING (500ms pronunciation evaluation animation)
+    // Phase 4: CHECKING (400ms pronunciation evaluation animation)
     setState(() {
       _speechSessionState = SpeechSessionState.checking;
     });
 
-    await Future.delayed(const Duration(milliseconds: 500));
+    await Future.delayed(const Duration(milliseconds: 400));
     if (!mounted) return;
 
     setState(() {

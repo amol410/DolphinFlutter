@@ -515,8 +515,56 @@ POST /api/gamification/complete-node  { nodeId, stars, score, heartsLeft } -> { 
 
 ---
 
-*Last updated: 2026-10-16 | DolphinCoder LMS v29.1.0-stable (Mobile v1.2.6+11)*
+### FEAT-009 — Google Play Store Release & Hardware Leak-Proof Speech Engine (`v1.2.10+15`)
+**Date:** 2026-10-27  
+**Status:** Released to Google Play Store (`v1.2.10+15`).  
+- **Hardware Leak Teardown (`MainActivity.kt`)**: Implemented deep reflective nullification of `SpeechToTextPlugin.speechRecognizer` over `com.dolphincoder.lms/speech_lifecycle` MethodChannel on `onDestroy`, `onPause`, and `onStop`. Eliminates Android Binder death (`DEAD_OBJECT`) and `AudioRecord` hardware lockups.
+- **Natural Male Voice Narrator**: Enhanced `TtsService` with natural male speech synthesis options alongside female voice `Anna`.
+- **Offline Speech Diagnostic**: Diagnosed and documented Android TTS vs Speech Recognition routing trap and offline language model packs in `phone.md`.
 
+---
 
+### FEAT-010 — Production AdMob Monetization & Rewarded Oxygen Economy (`v1.2.11+16`)
+**Date:** 2026-10-27  
+**Status:** Built and deployed (`v1.2.11+16`).  
+- **Verified Ad Units**: Wired verified Google Play AdMob IDs across App Open, Banner, Interstitial, and Rewarded Video.
+- **Ad Frequency Cadence**: Interstitial ad frequency set to every 3 completed lessons (golden corridor avoiding user churn).
+- **Oxygen Reward Integration**: Watching a rewarded video awards +2 Oxygen Bubbles, persisted directly to MySQL via `POST /api/gamification/claim-ad-reward` with a 6 claims/day safety cap.
 
+---
+
+### FEAT-011 — Duolingo-Parity Audio Buffering & Bluetooth SCO Routing (`v1.2.12+17`)
+**Date:** 2026-10-28  
+**Status:** Built and verified (`v1.2.12+17`).  
+- **Headphone Disconnect Guard**: Native `BroadcastReceiver` listening for `AudioManager.ACTION_AUDIO_BECOMING_NOISY`, auto-pausing audio in Flutter.
+- **Bluetooth SCO Voice Routing**: Dynamic MethodChannel controls redirecting speech input to Bluetooth headsets when paired.
+- **Audio Pre-roll Buffering**: Zero-latency audio pre-caching for sentence builder and vocabulary stages.
+
+---
+
+### FEAT-012 — 3-Tier Speech Engine Fallback & Tactile Feedback (`v1.2.12+18`)
+**Date:** 2026-10-28  
+**Status:** Built and verified (`v1.2.12+18`).  
+- **3-Tier Speech Engine Fallback**: Native engine resolver in `MainActivity.kt`:
+  - Tier 1: `com.google.android.googlequicksearchbox` (Google ASR).
+  - Tier 2: OEM device speech services (Samsung, Xiaomi, Oppo, Vivo).
+  - Tier 3: Default platform speech recognizer.
+- **Stationary Machine Speech & Word Scorecard**: Complete sentence validation and student end-of-sentence word-level scorecard.
+- **Phase 1 Tactile Feedback**: `SoundEffectsService` providing synchronized haptic pulses and audio cues for word taps, pair matches, and level completion.
+- **Turtle Speed Audio (0.75x)**: High-clarity slow audio toggle across all listening exercises.
+
+---
+
+### FEAT-013 — 5-Phase Speech Lifecycle, Sound Ripples & Confetti Shower (`889662b`)
+**Date:** 2026-10-28  
+**Status:** Master branch synced to commit `889662b` (production release `v33.0.0-stable`).  
+- **5-Phase Speech Lifecycle**: Rigid finite state machine in `SpeechRecognitionService` (`Idle` $\to$ `Armed` $\to$ `Listening` $\to$ `Processing` $\to$ `Evaluated`).
+- **Double-Tap Submission Gating**: Eliminates race conditions by disabling repeat submission triggers during evaluation processing.
+- **Animated Sound Wave Ripples**: Real-time microphone RMS level streams driving pulsating reactive ripples around the microphone button.
+- **Celebratory Confetti Shower**: Full-screen confetti shower (`ConfettiWidget`) celebrating lesson completion and speech pronunciation passes ($\ge 75\%$).
+- **Network Resilience Suite**: `LatencyInterceptor` tracking live round-trip latency and stage parsing test suites verifying stability.
+
+---
+
+*Last updated: 2026-10-28 | DolphinCoder LMS v33.0.0-stable (Mobile v1.2.12+18 / Submodule 889662b)*
 

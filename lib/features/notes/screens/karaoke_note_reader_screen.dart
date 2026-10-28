@@ -58,6 +58,7 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
   int _sprechenIndex = 0;
   int? _activeSprechenIndex;
   bool get _isListening => _speechSessionState == SpeechSessionState.listening;
+  bool _isSpeechToggling = false; // Concurrency guard for mic button taps
   String _spokenText = '';
   int _speechAccuracy = 0;
   bool? _speechPassed;
@@ -268,6 +269,17 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
   }
 
   Future<void> _startListening(int sIdx) async {
+    // Concurrency guard: prevent parallel async flows from rapid double-taps
+    if (_isSpeechToggling) return;
+    _isSpeechToggling = true;
+    try {
+      await _startListeningInner(sIdx);
+    } finally {
+      _isSpeechToggling = false;
+    }
+  }
+
+  Future<void> _startListeningInner(int sIdx) async {
     // 1. Guard against overlapping sessions: reject calls if state != idle
     if (_speechSessionState != SpeechSessionState.idle) {
       debugPrint('⚠️ [KaraokeNoteReaderScreen] Speech session already in state $_speechSessionState, rejecting call');
@@ -346,6 +358,14 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
         final available = await _speech!.initialize(
           onError: (val) {
             debugPrint('STT error: ${val.errorMsg}');
+            // Ignore errors that fire during stopping — Android fires
+            // error_client when .stop() is called on an already-stopped
+            // recognizer. Letting these through would clobber the
+            // stopping→evaluation pipeline.
+            if (_speechSessionState == SpeechSessionState.stopping) {
+              debugPrint('⚠️ [STT] Ignoring error during stopping phase: ${val.errorMsg}');
+              return;
+            }
             final msg = val.errorMsg.toLowerCase();
             if (msg.contains('error_busy') || msg.contains('busy')) {
               debugPrint('⚠️ [STT] Recognizer busy: silent self-healing backoff');
@@ -354,7 +374,7 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
               try {
                 _speech?.cancel();
               } catch (_) {}
-              if (mounted) {
+              if (mounted && _speechSessionState == SpeechSessionState.listening) {
                 setState(() => _speechSessionState = SpeechSessionState.idle);
               }
             } else if (msg.contains('error_permission')) {
@@ -362,7 +382,7 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
               _forceReleaseSpeechRecognizer();
             } else {
               _lastSpeechErrorTime = DateTime.now();
-              if (mounted) {
+              if (mounted && _speechSessionState == SpeechSessionState.listening) {
                 setState(() => _speechSessionState = SpeechSessionState.idle);
               }
             }
@@ -370,17 +390,28 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
           onStatus: (val) {
             debugPrint('STT status: $val');
             if (val == 'done' || val == 'notListening') {
-              if (mounted && _isListening) {
-                if (_spokenText.isNotEmpty) {
-                  _silenceTimer?.cancel();
-                  _silenceTimer = Timer(const Duration(milliseconds: 1500), () {
-                    if (mounted && _isListening && _spokenText.isNotEmpty) {
-                      _handleAutoSubmit();
-                    }
-                  });
-                } else {
-                  setState(() => _speechSessionState = SpeechSessionState.idle);
-                }
+              // Only act on done/notListening during listening phase.
+              // During stopping, this is expected and should be ignored.
+              if (!mounted || _speechSessionState != SpeechSessionState.listening) {
+                debugPrint('⚠️ [STT] Ignoring status "$val" during $_speechSessionState phase');
+                return;
+              }
+              if (_spokenText.isNotEmpty) {
+                _silenceTimer?.cancel();
+                // Use shorter delay if we have text (Android already stopped)
+                _silenceTimer = Timer(const Duration(milliseconds: 600), () {
+                  if (mounted && _isListening && _spokenText.isNotEmpty) {
+                    _handleAutoSubmit();
+                  }
+                });
+              } else {
+                // No text captured — give 1500ms for late results before resetting
+                _silenceTimer?.cancel();
+                _silenceTimer = Timer(const Duration(milliseconds: 1500), () {
+                  if (mounted && _speechSessionState == SpeechSessionState.listening) {
+                    setState(() => _speechSessionState = SpeechSessionState.idle);
+                  }
+                });
               }
             }
           },
@@ -420,9 +451,11 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
           partialResults: true,
           localeId: targetLocaleId,
           listenFor: const Duration(seconds: 90),
-          pauseFor: const Duration(seconds: 6),
+          pauseFor: const Duration(seconds: 10),
         ),
         onResult: (result) {
+          // Only process results during listening phase
+          if (_speechSessionState != SpeechSessionState.listening) return;
           final text = result.recognizedWords.trim();
           if (mounted) {
             setState(() {
@@ -458,6 +491,8 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
 
   void _handleAutoSubmit() {
     if (_spokenText.isEmpty || _activeSprechenIndex == null) return;
+    // Only auto-submit from listening state (prevent re-entry from multiple timers)
+    if (_speechSessionState != SpeechSessionState.listening) return;
     _evaluatePronunciation(_activeSprechenIndex!);
   }
 
@@ -473,6 +508,11 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
 
   void _evaluatePronunciation(int sIdx) {
     _silenceTimer?.cancel();
+    // Transition to stopping so onError/onStatus handlers know to ignore
+    // any Android callbacks fired during .stop()
+    if (mounted && _speechSessionState == SpeechSessionState.listening) {
+      setState(() => _speechSessionState = SpeechSessionState.stopping);
+    }
     if (_speech != null && _speech!.isListening) {
       try {
         _speech!.stop();
