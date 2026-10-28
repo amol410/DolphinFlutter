@@ -60,12 +60,14 @@ class SoundEffectsService {
         await p.setVolume(1.0);
       }
 
-      // Pre-cache memory instances with asset sources
+      // Pre-cache memory instances with asset sources (with timeout to prevent test/platform blocking)
       try {
-        await _popPlayer?.setSource(AssetSource(_popAsset));
-        await _correctPlayer?.setSource(AssetSource(_correctAsset));
-        await _wrongPlayer?.setSource(AssetSource(_wrongAsset));
-        await _fanfarePlayer?.setSource(AssetSource(_fanfareAsset));
+        await Future.wait([
+          if (_popPlayer != null) _popPlayer!.setSource(AssetSource(_popAsset)),
+          if (_correctPlayer != null) _correctPlayer!.setSource(AssetSource(_correctAsset)),
+          if (_wrongPlayer != null) _wrongPlayer!.setSource(AssetSource(_wrongAsset)),
+          if (_fanfarePlayer != null) _fanfarePlayer!.setSource(AssetSource(_fanfareAsset)),
+        ]).timeout(const Duration(milliseconds: 300));
       } catch (assetErr) {
         debugPrint('⚠️ [SoundEffectsService] Asset preload warning (falling back to memory buffers): $assetErr');
       }
@@ -108,16 +110,16 @@ class SoundEffectsService {
     try {
       if (_popPlayer != null) {
         await _popPlayer!.stop();
-        await _popPlayer!.play(AssetSource(_popAsset), mode: PlayerMode.lowLatency);
+        await _popPlayer!.play(AssetSource(_popAsset), mode: PlayerMode.lowLatency).timeout(const Duration(milliseconds: 300));
       } else if (_popFallbackWav != null) {
         final p = AudioPlayer();
-        await p.play(BytesSource(_popFallbackWav!));
+        await p.play(BytesSource(_popFallbackWav!)).timeout(const Duration(milliseconds: 300));
       }
     } catch (e) {
       if (_popFallbackWav != null && _popPlayer != null) {
         try {
           await _popPlayer!.stop();
-          await _popPlayer!.play(BytesSource(_popFallbackWav!));
+          await _popPlayer!.play(BytesSource(_popFallbackWav!)).timeout(const Duration(milliseconds: 300));
         } catch (_) {}
       }
     }
@@ -133,16 +135,16 @@ class SoundEffectsService {
     try {
       if (_correctPlayer != null) {
         await _correctPlayer!.stop();
-        await _correctPlayer!.play(AssetSource(_correctAsset), mode: PlayerMode.lowLatency);
+        await _correctPlayer!.play(AssetSource(_correctAsset), mode: PlayerMode.lowLatency).timeout(const Duration(milliseconds: 300));
       } else if (_correctFallbackWav != null) {
         final p = AudioPlayer();
-        await p.play(BytesSource(_correctFallbackWav!));
+        await p.play(BytesSource(_correctFallbackWav!)).timeout(const Duration(milliseconds: 300));
       }
     } catch (e) {
       if (_correctFallbackWav != null && _correctPlayer != null) {
         try {
           await _correctPlayer!.stop();
-          await _correctPlayer!.play(BytesSource(_correctFallbackWav!));
+          await _correctPlayer!.play(BytesSource(_correctFallbackWav!)).timeout(const Duration(milliseconds: 300));
         } catch (_) {}
       }
     }
@@ -158,16 +160,16 @@ class SoundEffectsService {
     try {
       if (_wrongPlayer != null) {
         await _wrongPlayer!.stop();
-        await _wrongPlayer!.play(AssetSource(_wrongAsset), mode: PlayerMode.lowLatency);
+        await _wrongPlayer!.play(AssetSource(_wrongAsset), mode: PlayerMode.lowLatency).timeout(const Duration(milliseconds: 300));
       } else if (_wrongFallbackWav != null) {
         final p = AudioPlayer();
-        await p.play(BytesSource(_wrongFallbackWav!));
+        await p.play(BytesSource(_wrongFallbackWav!)).timeout(const Duration(milliseconds: 300));
       }
     } catch (e) {
       if (_wrongFallbackWav != null && _wrongPlayer != null) {
         try {
           await _wrongPlayer!.stop();
-          await _wrongPlayer!.play(BytesSource(_wrongFallbackWav!));
+          await _wrongPlayer!.play(BytesSource(_wrongFallbackWav!)).timeout(const Duration(milliseconds: 300));
         } catch (_) {}
       }
     }
@@ -183,16 +185,16 @@ class SoundEffectsService {
     try {
       if (_fanfarePlayer != null) {
         await _fanfarePlayer!.stop();
-        await _fanfarePlayer!.play(AssetSource(_fanfareAsset), mode: PlayerMode.lowLatency);
+        await _fanfarePlayer!.play(AssetSource(_fanfareAsset), mode: PlayerMode.lowLatency).timeout(const Duration(milliseconds: 300));
       } else if (_fanfareFallbackWav != null) {
         final p = AudioPlayer();
-        await p.play(BytesSource(_fanfareFallbackWav!));
+        await p.play(BytesSource(_fanfareFallbackWav!)).timeout(const Duration(milliseconds: 300));
       }
     } catch (e) {
       if (_fanfareFallbackWav != null && _fanfarePlayer != null) {
         try {
           await _fanfarePlayer!.stop();
-          await _fanfarePlayer!.play(BytesSource(_fanfareFallbackWav!));
+          await _fanfarePlayer!.play(BytesSource(_fanfareFallbackWav!)).timeout(const Duration(milliseconds: 300));
         } catch (_) {}
       }
     }
