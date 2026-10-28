@@ -14,6 +14,7 @@ import '../../../shared/widgets/duo_feedback_sheet.dart';
 import '../../../shared/widgets/out_of_oxygen_dialog.dart';
 import '../../notes/data/models/karaoke_model.dart';
 import '../data/models/gamification_models.dart';
+import '../data/lesson_stage_parser.dart';
 import '../providers/gamification_provider.dart';
 import '../../../core/services/tts_service.dart';
 import '../../../core/services/pronunciation_evaluator.dart';
@@ -604,50 +605,26 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       final type = stage['type']?.toString();
 
       if ((type == 'match_pairs' || type == 'word_match') && stage['pairs'] is List) {
-        final pairsList = stage['pairs'] as List;
-        if (pairsList.isNotEmpty) {
-          final newGerman = <String>[];
-          final newEnglish = <String>[];
-          final newPairs = <String, String>{};
-          for (final p in pairsList) {
-            if (p is Map) {
-              final g = (p['target'] ?? p['german'] ?? p['word'] ?? '').toString().trim();
-              final e = (p['native'] ?? p['english'] ?? p['translation'] ?? '').toString().trim();
-              if (g.isNotEmpty && e.isNotEmpty) {
-                newGerman.add(g);
-                newEnglish.add(e);
-                newPairs[g] = e;
-              }
-            }
-          }
-          if (newGerman.isNotEmpty) {
-            _germanWords = newGerman;
-            _englishWords = newEnglish..shuffle();
-            _solutionPairs = newPairs;
-            activeTypes.add('word_match');
-          }
+        final parsed = LessonStageParser.parseWordMatch(stage);
+        if (parsed != null) {
+          _germanWords = parsed.germanWords;
+          _englishWords = parsed.englishWords;
+          _solutionPairs = parsed.solutionPairs;
+          activeTypes.add('word_match');
         }
       } else if (type == 'listen_tap') {
-        final target = stage['targetSentence']?.toString().trim() ?? '';
-        if (target.isNotEmpty) {
-          _listenTargetSentence = target;
-          _listenTarget = target
-              .split(RegExp(r'\s+'))
-              .where((w) => w.isNotEmpty)
-              .toList();
+        final parsed = LessonStageParser.parseListenTap(stage);
+        if (parsed != null) {
+          if (parsed.targetSentence.isNotEmpty) {
+            _listenTargetSentence = parsed.targetSentence;
+            _listenTarget = parsed.targetWords;
+          }
+          if (parsed.wordBank.isNotEmpty) {
+            _listenBank = parsed.wordBank;
+          }
+          _listenAudioUrl = parsed.audioUrl;
+          activeTypes.add('listen_tap');
         }
-        if (stage['tokens'] is List && (stage['tokens'] as List).isNotEmpty) {
-          _listenBank = (stage['tokens'] as List)
-              .map((e) => e.toString().trim())
-              .where((e) => e.isNotEmpty)
-              .toList()
-            ..shuffle();
-        } else if (_listenTarget.isNotEmpty) {
-          _listenBank = List<String>.from(_listenTarget)..shuffle();
-        }
-        final stageAudio = stage['audioUrl']?.toString().trim();
-        _listenAudioUrl = (stageAudio != null && stageAudio.isNotEmpty) ? stageAudio : '';
-        activeTypes.add('listen_tap');
       } else if (type == 'cloze_test' || type == 'cloze') {
         final sentence = (stage['sentence'] ?? stage['prompt'] ?? '').toString().trim();
         if (sentence.isNotEmpty) _clozeSentence = sentence;

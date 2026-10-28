@@ -21,6 +21,17 @@ class CacheService {
 
   SharedPreferences? _prefs;
 
+  @visibleForTesting
+  void setAudioCacheDir(Directory dir) {
+    _audioCacheDir = dir;
+  }
+
+  @visibleForTesting
+  void reset() {
+    _prefs = null;
+    _audioCacheDir = null;
+  }
+
   Future<SharedPreferences> _getPrefs() async {
     _prefs ??= await SharedPreferences.getInstance();
     return _prefs!;

@@ -5,6 +5,7 @@ import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 import '../constants/api_constants.dart';
 import '../constants/app_constants.dart';
 import 'api_exception.dart';
+import 'network_latency_tracker.dart';
 
 class DioClient {
   static Dio? _dio;
@@ -13,6 +14,11 @@ class DioClient {
   static bool _hasLoadedToken = false;
 
   static String? get cachedToken => _cachedToken;
+
+  @visibleForTesting
+  static void setInstance(Dio dio) {
+    _dio = dio;
+  }
 
   static void setToken(String? token) {
     _cachedToken = token;
@@ -38,6 +44,9 @@ class DioClient {
       receiveTimeout: const Duration(seconds: 15),
       headers: {'Content-Type': 'application/json'},
     ));
+
+    // Network latency tracker interceptor
+    _dio!.interceptors.add(NetworkLatencyInterceptor());
 
     // Auth interceptor (in-memory O(1) token lookup)
     _dio!.interceptors.add(InterceptorsWrapper(
@@ -99,6 +108,7 @@ class DioClient {
     _dio = null;
     _cachedToken = null;
     _hasLoadedToken = false;
+    NetworkLatencyTracker().reset();
   }
 
   static ApiException handleError(dynamic e) {
@@ -113,7 +123,8 @@ class DioClient {
         return ApiException(message: message, statusCode: response.statusCode);
       }
       if (e.type == DioExceptionType.connectionTimeout ||
-          e.type == DioExceptionType.receiveTimeout) {
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout) {
         return const ApiException(message: 'Connection timed out');
       }
       return const ApiException(message: 'Connection failed. Check your network.');

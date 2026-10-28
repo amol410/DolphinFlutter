@@ -756,6 +756,7 @@ class TtsService {
 
   /// Stop any ongoing speech or low-latency word playback
   Future<void> stop() async {
+    _precacheQueue.clear();
     try {
       await _wordAudioPlayer.stop();
     } catch (_) {}
