@@ -30,11 +30,17 @@ void main() {
 
       count = await adService.incrementLessonCount();
       expect(count, 2);
+      expect(await adService.shouldShowLessonInterstitial(), isFalse);
+
+      count = await adService.incrementLessonCount();
+      expect(count, 3);
       expect(await adService.shouldShowLessonInterstitial(), isTrue);
     });
 
     test('Resetting lesson count returns counter back to 0', () async {
       final adService = AdService();
+      await adService.resetLessonCount();
+      await adService.incrementLessonCount();
       await adService.incrementLessonCount();
       await adService.incrementLessonCount();
       expect(await adService.shouldShowLessonInterstitial(), isTrue);
