@@ -46,6 +46,14 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
   void _onScroll() {
     if (!_scrollController.hasClients) return;
     final offset = _scrollController.offset.clamp(0.0, double.infinity);
+
+    // Slipstream Pillar 2: Lookahead Windowing (Proactive Fetching)
+    // Proactively fetch next units when user scrolls within 600px of scroll boundary
+    if (_scrollController.position.hasViewportDimension &&
+        _scrollController.position.extentAfter < 600.0) {
+      ref.read(pathNodesProvider.notifier).fetchNextUnitsLookahead();
+    }
+
     if ((offset - _lastEvaluatedOffset).abs() < 30.0) return;
     _lastEvaluatedOffset = offset;
 

@@ -41,11 +41,24 @@ class GamificationRepository {
     );
   }
 
+  static List<PathNodeModel> _parseRawNodes(dynamic rawData) {
+    if (rawData is List) {
+      return rawData
+          .whereType<Map<String, dynamic>>()
+          .map((json) => PathNodeModel.fromJson(json))
+          .toList();
+    }
+    return <PathNodeModel>[];
+  }
+
   Future<List<PathNodeModel>> getPath({
     String? targetLanguage,
     String? nativeLanguage,
     String? level,
     int? section,
+    int? unit,
+    int? startUnit,
+    int? endUnit,
   }) async {
     final tLang = targetLanguage ?? 'de';
     final nLang = nativeLanguage ?? (tLang == 'en' ? 'mr' : 'en');
@@ -65,6 +78,9 @@ class GamificationRepository {
       if (nativeLanguage != null) queryParams['nativeLanguage'] = nativeLanguage;
       if (level != null) queryParams['level'] = level;
       if (section != null) queryParams['section'] = section;
+      if (unit != null) queryParams['unit'] = unit;
+      if (startUnit != null) queryParams['startUnit'] = startUnit;
+      if (endUnit != null) queryParams['endUnit'] = endUnit;
 
       final response = await dio.get(
         ApiConstants.gamificationPath,
@@ -73,16 +89,31 @@ class GamificationRepository {
       if (response.data is Map<String, dynamic> &&
           response.data['success'] == true &&
           response.data['nodes'] != null) {
-        final list = response.data['nodes'] as List;
-        final nodes = list.map((json) => PathNodeModel.fromJson(json)).toList();
+        final list = response.data['nodes'];
+        // Slipstream Pillar 4: Off-thread isolate parsing via compute()
+        final nodes = await compute(_parseRawNodes, list);
 
-        // Save fresh path to local disk
-        await _cache.savePathNodes(
-          targetLanguage: tLang,
-          nativeLanguage: nLang,
-          level: lvl,
-          nodes: nodes,
-        );
+        // If windowed request, merge with cached nodes; if full request, replace cache
+        if (startUnit != null && endUnit != null && cachedNodes != null && cachedNodes.isNotEmpty) {
+          final mergedMap = {for (final n in cachedNodes) n.index: n};
+          for (final n in nodes) {
+            mergedMap[n.index] = n;
+          }
+          final mergedList = mergedMap.values.toList()..sort((a, b) => a.index.compareTo(b.index));
+          await _cache.savePathNodes(
+            targetLanguage: tLang,
+            nativeLanguage: nLang,
+            level: lvl,
+            nodes: mergedList,
+          );
+        } else {
+          await _cache.savePathNodes(
+            targetLanguage: tLang,
+            nativeLanguage: nLang,
+            level: lvl,
+            nodes: nodes,
+          );
+        }
 
         // Predictive background prefetch for upcoming unfinished nodes & voice clips
         _prefetch.prefetchUpcomingLessons(nodes);

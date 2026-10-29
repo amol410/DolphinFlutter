@@ -112,6 +112,8 @@ final gamificationStatusProvider = StateNotifierProvider<GamificationStatusNotif
 class PathNodesNotifier extends StateNotifier<AsyncValue<List<PathNodeModel>>> {
   final GamificationRepository _repo;
   final Ref _ref;
+  int _loadedMaxUnit = 4;
+  bool _isFetchingWindow = false;
 
   PathNodesNotifier(this._repo, this._ref) : super(const AsyncValue.loading()) {
     _initPath();
@@ -119,20 +121,33 @@ class PathNodesNotifier extends StateNotifier<AsyncValue<List<PathNodeModel>>> {
 
   Future<void> _initPath() async {
     final status = _ref.read(gamificationStatusProvider).value;
-    if (status != null) {
-      await loadPath(
-        targetLanguage: status.targetLanguage,
-        nativeLanguage: status.nativeLanguage,
-        level: status.currentLevel,
-      );
-    } else {
-      final cachedStatus = await CacheService().getCachedStatus();
-      await loadPath(
-        targetLanguage: cachedStatus?.targetLanguage ?? 'de',
-        nativeLanguage: cachedStatus?.nativeLanguage ?? 'en',
-        level: cachedStatus?.currentLevel ?? 'A1',
-      );
+    final cachedStatus = await CacheService().getCachedStatus();
+    final tLang = status?.targetLanguage ?? cachedStatus?.targetLanguage ?? 'de';
+    final nLang = status?.nativeLanguage ?? cachedStatus?.nativeLanguage ?? 'en';
+    final lvl = status?.currentLevel ?? cachedStatus?.currentLevel ?? 'A1';
+
+    // Slipstream Pillar 3: 0 ms Instant Render (Stale-While-Revalidate)
+    // 1. Immediately paint cached path from Tier-2 local storage without blocking
+    final cachedNodes = await CacheService().getCachedPathNodes(
+      targetLanguage: tLang,
+      nativeLanguage: nLang,
+      level: lvl,
+    );
+    if (cachedNodes != null && cachedNodes.isNotEmpty) {
+      state = AsyncValue.data(cachedNodes);
+      final maxU = cachedNodes.map((n) => n.unitNumber).fold(1, (prev, u) => u > prev ? u : prev);
+      _loadedMaxUnit = maxU < 4 ? 4 : maxU;
     }
+
+    // 2. Background sync with Hostinger API seamlessly (silent = true if cached data is painted)
+    await loadPath(
+      targetLanguage: tLang,
+      nativeLanguage: nLang,
+      level: lvl,
+      startUnit: 1,
+      endUnit: _loadedMaxUnit < 4 ? 4 : _loadedMaxUnit,
+      silent: cachedNodes != null && cachedNodes.isNotEmpty,
+    );
   }
 
   Future<void> loadPath({
@@ -140,9 +155,12 @@ class PathNodesNotifier extends StateNotifier<AsyncValue<List<PathNodeModel>>> {
     String? nativeLanguage,
     String? level,
     int? section,
+    int? unit,
+    int? startUnit,
+    int? endUnit,
     bool silent = false,
   }) async {
-    if (!silent) {
+    if (!silent && state.value == null) {
       state = const AsyncValue.loading();
     }
     try {
@@ -151,12 +169,67 @@ class PathNodesNotifier extends StateNotifier<AsyncValue<List<PathNodeModel>>> {
         nativeLanguage: nativeLanguage,
         level: level,
         section: section,
+        unit: unit,
+        startUnit: startUnit,
+        endUnit: endUnit,
       );
-      state = AsyncValue.data(nodes);
+
+      if (startUnit != null && endUnit != null && state.value != null && state.value!.isNotEmpty) {
+        // Merge windowed nodes into existing list smoothly
+        final current = state.value!;
+        final mergedMap = {for (final n in current) n.index: n};
+        for (final n in nodes) {
+          mergedMap[n.index] = n;
+        }
+        final merged = mergedMap.values.toList()..sort((a, b) => a.index.compareTo(b.index));
+        state = AsyncValue.data(merged);
+      } else {
+        state = AsyncValue.data(nodes);
+      }
     } catch (e, st) {
-      if (!silent) {
+      if (!silent && state.value == null) {
         state = AsyncValue.error(e, st);
       }
+    }
+  }
+
+  // Slipstream Pillar 2: Proactive Lookahead Fetch (Triggered within 600px of scroll boundary)
+  Future<void> fetchNextUnitsLookahead() async {
+    if (_isFetchingWindow) return;
+    _isFetchingWindow = true;
+
+    try {
+      final status = _ref.read(gamificationStatusProvider).value;
+      final cachedStatus = await CacheService().getCachedStatus();
+      final tLang = status?.targetLanguage ?? cachedStatus?.targetLanguage ?? 'de';
+      final nLang = status?.nativeLanguage ?? cachedStatus?.nativeLanguage ?? 'en';
+      final lvl = status?.currentLevel ?? cachedStatus?.currentLevel ?? 'A1';
+
+      final nextStart = _loadedMaxUnit + 1;
+      final nextEnd = _loadedMaxUnit + 3; // Proactively fetch 2-3 units ahead (~12 KB)
+
+      final newNodes = await _repo.getPath(
+        targetLanguage: tLang,
+        nativeLanguage: nLang,
+        level: lvl,
+        startUnit: nextStart,
+        endUnit: nextEnd,
+      );
+
+      if (newNodes.isNotEmpty) {
+        _loadedMaxUnit = nextEnd;
+        final current = state.value ?? [];
+        final mergedMap = {for (final n in current) n.index: n};
+        for (final n in newNodes) {
+          mergedMap[n.index] = n;
+        }
+        final merged = mergedMap.values.toList()..sort((a, b) => a.index.compareTo(b.index));
+        state = AsyncValue.data(merged);
+      }
+    } catch (e) {
+      // Background lookahead errors fail silently without interrupting active UI
+    } finally {
+      _isFetchingWindow = false;
     }
   }
 

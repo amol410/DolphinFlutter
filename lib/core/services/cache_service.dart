@@ -45,6 +45,24 @@ class CacheService {
     return '$_prefixPath${targetLang.toLowerCase()}_${nativeLang.toLowerCase()}_${level.toLowerCase()}';
   }
 
+  static String _encodePathNodesToJson(List<PathNodeModel> nodes) {
+    final rawList = nodes.map((n) => n.toJson()).toList();
+    return jsonEncode(rawList);
+  }
+
+  static List<PathNodeModel> _decodePathNodesFromJson(String jsonStr) {
+    try {
+      final dynamic decoded = jsonDecode(jsonStr);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map<String, dynamic>>()
+            .map((item) => PathNodeModel.fromJson(item))
+            .toList();
+      }
+    } catch (_) {}
+    return <PathNodeModel>[];
+  }
+
   Future<void> savePathNodes({
     required String targetLanguage,
     required String nativeLanguage,
@@ -54,8 +72,9 @@ class CacheService {
     try {
       final prefs = await _getPrefs();
       final key = _formatCourseKey(targetLanguage, nativeLanguage, level);
-      final rawList = nodes.map((n) => n.toJson()).toList();
-      await prefs.setString(key, jsonEncode(rawList));
+      // Slipstream Pillar 4: Off-Thread Isolate Serialization via compute()
+      final jsonStr = await compute(_encodePathNodesToJson, nodes);
+      await prefs.setString(key, jsonStr);
     } catch (e) {
       debugPrint('⚠️ [CacheService] savePathNodes error: $e');
     }
@@ -72,13 +91,9 @@ class CacheService {
       final jsonStr = prefs.getString(key);
       if (jsonStr == null || jsonStr.isEmpty) return null;
 
-      final dynamic decoded = jsonDecode(jsonStr);
-      if (decoded is List) {
-        return decoded
-            .whereType<Map<String, dynamic>>()
-            .map((item) => PathNodeModel.fromJson(item))
-            .toList();
-      }
+      // Slipstream Pillar 4: Off-Thread Isolate Deserialization via compute()
+      final nodes = await compute(_decodePathNodesFromJson, jsonStr);
+      if (nodes.isNotEmpty) return nodes;
     } catch (e) {
       debugPrint('⚠️ [CacheService] getCachedPathNodes error: $e');
     }
