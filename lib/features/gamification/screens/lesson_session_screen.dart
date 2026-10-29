@@ -665,92 +665,58 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
           activeTypes.add('listen_tap');
         }
       } else if (type == 'cloze_test' || type == 'cloze') {
-        final sentence = (stage['sentence'] ?? stage['prompt'] ?? '').toString().trim();
-        if (sentence.isNotEmpty) _clozeSentence = sentence;
-        final trans = (stage['translation'] ?? '').toString().trim();
-        if (trans.isNotEmpty) _clozeTranslation = trans;
-        final blank = (stage['blank'] ?? stage['target'] ?? stage['correctOption'] ?? stage['correctAnswer'] ?? stage['answer'] ?? '').toString().trim();
-        if (blank.isNotEmpty) _clozeBlank = blank;
-        if (stage['options'] is List && (stage['options'] as List).isNotEmpty) {
-          _clozeOptions = (stage['options'] as List)
-              .map((o) => (o is Map ? (o['text'] ?? '') : o).toString().trim())
-              .where((o) => o.isNotEmpty)
-              .toList();
+        final parsed = LessonStageParser.parseCloze(stage);
+        if (parsed != null) {
+          if (parsed.sentence.isNotEmpty) _clozeSentence = parsed.sentence;
+          if (parsed.translation.isNotEmpty) _clozeTranslation = parsed.translation;
+          if (parsed.blank.isNotEmpty) _clozeBlank = parsed.blank;
+          if (parsed.options.isNotEmpty) _clozeOptions = parsed.options;
+          activeTypes.add('cloze_test');
         }
-        activeTypes.add('cloze_test');
       } else if (type == 'sentence_builder') {
-        final prompt = stage['prompt']?.toString().trim();
-        if (prompt != null && prompt.isNotEmpty) {
-          _sentencePrompt = prompt;
+        final parsed = LessonStageParser.parseSentenceBuilder(stage);
+        if (parsed != null) {
+          if (parsed.prompt.isNotEmpty) _sentencePrompt = parsed.prompt;
+          if (parsed.targetSentence.isNotEmpty) {
+            _builderTargetSentence = parsed.targetSentence;
+            _builderTarget = parsed.targetWords;
+          }
+          if (parsed.wordBank.isNotEmpty) {
+            _builderBank = parsed.wordBank;
+          }
+          activeTypes.add('sentence_builder');
         }
-        final target = stage['targetSentence']?.toString().trim() ?? '';
-        if (target.isNotEmpty) {
-          _builderTargetSentence = target;
-          _builderTarget = target
-              .split(RegExp(r'\s+'))
-              .where((w) => w.isNotEmpty)
-              .toList();
-        }
-        if (stage['tokens'] is List && (stage['tokens'] as List).isNotEmpty) {
-          _builderBank = (stage['tokens'] as List)
-              .map((e) => e.toString().trim())
-              .where((e) => e.isNotEmpty)
-              .toList()
-            ..shuffle();
-        } else if (_builderTarget.isNotEmpty) {
-          _builderBank = List<String>.from(_builderTarget)..shuffle();
-        }
-        activeTypes.add('sentence_builder');
       } else if (type == 'type_word' || type == 'type_input') {
-        final prompt = (stage['prompt'] ?? stage['sentence'] ?? '').toString().trim();
-        if (prompt.isNotEmpty) _typePrompt = prompt;
-        final trans = (stage['translation'] ?? stage['nativeMeaning'] ?? '').toString().trim();
-        if (trans.isNotEmpty) _typeTranslation = trans;
-        final target = (stage['target'] ?? stage['targetWord'] ?? stage['word'] ?? stage['correctAnswer'] ?? '').toString().trim();
-        if (target.isNotEmpty) _typeTarget = target;
-        final hint = (stage['hint'] ?? '').toString().trim();
-        if (hint.isNotEmpty) _typeHint = hint;
-        activeTypes.add('type_word');
+        final parsed = LessonStageParser.parseTypeWord(stage);
+        if (parsed != null) {
+          if (parsed.prompt.isNotEmpty) _typePrompt = parsed.prompt;
+          if (parsed.translation.isNotEmpty) _typeTranslation = parsed.translation;
+          if (parsed.target.isNotEmpty) _typeTarget = parsed.target;
+          if (parsed.hint.isNotEmpty) _typeHint = parsed.hint;
+          activeTypes.add('type_word');
+        }
       } else if (type == 'dialogue_bubble' || type == 'dialogue') {
-        final name = (stage['partnerName'] ?? stage['speaker'] ?? 'Florian').toString().trim();
-        if (name.isNotEmpty) _dialoguePartnerName = name;
-        final msg = (stage['partnerMessage'] ?? stage['message'] ?? stage['prompt'] ?? '').toString().trim();
-        if (msg.isNotEmpty) _dialoguePartnerMessage = msg;
-        final trans = (stage['translation'] ?? '').toString().trim();
-        if (trans.isNotEmpty) _dialoguePartnerTranslation = trans;
-        if (stage['options'] is List && (stage['options'] as List).isNotEmpty) {
-          final correctOpt = (stage['correctOption'] ?? stage['correctAnswer'] ?? '').toString().trim();
-          _dialogueOptions = (stage['options'] as List).asMap().entries.map((entry) {
-            final o = entry.value;
-            if (o is Map) return Map<String, dynamic>.from(o);
-            final optText = o.toString().trim();
-            final isCorrect = correctOpt.isNotEmpty
-                ? optText.toLowerCase() == correctOpt.toLowerCase()
-                : (entry.key == 0);
-            return {'text': optText, 'isCorrect': isCorrect};
-          }).toList();
+        final parsed = LessonStageParser.parseDialogue(stage);
+        if (parsed != null) {
+          _dialoguePartnerName = parsed.partnerName;
+          _dialoguePartnerMessage = parsed.partnerMessage;
+          _dialoguePartnerTranslation = parsed.translation;
+          if (parsed.options.isNotEmpty) {
+            _dialogueOptions = parsed.options;
+          }
+          activeTypes.add('dialogue_bubble');
         }
-        activeTypes.add('dialogue_bubble');
       } else if (type == 'listen_select' || type == 'listen_comprehension') {
-        final sentence = (stage['spokenGerman'] ?? stage['sentence'] ?? stage['targetSentence'] ?? '').toString().trim();
-        if (sentence.isNotEmpty) _listenSelectSentence = sentence;
-        final question = (stage['question'] ?? stage['prompt'] ?? '').toString().trim();
-        if (question.isNotEmpty) _listenSelectQuestion = question;
-        final audio = stage['audioUrl']?.toString().trim();
-        _listenSelectAudioUrl = (audio != null && audio.isNotEmpty) ? audio : '';
-        if (stage['options'] is List && (stage['options'] as List).isNotEmpty) {
-          final correctOpt = (stage['correctOption'] ?? stage['correctAnswer'] ?? '').toString().trim();
-          _listenSelectOptions = (stage['options'] as List).asMap().entries.map((entry) {
-            final o = entry.value;
-            if (o is Map) return Map<String, dynamic>.from(o);
-            final optText = o.toString().trim();
-            final isCorrect = correctOpt.isNotEmpty
-                ? optText.toLowerCase() == correctOpt.toLowerCase()
-                : (entry.key == 0);
-            return {'text': optText, 'isCorrect': isCorrect};
-          }).toList();
+        final parsed = LessonStageParser.parseListenSelect(stage);
+        if (parsed != null) {
+          if (parsed.sentence.isNotEmpty) _listenSelectSentence = parsed.sentence;
+          if (parsed.question.isNotEmpty) _listenSelectQuestion = parsed.question;
+          _listenSelectAudioUrl = parsed.audioUrl;
+          if (parsed.options.isNotEmpty) {
+            _listenSelectOptions = parsed.options;
+          }
+          activeTypes.add('listen_select');
         }
-        activeTypes.add('listen_select');
       } else if (type == 'picture_select' || type == 'picture_cards') {
         final parsed = LessonStageParser.parsePictureSelect(stage);
         if (parsed != null) {
@@ -761,39 +727,33 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
           activeTypes.add('picture_select');
         }
       } else if (type == 'sprechen') {
-        final prompt = stage['prompt']?.toString().trim();
-        if (prompt != null && prompt.isNotEmpty) {
-          _sprechenPrompt = prompt;
-        }
-        final trans = stage['translation']?.toString().trim();
-        if (trans != null && trans.isNotEmpty) {
-          _sprechenTranslation = trans;
-        }
-        if (stage['minAccuracy'] is num) {
-          _sprechenMinAccuracy = (stage['minAccuracy'] as num).toInt();
-        }
-        final audio = stage['audioUrl']?.toString().trim();
-        _sprechenAudioUrl = (audio != null && audio.isNotEmpty) ? audio : '';
-        if (stage['karaokeData'] != null) {
-          final kd = stage['karaokeData'];
-          if (kd is Map && kd['words'] is List) {
-            _sprechenKaraokeWords = (kd['words'] as List)
-                .map((w) => KaraokeWord.fromJson(Map<String, dynamic>.from(w as Map)))
-                .toList();
-          } else if (kd is List) {
-            _sprechenKaraokeWords = kd
-                .map((w) => KaraokeWord.fromJson(Map<String, dynamic>.from(w as Map)))
-                .toList();
-          } else if (kd is Map && kd['sentences'] is List && (kd['sentences'] as List).isNotEmpty) {
-            final firstS = kd['sentences'][0];
-            if (firstS is Map && firstS['words'] is List) {
-              _sprechenKaraokeWords = (firstS['words'] as List)
+        final parsed = LessonStageParser.parseSprechen(stage);
+        if (parsed != null) {
+          _sprechenPrompt = parsed.prompt;
+          if (parsed.translation.isNotEmpty) _sprechenTranslation = parsed.translation;
+          _sprechenMinAccuracy = parsed.minAccuracy;
+          _sprechenAudioUrl = parsed.audioUrl;
+          if (parsed.karaokeData != null) {
+            final kd = parsed.karaokeData;
+            if (kd is Map && kd['words'] is List) {
+              _sprechenKaraokeWords = (kd['words'] as List)
                   .map((w) => KaraokeWord.fromJson(Map<String, dynamic>.from(w as Map)))
                   .toList();
+            } else if (kd is List) {
+              _sprechenKaraokeWords = kd
+                  .map((w) => KaraokeWord.fromJson(Map<String, dynamic>.from(w as Map)))
+                  .toList();
+            } else if (kd is Map && kd['sentences'] is List && (kd['sentences'] as List).isNotEmpty) {
+              final firstS = kd['sentences'][0];
+              if (firstS is Map && firstS['words'] is List) {
+                _sprechenKaraokeWords = (firstS['words'] as List)
+                    .map((w) => KaraokeWord.fromJson(Map<String, dynamic>.from(w as Map)))
+                    .toList();
+              }
             }
           }
+          activeTypes.add('sprechen');
         }
-        activeTypes.add('sprechen');
       }
     }
 
@@ -885,23 +845,38 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   }
 
   void _precacheAllVocab() {
-    // Pre-cache all lesson vocabulary words in the background for zero-latency instant taps
+    // CRITICAL OPTIMIZATION: Only pre-cache vocabulary for stages that are actually active in this lesson!
+    // Prevents unneeded TTS synthesis, saves mobile battery, and eliminates audio thread micro-stutters.
     final allVocab = <String>{};
-    allVocab.addAll(_germanWords);
-    allVocab.addAll(_listenTarget);
-    allVocab.addAll(_listenBank);
-    allVocab.addAll(_builderTarget);
-    allVocab.addAll(_builderBank);
-    allVocab.addAll(_clozeOptions);
-    if (_clozeBlank.isNotEmpty) allVocab.add(_clozeBlank);
-    if (_typeTarget.isNotEmpty) allVocab.add(_typeTarget);
-    for (final opt in _dialogueOptions) {
-      if (opt['text'] != null) {
-        allVocab.addAll(opt['text'].toString().split(RegExp(r'\s+')));
+    if (_activeStageTypes.contains('word_match')) {
+      allVocab.addAll(_germanWords);
+    }
+    if (_activeStageTypes.contains('listen_tap')) {
+      allVocab.addAll(_listenTarget);
+      allVocab.addAll(_listenBank);
+    }
+    if (_activeStageTypes.contains('sentence_builder')) {
+      allVocab.addAll(_builderTarget);
+      allVocab.addAll(_builderBank);
+    }
+    if (_activeStageTypes.contains('cloze_test')) {
+      allVocab.addAll(_clozeOptions);
+      if (_clozeBlank.isNotEmpty) allVocab.add(_clozeBlank);
+    }
+    if (_activeStageTypes.contains('type_word')) {
+      if (_typeTarget.isNotEmpty) allVocab.add(_typeTarget);
+    }
+    if (_activeStageTypes.contains('dialogue_bubble')) {
+      for (final opt in _dialogueOptions) {
+        if (opt['text'] != null) {
+          allVocab.addAll(opt['text'].toString().split(RegExp(r'\s+')));
+        }
       }
     }
-    for (final w in _sprechenKaraokeWords) {
-      allVocab.add(w.word);
+    if (_activeStageTypes.contains('sprechen')) {
+      for (final w in _sprechenKaraokeWords) {
+        allVocab.add(w.word);
+      }
     }
     if (allVocab.isNotEmpty) {
       TtsService().precacheWords(allVocab.toList());

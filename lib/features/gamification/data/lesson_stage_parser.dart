@@ -54,6 +54,92 @@ class PictureSelectStageData {
   });
 }
 
+class SentenceBuilderStageData {
+  final String prompt;
+  final String targetSentence;
+  final List<String> targetWords;
+  final List<String> wordBank;
+
+  const SentenceBuilderStageData({
+    required this.prompt,
+    required this.targetSentence,
+    required this.targetWords,
+    required this.wordBank,
+  });
+}
+
+class ClozeStageData {
+  final String sentence;
+  final String translation;
+  final String blank;
+  final List<String> options;
+
+  const ClozeStageData({
+    required this.sentence,
+    required this.translation,
+    required this.blank,
+    required this.options,
+  });
+}
+
+class TypeWordStageData {
+  final String prompt;
+  final String translation;
+  final String target;
+  final String hint;
+
+  const TypeWordStageData({
+    required this.prompt,
+    required this.translation,
+    required this.target,
+    required this.hint,
+  });
+}
+
+class DialogueStageData {
+  final String partnerName;
+  final String partnerMessage;
+  final String translation;
+  final List<Map<String, dynamic>> options;
+
+  const DialogueStageData({
+    required this.partnerName,
+    required this.partnerMessage,
+    required this.translation,
+    required this.options,
+  });
+}
+
+class ListenSelectStageData {
+  final String sentence;
+  final String question;
+  final String audioUrl;
+  final List<Map<String, dynamic>> options;
+
+  const ListenSelectStageData({
+    required this.sentence,
+    required this.question,
+    required this.audioUrl,
+    required this.options,
+  });
+}
+
+class SprechenStageData {
+  final String prompt;
+  final String translation;
+  final int minAccuracy;
+  final String audioUrl;
+  final dynamic karaokeData;
+
+  const SprechenStageData({
+    required this.prompt,
+    required this.translation,
+    required this.minAccuracy,
+    required this.audioUrl,
+    this.karaokeData,
+  });
+}
+
 /// Robust JSON parser for interactive lesson stages (word_match, listen_tap, etc.)
 /// Resilient against server schema variations, high network latency, or partial keys.
 class LessonStageParser {
@@ -158,6 +244,157 @@ class LessonStageParser {
     );
   }
 
+  /// Parses `sentence_builder` stage from raw server JSON.
+  static SentenceBuilderStageData? parseSentenceBuilder(Map<String, dynamic> stage) {
+    final prompt = (stage['prompt'] ?? '').toString().trim();
+    final target = (stage['targetSentence'] ?? stage['target'] ?? '').toString().trim();
+    final targetWords = target.isNotEmpty
+        ? target.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList()
+        : <String>[];
+
+    List<String> bank = [];
+    if (stage['tokens'] is List && (stage['tokens'] as List).isNotEmpty) {
+      bank = (stage['tokens'] as List)
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList()
+        ..shuffle();
+    } else if (targetWords.isNotEmpty) {
+      bank = List<String>.from(targetWords)..shuffle();
+    }
+
+    if (target.isEmpty && bank.isEmpty) return null;
+
+    return SentenceBuilderStageData(
+      prompt: prompt,
+      targetSentence: target,
+      targetWords: targetWords,
+      wordBank: bank,
+    );
+  }
+
+  /// Parses `cloze_test` or `cloze` stage from raw server JSON.
+  static ClozeStageData? parseCloze(Map<String, dynamic> stage) {
+    final sentence = (stage['sentence'] ?? stage['prompt'] ?? '').toString().trim();
+    final trans = (stage['translation'] ?? '').toString().trim();
+    final blank = (stage['blank'] ?? stage['target'] ?? stage['correctOption'] ?? stage['correctAnswer'] ?? stage['answer'] ?? '').toString().trim();
+    List<String> options = [];
+    if (stage['options'] is List && (stage['options'] as List).isNotEmpty) {
+      options = (stage['options'] as List)
+          .map((o) => (o is Map ? (o['text'] ?? '') : o).toString().trim())
+          .where((o) => o.isNotEmpty)
+          .toList();
+    }
+    if (sentence.isEmpty && blank.isEmpty && options.isEmpty) return null;
+
+    return ClozeStageData(
+      sentence: sentence,
+      translation: trans,
+      blank: blank,
+      options: options,
+    );
+  }
+
+  /// Parses `type_word` or `type_input` stage from raw server JSON.
+  static TypeWordStageData? parseTypeWord(Map<String, dynamic> stage) {
+    final prompt = (stage['prompt'] ?? stage['sentence'] ?? '').toString().trim();
+    final trans = (stage['translation'] ?? stage['nativeMeaning'] ?? '').toString().trim();
+    final target = (stage['target'] ?? stage['targetWord'] ?? stage['word'] ?? stage['correctAnswer'] ?? '').toString().trim();
+    final hint = (stage['hint'] ?? '').toString().trim();
+
+    if (prompt.isEmpty && target.isEmpty) return null;
+
+    return TypeWordStageData(
+      prompt: prompt,
+      translation: trans,
+      target: target,
+      hint: hint,
+    );
+  }
+
+  /// Parses `dialogue_bubble` or `dialogue` stage from raw server JSON.
+  static DialogueStageData? parseDialogue(Map<String, dynamic> stage) {
+    final name = (stage['partnerName'] ?? stage['speaker'] ?? 'Florian').toString().trim();
+    final msg = (stage['partnerMessage'] ?? stage['message'] ?? stage['prompt'] ?? '').toString().trim();
+    final trans = (stage['translation'] ?? '').toString().trim();
+    final options = <Map<String, dynamic>>[];
+
+    if (stage['options'] is List && (stage['options'] as List).isNotEmpty) {
+      final correctOpt = (stage['correctOption'] ?? stage['correctAnswer'] ?? '').toString().trim();
+      for (int i = 0; i < (stage['options'] as List).length; i++) {
+        final o = (stage['options'] as List)[i];
+        if (o is Map) {
+          options.add(Map<String, dynamic>.from(o));
+        } else {
+          final optText = o.toString().trim();
+          final isCorrect = correctOpt.isNotEmpty
+              ? optText.toLowerCase() == correctOpt.toLowerCase()
+              : (i == 0);
+          options.add({'text': optText, 'isCorrect': isCorrect});
+        }
+      }
+    }
+
+    if (msg.isEmpty && options.isEmpty) return null;
+
+    return DialogueStageData(
+      partnerName: name.isNotEmpty ? name : 'Florian',
+      partnerMessage: msg,
+      translation: trans,
+      options: options,
+    );
+  }
+
+  /// Parses `listen_select` or `listen_comprehension` stage from raw server JSON.
+  static ListenSelectStageData? parseListenSelect(Map<String, dynamic> stage) {
+    final sentence = (stage['spokenGerman'] ?? stage['sentence'] ?? stage['targetSentence'] ?? '').toString().trim();
+    final question = (stage['question'] ?? stage['prompt'] ?? '').toString().trim();
+    final audio = (stage['audioUrl'] ?? '').toString().trim();
+    final options = <Map<String, dynamic>>[];
+
+    if (stage['options'] is List && (stage['options'] as List).isNotEmpty) {
+      final correctOpt = (stage['correctOption'] ?? stage['correctAnswer'] ?? '').toString().trim();
+      for (int i = 0; i < (stage['options'] as List).length; i++) {
+        final o = (stage['options'] as List)[i];
+        if (o is Map) {
+          options.add(Map<String, dynamic>.from(o));
+        } else {
+          final optText = o.toString().trim();
+          final isCorrect = correctOpt.isNotEmpty
+              ? optText.toLowerCase() == correctOpt.toLowerCase()
+              : (i == 0);
+          options.add({'text': optText, 'isCorrect': isCorrect});
+        }
+      }
+    }
+
+    if (sentence.isEmpty && question.isEmpty) return null;
+
+    return ListenSelectStageData(
+      sentence: sentence,
+      question: question,
+      audioUrl: audio,
+      options: options,
+    );
+  }
+
+  /// Parses `sprechen` stage from raw server JSON.
+  static SprechenStageData? parseSprechen(Map<String, dynamic> stage) {
+    final prompt = (stage['prompt'] ?? '').toString().trim();
+    if (prompt.isEmpty) return null;
+    final trans = (stage['translation'] ?? '').toString().trim();
+    final minAccuracy = stage['minAccuracy'] is num ? (stage['minAccuracy'] as num).toInt() : 75;
+    final audio = (stage['audioUrl'] ?? '').toString().trim();
+
+    return SprechenStageData(
+      prompt: prompt,
+      translation: trans,
+      minAccuracy: minAccuracy,
+      audioUrl: audio,
+      karaokeData: stage['karaokeData'],
+    );
+  }
+
   /// Detects valid stage types present in the server payload.
   static List<String> extractValidStageTypes(List<dynamic> stages) {
     final types = <String>[];
@@ -168,17 +405,23 @@ class LessonStageParser {
       if (type == null || type.isEmpty) continue;
 
       if (type == 'match_pairs' || type == 'word_match') {
-        if (parseWordMatch(map) != null) {
-          types.add('word_match');
-        }
+        if (parseWordMatch(map) != null) types.add('word_match');
       } else if (type == 'listen_tap') {
-        if (parseListenTap(map) != null) {
-          types.add('listen_tap');
-        }
+        if (parseListenTap(map) != null) types.add('listen_tap');
       } else if (type == 'picture_select' || type == 'picture_cards') {
-        if (parsePictureSelect(map) != null) {
-          types.add('picture_select');
-        }
+        if (parsePictureSelect(map) != null) types.add('picture_select');
+      } else if (type == 'sentence_builder') {
+        if (parseSentenceBuilder(map) != null) types.add('sentence_builder');
+      } else if (type == 'cloze_test' || type == 'cloze') {
+        if (parseCloze(map) != null) types.add('cloze_test');
+      } else if (type == 'type_word' || type == 'type_input') {
+        if (parseTypeWord(map) != null) types.add('type_word');
+      } else if (type == 'dialogue_bubble' || type == 'dialogue') {
+        if (parseDialogue(map) != null) types.add('dialogue_bubble');
+      } else if (type == 'listen_select' || type == 'listen_comprehension') {
+        if (parseListenSelect(map) != null) types.add('listen_select');
+      } else if (type == 'sprechen') {
+        if (parseSprechen(map) != null) types.add('sprechen');
       } else {
         types.add(type);
       }
