@@ -26,6 +26,34 @@ class ListenTapStageData {
   });
 }
 
+class PictureOptionData {
+  final String id;
+  final String text;
+  final String imageUrl;
+  final bool isCorrect;
+
+  const PictureOptionData({
+    required this.id,
+    required this.text,
+    required this.imageUrl,
+    required this.isCorrect,
+  });
+}
+
+class PictureSelectStageData {
+  final String prompt;
+  final String targetWord;
+  final String translation;
+  final List<PictureOptionData> options;
+
+  const PictureSelectStageData({
+    required this.prompt,
+    required this.targetWord,
+    required this.translation,
+    required this.options,
+  });
+}
+
 /// Robust JSON parser for interactive lesson stages (word_match, listen_tap, etc.)
 /// Resilient against server schema variations, high network latency, or partial keys.
 class LessonStageParser {
@@ -97,6 +125,39 @@ class LessonStageParser {
     );
   }
 
+  /// Parses `picture_select` or `picture_cards` stage from raw server JSON.
+  static PictureSelectStageData? parsePictureSelect(Map<String, dynamic> stage) {
+    if (stage['options'] is! List) return null;
+    final rawOptions = stage['options'] as List;
+    if (rawOptions.isEmpty) return null;
+
+    final options = <PictureOptionData>[];
+    for (int i = 0; i < rawOptions.length; i++) {
+      final opt = rawOptions[i];
+      if (opt is Map) {
+        options.add(PictureOptionData(
+          id: (opt['id'] ?? 'opt_$i').toString(),
+          text: (opt['text'] ?? opt['word'] ?? '').toString().trim(),
+          imageUrl: (opt['imageUrl'] ?? opt['image'] ?? '').toString().trim(),
+          isCorrect: opt['isCorrect'] == true,
+        ));
+      }
+    }
+
+    if (options.isEmpty) return null;
+
+    final prompt = (stage['prompt'] ?? stage['title'] ?? 'Choose the correct picture').toString().trim();
+    final targetWord = (stage['targetWord'] ?? stage['target'] ?? '').toString().trim();
+    final translation = (stage['translation'] ?? '').toString().trim();
+
+    return PictureSelectStageData(
+      prompt: prompt.isNotEmpty ? prompt : 'Choose the correct picture',
+      targetWord: targetWord,
+      translation: translation,
+      options: options,
+    );
+  }
+
   /// Detects valid stage types present in the server payload.
   static List<String> extractValidStageTypes(List<dynamic> stages) {
     final types = <String>[];
@@ -113,6 +174,10 @@ class LessonStageParser {
       } else if (type == 'listen_tap') {
         if (parseListenTap(map) != null) {
           types.add('listen_tap');
+        }
+      } else if (type == 'picture_select' || type == 'picture_cards') {
+        if (parsePictureSelect(map) != null) {
+          types.add('picture_select');
         }
       } else {
         types.add(type);

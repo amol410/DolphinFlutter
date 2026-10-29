@@ -193,6 +193,14 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   int? _listenSelectSelectedIdx;
   bool? _listenSelectCorrect;
 
+  // ── Stage: Picture Select (Visual Vocabulary Cards) ──────────────
+  String _picturePrompt = 'Choose the correct picture';
+  String _pictureTargetWord = 'der Apfel';
+  String _pictureTranslation = 'The apple';
+  List<PictureOptionData> _pictureOptions = [];
+  String? _selectedPictureOptionId;
+  bool? _pictureCorrect;
+
   @override
   void initState() {
     super.initState();
@@ -743,6 +751,15 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
           }).toList();
         }
         activeTypes.add('listen_select');
+      } else if (type == 'picture_select' || type == 'picture_cards') {
+        final parsed = LessonStageParser.parsePictureSelect(stage);
+        if (parsed != null) {
+          _picturePrompt = parsed.prompt;
+          _pictureTargetWord = parsed.targetWord;
+          _pictureTranslation = parsed.translation;
+          _pictureOptions = parsed.options;
+          activeTypes.add('picture_select');
+        }
       } else if (type == 'sprechen') {
         final prompt = stage['prompt']?.toString().trim();
         if (prompt != null && prompt.isNotEmpty) {
@@ -1758,6 +1775,11 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
         _listenSelectSelectedIdx = null;
         _listenSelectCorrect = null;
         break;
+      case 'picture_select':
+      case 'picture_cards':
+        _selectedPictureOptionId = null;
+        _pictureCorrect = null;
+        break;
       case 'sprechen':
         _spokenText = '';
         _speechAccuracy = 0;
@@ -2486,6 +2508,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       case 'listen_select':
       case 'listen_comprehension':
         return _buildListenSelectStage();
+      case 'picture_select':
+      case 'picture_cards':
+        return _buildPictureSelectStage();
       case 'sprechen':
         if (ref.watch(speechPreferencesProvider).isCurrentlyMuted) {
           return _buildSnoozedSprechenStage();
@@ -4149,6 +4174,289 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
                     : 'Hervorragend! Correct comprehension!')
                 : 'Almost there!',
             subtitle: 'Sentence heard: "$_listenSelectSentence"',
+            buttonText: 'CONTINUE →',
+            onContinue: _nextStage,
+          ),
+      ],
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // STAGE: Picture Vocabulary Selection (Visual Cards with WebP)
+  // ══════════════════════════════════════════════════════════════════
+  void _onPictureOptionTap(PictureOptionData opt) {
+    if (_pictureCorrect != null) return;
+    SoundEffectsService.instance.playPop();
+    if (opt.text.isNotEmpty) {
+      TtsService().speakWord(opt.text);
+    }
+    setState(() {
+      _selectedPictureOptionId = opt.id;
+    });
+  }
+
+  void _evaluatePicture() {
+    if (_selectedPictureOptionId == null) return;
+    final selectedOpt = _pictureOptions.firstWhere(
+      (o) => o.id == _selectedPictureOptionId,
+      orElse: () => _pictureOptions.first,
+    );
+    final isCorrect = selectedOpt.isCorrect;
+    setState(() {
+      _pictureCorrect = isCorrect;
+    });
+    if (isCorrect) {
+      SoundEffectsService.instance.playCorrect();
+    } else {
+      SoundEffectsService.instance.playWrong();
+    }
+    _triggerPrewarmForNext();
+  }
+
+  Widget _buildPictureSelectStage() {
+    return Column(
+      key: const ValueKey('picture_select'),
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _getStageTitle('picture_select'),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF1E293B),
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _picturePrompt.isNotEmpty ? _picturePrompt : _getStageSubtitle('picture_select'),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 18),
+
+                // Target Word Banner with Speaker Button
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0xFFE2E8F0),
+                        blurRadius: 0,
+                        offset: Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () {
+                          if (_pictureTargetWord.isNotEmpty) {
+                            TtsService().speakWord(_pictureTargetWord);
+                          }
+                        },
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Color(0xFF0284C7),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Color(0xFF0369A1),
+                                blurRadius: 0,
+                                offset: Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(Icons.volume_up_rounded, color: Colors.white, size: 24),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _pictureTargetWord,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF0F172A),
+                              ),
+                            ),
+                            if (_pictureTranslation.isNotEmpty)
+                              Text(
+                                _pictureTranslation,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF64748B),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // 2x2 Picture Option Cards Grid
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 14,
+                    mainAxisSpacing: 14,
+                    childAspectRatio: 0.85,
+                  ),
+                  itemCount: _pictureOptions.length,
+                  itemBuilder: (context, idx) {
+                    final opt = _pictureOptions[idx];
+                    final isSelected = _selectedPictureOptionId == opt.id;
+                    final isEvaluated = _pictureCorrect != null;
+
+                    Color borderColor = const Color(0xFFE2E8F0);
+                    Color bgColor = Colors.white;
+                    Color shadowColor = const Color(0xFFE2E8F0);
+
+                    if (isEvaluated) {
+                      if (opt.isCorrect) {
+                        borderColor = const Color(0xFF10B981);
+                        bgColor = const Color(0xFFECFDF5);
+                        shadowColor = const Color(0xFF059669);
+                      } else if (isSelected && !opt.isCorrect) {
+                        borderColor = const Color(0xFFEF4444);
+                        bgColor = const Color(0xFFFEF2F2);
+                        shadowColor = const Color(0xFFDC2626);
+                      }
+                    } else if (isSelected) {
+                      borderColor = const Color(0xFF0284C7);
+                      bgColor = const Color(0xFFE0F2FE);
+                      shadowColor = const Color(0xFF0369A1);
+                    }
+
+                    // Format full URL for server-uploaded WebP images
+                    String fullImageUrl = opt.imageUrl;
+                    if (fullImageUrl.startsWith('/')) {
+                      final baseHost = ApiConstants.defaultBaseUrl.replaceAll(RegExp(r'/api/?$'), '');
+                      fullImageUrl = '$baseHost$fullImageUrl';
+                    }
+
+                    return GestureDetector(
+                      onTap: () => _onPictureOptionTap(opt),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        decoration: BoxDecoration(
+                          color: bgColor,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: borderColor, width: isSelected ? 2.5 : 1.5),
+                          boxShadow: [
+                            BoxShadow(
+                              color: shadowColor,
+                              blurRadius: 0,
+                              offset: const Offset(0, 3.5),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: fullImageUrl.isNotEmpty
+                                      ? Image.network(
+                                          fullImageUrl,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) {
+                                            return Container(
+                                              color: const Color(0xFFF1F5F9),
+                                              child: const Center(
+                                                child: Icon(Icons.image_outlined, color: Color(0xFF94A3B8), size: 36),
+                                              ),
+                                            );
+                                          },
+                                          loadingBuilder: (context, child, progress) {
+                                            if (progress == null) return child;
+                                            return Container(
+                                              color: const Color(0xFFF1F5F9),
+                                              child: const Center(
+                                                child: SizedBox(
+                                                  width: 24,
+                                                  height: 24,
+                                                  child: CircularProgressIndicator(strokeWidth: 2.5),
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        )
+                                      : Container(
+                                          color: const Color(0xFFF1F5F9),
+                                          child: const Center(
+                                            child: Icon(Icons.image_outlined, color: Color(0xFF94A3B8), size: 36),
+                                          ),
+                                        ),
+                                ),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 8, right: 8, bottom: 10),
+                              child: Text(
+                                opt.text,
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  color: isSelected ? const Color(0xFF0369A1) : const Color(0xFF1E293B),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // Bottom Action Bar
+        if (_pictureCorrect == null)
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: TactileGameButton(
+              text: 'CHECK ANSWER',
+              variant: GameButtonVariant.success,
+              height: 52,
+              onPressed: _selectedPictureOptionId == null ? null : _evaluatePicture,
+            ),
+          )
+        else
+          DuoFeedbackSheet(
+            isSuccess: _pictureCorrect == true,
+            title: _pictureCorrect == true ? 'Ausgezeichnet! Correct!' : 'Almost! Try to remember this word.',
+            subtitle: _pictureCorrect == true
+                ? 'You matched the picture perfectly!'
+                : 'Target: $_pictureTargetWord (${_pictureTranslation.isNotEmpty ? _pictureTranslation : ""})',
             buttonText: 'CONTINUE →',
             onContinue: _nextStage,
           ),
