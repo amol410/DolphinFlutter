@@ -1330,7 +1330,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       final currentTarget =
           ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
       final isEnglish = currentTarget == 'en';
-      String targetLocaleId = isEnglish ? 'en_GB' : 'de_DE';
+      String targetLocaleId = isEnglish ? 'en_GB' : 'de-DE';
       try {
         final locales = await _speech!.locales();
         if (isEnglish) {

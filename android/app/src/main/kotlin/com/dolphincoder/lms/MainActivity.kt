@@ -283,10 +283,13 @@ class MainActivity : FlutterActivity() {
         var selectedServiceName = ""
 
         // Tier 1: Try Google's official Speech Recognition Service
-        // Searches for Google App (com.google.android.googlequicksearchbox) or Pixel Speech (com.google.android.as)
+        // Priority: Speech Services by Google (com.google.android.tts) — unified STT+TTS engine
+        // with offline language pack support (German, English, etc.), then Google App as fallback.
+        // Note: com.google.android.as (Android System Intelligence / Soda) is excluded because
+        // its ambient recognizer lacks offline packs for non-English languages.
         val googlePackages = listOf(
-            "com.google.android.googlequicksearchbox",
-            "com.google.android.as"
+            "com.google.android.tts",
+            "com.google.android.googlequicksearchbox"
         )
         for (pkg in googlePackages) {
             val match = services.firstOrNull { it.serviceInfo.packageName == pkg }
@@ -315,10 +318,10 @@ class MainActivity : FlutterActivity() {
                 val pkg = service.serviceInfo.packageName
                 val name = service.serviceInfo.name
 
-                // CRITICAL SAFETY FILTER: Skip Text-To-Speech dummy recognition service (e.g., com.google.android.tts)
-                // which only speaks audio out and cannot transcribe microphone input
-                if (pkg.contains("tts", ignoreCase = true) || name.contains("tts", ignoreCase = true)) {
-                    Log.d(TAG, "Tier 2: Skipping dummy Text-To-Speech service ($pkg)")
+                // SAFETY FILTER: Skip Android System Intelligence (com.google.android.as)
+                // Its Soda ambient recognizer lacks offline language packs for non-English languages
+                if (pkg == "com.google.android.as") {
+                    Log.d(TAG, "Tier 2: Skipping Android System Intelligence ($pkg) — no multi-language support")
                     continue
                 }
 

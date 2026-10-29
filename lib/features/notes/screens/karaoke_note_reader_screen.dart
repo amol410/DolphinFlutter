@@ -442,7 +442,39 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
       final currentTarget =
           ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
       final isEnglish = currentTarget == 'en';
-      final targetLocaleId = isEnglish ? 'en_GB' : 'de_DE';
+      String targetLocaleId = isEnglish ? 'en_GB' : 'de-DE';
+
+      // Dynamically resolve the best available locale from the speech engine
+      // so switching between English ↔ German always picks the correct installed pack
+      try {
+        final locales = await _speech!.locales();
+        if (isEnglish) {
+          final gbMatch = locales
+              .where((l) =>
+                  l.localeId.toLowerCase().contains('en_gb') ||
+                  l.localeId.toLowerCase().contains('en-gb'))
+              .firstOrNull;
+          final anyEn = locales
+              .where((l) => l.localeId.toLowerCase().startsWith('en'))
+              .firstOrNull;
+          if (gbMatch != null) {
+            targetLocaleId = gbMatch.localeId;
+          } else if (anyEn != null) {
+            targetLocaleId = anyEn.localeId;
+          }
+        } else {
+          final deMatch = locales
+              .where((l) => l.localeId.toLowerCase().startsWith('de'))
+              .firstOrNull;
+          if (deMatch != null) {
+            targetLocaleId = deMatch.localeId;
+          }
+        }
+        debugPrint(
+            '🗣️ [Karaoke Speech] Using target locale: $targetLocaleId (isEnglish: $isEnglish)');
+      } catch (e) {
+        debugPrint('⚠️ [Karaoke Speech] Error querying locales: $e');
+      }
 
       await _speech!.listen(
         listenOptions: stt.SpeechListenOptions(
