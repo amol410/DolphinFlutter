@@ -2,13 +2,13 @@ class AppConstants {
   AppConstants._();
 
   static const String appName = 'LingoDolphy';
-  static const String appVersion = '1.2.12';
+  static const String appVersion = '1.3.3';
   static const String tokenKey = 'auth_token';
   static const String userDataKey = 'user_data';
   static const String apiBaseUrlKey = 'api_base_url';
 
   // Version & Update Control
-  static const int currentBuildNumber = 18;
+  static const int currentBuildNumber = 19;
   static const String versionCheckUrl = 'https://dolphincoder.com/app_version.json';
   static const String playStoreUrl = 'https://play.google.com/store/apps/details?id=com.dolphincoder.lms';
 
