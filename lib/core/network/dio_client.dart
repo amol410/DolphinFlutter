@@ -117,10 +117,24 @@ class DioClient {
       if (response != null) {
         final data = response.data;
         String message = 'Request failed';
-        if (data is Map && data['message'] != null) {
-          message = data['message'].toString();
+        bool requireVerification = false;
+        if (data is Map) {
+          if (data['message'] != null) {
+            message = data['message'].toString();
+          }
+          if (data['requireVerification'] == true) {
+            requireVerification = true;
+          }
         }
-        return ApiException(message: message, statusCode: response.statusCode);
+        if (response.statusCode == 403 &&
+            (requireVerification || message.toLowerCase().contains('verif'))) {
+          requireVerification = true;
+        }
+        return ApiException(
+          message: message,
+          statusCode: response.statusCode,
+          requireVerification: requireVerification,
+        );
       }
       if (e.type == DioExceptionType.connectionTimeout ||
           e.type == DioExceptionType.receiveTimeout ||

@@ -5,6 +5,7 @@ import '../../features/auth/screens/splash_screen.dart';
 import '../../features/auth/screens/onboarding_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/auth/screens/register_screen.dart';
+import '../../features/auth/screens/verify_email_screen.dart';
 import '../../features/auth/screens/language_selection_screen.dart';
 import '../../features/gamification/screens/archipelago_map_screen.dart';
 import '../../features/gamification/screens/lesson_session_screen.dart';
@@ -44,7 +45,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final isAuth = token != null;
       final loc = state.matchedLocation;
 
-      final publicRoutes = ['/', '/onboarding', '/login', '/register'];
+      final publicRoutes = ['/', '/onboarding', '/login', '/register', '/verify-email'];
       if (!isAuth && !publicRoutes.contains(loc)) return '/login';
       return null;
     },
@@ -53,6 +54,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/onboarding', builder: (_, __) => const OnboardingScreen()),
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
+      GoRoute(
+        path: '/verify-email',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          final email = extra?['email'] as String? ?? state.uri.queryParameters['email'] ?? '';
+          final name = extra?['name'] as String? ?? state.uri.queryParameters['name'];
+          return VerifyEmailScreen(email: email, userName: name);
+        },
+      ),
       GoRoute(path: '/language-select', builder: (_, __) => const LanguageSelectionScreen()),
       GoRoute(
         path: '/lesson/:index',

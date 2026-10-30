@@ -36,20 +36,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
+    final email = _emailController.text.trim();
     try {
-      await ref.read(authProvider.notifier).login(
-        _emailController.text.trim(),
+      final res = await ref.read(authProvider.notifier).login(
+        email,
         _passwordController.text,
       );
-      if (mounted) context.go('/language-select');
+      if (res['requireVerification'] == true) {
+        if (mounted) {
+          context.push('/verify-email', extra: {'email': email});
+        }
+      } else {
+        if (mounted) context.go('/language-select');
+      }
     } on ApiException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        if (e.requireVerification) {
+          context.push('/verify-email', extra: {'email': email});
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e.message),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

@@ -15,6 +15,8 @@ import 'package:dolphincoder/features/auth/data/models/user_model.dart';
 import 'package:dolphincoder/features/auth/providers/auth_provider.dart';
 import 'package:dolphincoder/features/auth/screens/login_screen.dart';
 import 'package:dolphincoder/features/auth/screens/register_screen.dart';
+import 'package:dolphincoder/features/auth/screens/verify_email_screen.dart';
+import 'package:dolphincoder/features/auth/widgets/email_verification_sheet.dart';
 import 'package:dolphincoder/features/auth/widgets/forgot_password_sheet.dart';
 import 'package:dolphincoder/features/auth/widgets/tactile_google_button.dart';
 
@@ -281,6 +283,90 @@ void main() {
       final result = await repo.signInWithGoogle();
       expect(result, isNull);
     });
+
+    test('register with requireVerification returns verification payload without token', () async {
+      final dio = await DioClient.getInstance();
+      dio.httpClientAdapter = MockAuthAdapter((options) async {
+        return ResponseBody.fromString(
+          jsonEncode({
+            'success': true,
+            'requireVerification': true,
+            'message': 'Please verify your email with the 6-digit OTP code sent.',
+          }),
+          200,
+          headers: {
+            Headers.contentTypeHeader: [Headers.jsonContentType],
+          },
+        );
+      });
+
+      final repo = AuthRepository();
+      final res = await repo.register('New User', 'newuser@dolphincoder.com', 'Secret123');
+
+      expect(res['requireVerification'], isTrue);
+      expect(res['email'], equals('newuser@dolphincoder.com'));
+      final token = await repo.getToken();
+      expect(token, isNull);
+    });
+
+    test('verifyRegistrationOtp calls endpoint, saves token & user session', () async {
+      RequestOptions? recordedOptions;
+      final dio = await DioClient.getInstance();
+      dio.httpClientAdapter = MockAuthAdapter((options) async {
+        recordedOptions = options;
+        return ResponseBody.fromString(
+          jsonEncode({
+            'success': true,
+            'token': 'verified_reg_jwt_777',
+            'user': {
+              '_id': 'user_verified_1',
+              'name': 'Verified Dolphin',
+              'email': 'verified@dolphincoder.com',
+              'role': 'student',
+            },
+          }),
+          200,
+          headers: {
+            Headers.contentTypeHeader: [Headers.jsonContentType],
+          },
+        );
+      });
+
+      final repo = AuthRepository();
+      final res = await repo.verifyRegistrationOtp('verified@dolphincoder.com', '123456');
+
+      expect(recordedOptions, isNotNull);
+      expect(recordedOptions!.path, equals(ApiConstants.verifyRegistrationOtp));
+      expect(recordedOptions!.data, equals({'email': 'verified@dolphincoder.com', 'otp': '123456'}));
+
+      expect(res['token'], equals('verified_reg_jwt_777'));
+      expect((res['user'] as UserModel).name, equals('Verified Dolphin'));
+
+      final token = await repo.getToken();
+      expect(token, equals('verified_reg_jwt_777'));
+    });
+
+    test('resendRegistrationOtp calls endpoint with email', () async {
+      RequestOptions? recordedOptions;
+      final dio = await DioClient.getInstance();
+      dio.httpClientAdapter = MockAuthAdapter((options) async {
+        recordedOptions = options;
+        return ResponseBody.fromString(
+          jsonEncode({'success': true, 'message': 'New OTP sent'}),
+          200,
+          headers: {
+            Headers.contentTypeHeader: [Headers.jsonContentType],
+          },
+        );
+      });
+
+      final repo = AuthRepository();
+      await repo.resendRegistrationOtp('resend@dolphincoder.com');
+
+      expect(recordedOptions, isNotNull);
+      expect(recordedOptions!.path, equals(ApiConstants.resendRegistrationOtp));
+      expect(recordedOptions!.data, equals({'email': 'resend@dolphincoder.com'}));
+    });
   });
 
   group('AuthController / AuthNotifier State Provider Tests', () {
@@ -353,6 +439,56 @@ void main() {
       expect(controller.state.error, isNull);
 
       await controller.resetPassword('ocean@learn.com', '123456', 'MyNewPassword#1');
+      expect(controller.state.isLoading, isFalse);
+      expect(controller.state.error, isNull);
+    });
+
+    test('verifyRegistrationOtp updates state with verified user', () async {
+      final dio = await DioClient.getInstance();
+      dio.httpClientAdapter = MockAuthAdapter((options) async {
+        return ResponseBody.fromString(
+          jsonEncode({
+            'success': true,
+            'token': 'verified_reg_jwt_999',
+            'user': {
+              '_id': 'user_verified_999',
+              'name': 'Verified Polyglot',
+              'email': 'verified@test.com',
+              'role': 'student',
+            },
+          }),
+          200,
+          headers: {
+            Headers.contentTypeHeader: [Headers.jsonContentType],
+          },
+        );
+      });
+
+      final repo = AuthRepository();
+      final controller = AuthController(repo);
+
+      expect(controller.state.user, isNull);
+      await controller.verifyRegistrationOtp('verified@test.com', '654321');
+
+      expect(controller.state.isLoading, isFalse);
+      expect(controller.state.user, isNotNull);
+      expect(controller.state.user!.name, equals('Verified Polyglot'));
+    });
+
+    test('resendRegistrationOtp completes cleanly', () async {
+      final dio = await DioClient.getInstance();
+      dio.httpClientAdapter = MockAuthAdapter((options) async {
+        return ResponseBody.fromString(
+          jsonEncode({'success': true}),
+          200,
+          headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+        );
+      });
+
+      final repo = AuthRepository();
+      final controller = AuthController(repo);
+
+      await controller.resendRegistrationOtp('verified@test.com');
       expect(controller.state.isLoading, isFalse);
       expect(controller.state.error, isNull);
     });
@@ -485,6 +621,78 @@ void main() {
 
       expect(find.text('Continue with Google'), findsOneWidget);
       expect(find.text('Create Account'), findsWidgets);
+    });
+  });
+
+  group('VerifyEmailScreen Full-Page Tests', () {
+    testWidgets('renders check inbox title, email badge, edit button, and 3D button', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: MaterialApp(
+            home: VerifyEmailScreen(email: 'polyglot@dolphincoder.com'),
+          ),
+        ),
+      );
+
+      expect(find.text('Check Your Inbox'), findsOneWidget);
+      expect(find.text('polyglot@dolphincoder.com'), findsOneWidget);
+      expect(find.text('Edit'), findsOneWidget);
+      expect(find.text('VERIFY & START LEARNING 🐬'), findsOneWidget);
+    });
+
+    testWidgets('entering 6-digit OTP calls verifyRegistrationOtp', (WidgetTester tester) async {
+      RequestOptions? recordedOptions;
+      final dio = await DioClient.getInstance();
+      dio.httpClientAdapter = MockAuthAdapter((options) async {
+        recordedOptions = options;
+        return ResponseBody.fromString(
+          jsonEncode({
+            'success': true,
+            'token': 'verified_user_token',
+            'user': {
+              '_id': 'user_123',
+              'name': 'Dolphin Polyglot',
+              'email': 'polyglot@dolphincoder.com',
+              'role': 'student',
+            },
+          }),
+          200,
+          headers: {Headers.contentTypeHeader: [Headers.jsonContentType]},
+        );
+      });
+
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: MaterialApp(
+            home: VerifyEmailScreen(email: 'polyglot@dolphincoder.com'),
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField), '123456');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(recordedOptions, isNotNull);
+      expect(recordedOptions!.path, equals(ApiConstants.verifyRegistrationOtp));
+    });
+  });
+
+  group('EmailVerificationSheet Modal Tests', () {
+    testWidgets('renders Verify Your Email modal sheet', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: EmailVerificationSheet(email: 'sheet@dolphincoder.com'),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Verify Your Email'), findsOneWidget);
+      expect(find.text('sheet@dolphincoder.com'), findsOneWidget);
+      expect(find.text('VERIFY & CONTINUE'), findsOneWidget);
     });
   });
 }

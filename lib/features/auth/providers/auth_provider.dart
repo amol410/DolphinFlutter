@@ -32,22 +32,55 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (user != null) state = state.copyWith(user: user);
   }
 
-  Future<void> login(String email, String password) async {
+  Future<Map<String, dynamic>> login(String email, String password) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final result = await _repo.login(email, password);
+      if (result['requireVerification'] == true) {
+        state = state.copyWith(isLoading: false);
+        return result;
+      }
       state = state.copyWith(user: result['user'] as UserModel, isLoading: false);
+      return result;
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
       rethrow;
     }
   }
 
-  Future<void> register(String name, String email, String password) async {
+  Future<Map<String, dynamic>> register(String name, String email, String password) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final result = await _repo.register(name, email, password);
+      if (result['requireVerification'] == true) {
+        state = state.copyWith(isLoading: false);
+        return result;
+      }
       state = state.copyWith(user: result['user'] as UserModel, isLoading: false);
+      return result;
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> verifyRegistrationOtp(String email, String otp) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final result = await _repo.verifyRegistrationOtp(email, otp);
+      state = state.copyWith(user: result['user'] as UserModel, isLoading: false);
+      return result;
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+      rethrow;
+    }
+  }
+
+  Future<void> resendRegistrationOtp(String email) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      await _repo.resendRegistrationOtp(email);
+      state = state.copyWith(isLoading: false);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
       rethrow;

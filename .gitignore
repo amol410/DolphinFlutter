@@ -46,6 +46,7 @@ app.*.map.json
 android/key.properties
 *.jks
 cache_audio_tts/
+[0-9a-fA-F][0-9a-fA-F]*-[0-9a-fA-F]*-[0-9a-fA-F]*-[0-9a-fA-F]*-[0-9a-fA-F]*/
 
 # Firebase credentials and configuration
 android/app/google-services.json

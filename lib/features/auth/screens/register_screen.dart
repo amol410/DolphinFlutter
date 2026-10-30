@@ -38,18 +38,30 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
     try {
-      await ref.read(authProvider.notifier).register(
-        _nameController.text.trim(),
-        _emailController.text.trim(),
+      final res = await ref.read(authProvider.notifier).register(
+        name,
+        email,
         _passwordController.text,
       );
-      if (mounted) context.go('/language-select');
+      if (res['requireVerification'] == true) {
+        if (mounted) {
+          context.push('/verify-email', extra: {'email': email, 'name': name});
+        }
+      } else {
+        if (mounted) context.go('/language-select');
+      }
     } on ApiException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
-        );
+        if (e.requireVerification) {
+          context.push('/verify-email', extra: {'email': email, 'name': name});
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
+          );
+        }
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

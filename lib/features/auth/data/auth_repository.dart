@@ -20,10 +20,17 @@ class AuthRepository {
     try {
       final response = await dio.post(ApiConstants.login,
           data: {'email': email, 'password': password});
+      if (response.data is Map && response.data['requireVerification'] == true) {
+        return {
+          'requireVerification': true,
+          'email': email,
+          'message': response.data['message'],
+        };
+      }
       final token = response.data['token'] as String;
       final user = UserModel.fromJson(response.data['user'] as Map<String, dynamic>);
       await _saveSession(token, user);
-      return {'token': token, 'user': user};
+      return {'requireVerification': false, 'token': token, 'user': user};
     } catch (e) {
       throw DioClient.handleError(e);
     }
@@ -34,10 +41,45 @@ class AuthRepository {
     try {
       final response = await dio.post(ApiConstants.register,
           data: {'name': name, 'email': email, 'password': password});
+      if (response.data is Map && response.data['requireVerification'] == true) {
+        return {
+          'requireVerification': true,
+          'email': email,
+          'message': response.data['message'],
+        };
+      }
+      final token = response.data['token'] as String;
+      final user = UserModel.fromJson(response.data['user'] as Map<String, dynamic>);
+      await _saveSession(token, user);
+      return {'requireVerification': false, 'token': token, 'user': user};
+    } catch (e) {
+      throw DioClient.handleError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> verifyRegistrationOtp(String email, String otp) async {
+    final dio = await DioClient.getInstance();
+    try {
+      final response = await dio.post(
+        ApiConstants.verifyRegistrationOtp,
+        data: {'email': email, 'otp': otp},
+      );
       final token = response.data['token'] as String;
       final user = UserModel.fromJson(response.data['user'] as Map<String, dynamic>);
       await _saveSession(token, user);
       return {'token': token, 'user': user};
+    } catch (e) {
+      throw DioClient.handleError(e);
+    }
+  }
+
+  Future<void> resendRegistrationOtp(String email) async {
+    final dio = await DioClient.getInstance();
+    try {
+      await dio.post(
+        ApiConstants.resendRegistrationOtp,
+        data: {'email': email},
+      );
     } catch (e) {
       throw DioClient.handleError(e);
     }

@@ -14,6 +14,8 @@ class ApiConstants {
   static const String forgotPassword = '/auth/forgot-password';
   static const String verifyOtp = '/auth/verify-otp';
   static const String resetPassword = '/auth/reset-password';
+  static const String verifyRegistrationOtp = '/auth/verify-registration-otp';
+  static const String resendRegistrationOtp = '/auth/resend-registration-otp';
 
   // Content
   static const String subjects = '/subjects';
