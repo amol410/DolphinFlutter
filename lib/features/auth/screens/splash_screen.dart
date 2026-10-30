@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/network/dio_client.dart';
+import '../../../core/services/notification_service.dart';
 import '../../../core/services/tts_service.dart';
 import '../../../core/services/version_check_service.dart';
 import '../../../shared/widgets/animated_dolphin_mascot.dart';
@@ -132,6 +133,12 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       final savedTarget = prefs.getString('active_target_lang');
       if (savedTarget != null) {
         unawaited(TtsService().setLanguage(savedTarget).catchError((_) {}));
+      }
+
+      final pendingRoute = NotificationService.instance.consumePendingRoute();
+      if (pendingRoute != null && pendingRoute.isNotEmpty) {
+        context.go(pendingRoute);
+        return;
       }
 
       if (hasSelectedCourse) {

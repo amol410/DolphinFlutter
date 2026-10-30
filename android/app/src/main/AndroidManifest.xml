@@ -7,10 +7,15 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="LingoDolphy"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- Default notification channel for FCM notifications -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="dolphincoder_high_importance"/>
         <!-- Google Mobile Ads App ID (Verified Google Play Listing) -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"

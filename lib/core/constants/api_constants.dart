@@ -34,6 +34,10 @@ class ApiConstants {
   static const String gamificationLesson = '/gamification/lesson';
   static const String gamificationClaimAdReward = '/gamification/claim-ad-reward';
 
+  // Notifications
+  static const String registerFcmToken = '/notifications/register-token';
+  static const String unregisterFcmToken = '/notifications/unregister-token';
+
   static Future<String> getBaseUrl() async {
     // Ignore any cached local IPs from previous builds to prevent connection timeouts
     return defaultBaseUrl;

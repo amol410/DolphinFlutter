@@ -13,6 +13,15 @@ pluginManagement {
     repositories {
         google()
         maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
+        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+        all {
+            if (this is MavenArtifactRepository) {
+                val urlStr = url.toString()
+                if (urlStr.contains("plugins.gradle.org")) {
+                    setUrl(uri("https://maven.aliyun.com/repository/gradle-plugin"))
+                }
+            }
+        }
     }
 }
 

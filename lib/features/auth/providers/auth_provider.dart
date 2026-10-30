@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/services/notification_service.dart';
 import '../data/auth_repository.dart';
 import '../data/models/user_model.dart';
 
@@ -29,7 +31,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> _loadCachedUser() async {
     final user = await _repo.getCachedUser();
-    if (user != null) state = state.copyWith(user: user);
+    if (user != null) {
+      state = state.copyWith(user: user);
+      unawaited(NotificationService.instance.syncTokenWithBackend().catchError((_) {}));
+    }
   }
 
   Future<Map<String, dynamic>> login(String email, String password) async {
@@ -41,6 +46,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         return result;
       }
       state = state.copyWith(user: result['user'] as UserModel, isLoading: false);
+      unawaited(NotificationService.instance.syncTokenWithBackend().catchError((_) {}));
       return result;
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
@@ -69,6 +75,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final result = await _repo.verifyRegistrationOtp(email, otp);
       state = state.copyWith(user: result['user'] as UserModel, isLoading: false);
+      unawaited(NotificationService.instance.syncTokenWithBackend().catchError((_) {}));
       return result;
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
@@ -93,6 +100,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final result = await _repo.signInWithGoogle();
       if (result != null) {
         state = state.copyWith(user: result['user'] as UserModel, isLoading: false);
+        unawaited(NotificationService.instance.syncTokenWithBackend().catchError((_) {}));
       } else {
         state = state.copyWith(isLoading: false);
       }
@@ -158,6 +166,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> logout() async {
+    try {
+      await NotificationService.instance.clearTokenOnLogout();
+    } catch (_) {}
     await _repo.logout();
     state = const AuthState();
   }

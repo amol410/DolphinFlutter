@@ -86,4 +86,15 @@
 -dontwarn com.google.firebase.analytics.**
 -dontwarn com.google.firebase.crashlytics.**
 
+# -------------------------------------------------------------
+# 10. Firebase Cloud Messaging (FCM)
+# -------------------------------------------------------------
+-keep class com.google.firebase.messaging.** { *; }
+-keepclassmembers class com.google.firebase.messaging.** { *; }
+-keep class io.flutter.plugins.firebase.messaging.** { *; }
+-keepclassmembers class io.flutter.plugins.firebase.messaging.** { *; }
+-dontwarn com.google.firebase.messaging.**
+-dontwarn io.flutter.plugins.firebase.messaging.**
+
+
 
