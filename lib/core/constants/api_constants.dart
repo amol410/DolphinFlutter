@@ -1,5 +1,3 @@
-import 'package:shared_preferences/shared_preferences.dart';
-
 class ApiConstants {
   ApiConstants._();
 
@@ -12,6 +10,10 @@ class ApiConstants {
   static const String me = '/auth/me';
   static const String updateProfile = '/auth/profile';
   static const String changePassword = '/auth/password';
+  static const String googleLogin = '/auth/google-login';
+  static const String forgotPassword = '/auth/forgot-password';
+  static const String verifyOtp = '/auth/verify-otp';
+  static const String resetPassword = '/auth/reset-password';
 
   // Content
   static const String subjects = '/subjects';

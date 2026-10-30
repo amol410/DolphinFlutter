@@ -54,6 +54,54 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  Future<void> signInWithGoogle() async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final result = await _repo.signInWithGoogle();
+      if (result != null) {
+        state = state.copyWith(user: result['user'] as UserModel, isLoading: false);
+      } else {
+        state = state.copyWith(isLoading: false);
+      }
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+      rethrow;
+    }
+  }
+
+  Future<void> requestPasswordResetOtp(String email) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      await _repo.requestPasswordResetOtp(email);
+      state = state.copyWith(isLoading: false);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+      rethrow;
+    }
+  }
+
+  Future<void> verifyOtp(String email, String otp) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      await _repo.verifyOtp(email, otp);
+      state = state.copyWith(isLoading: false);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+      rethrow;
+    }
+  }
+
+  Future<void> resetPassword(String email, String otp, String newPassword) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      await _repo.resetPassword(email, otp, newPassword);
+      state = state.copyWith(isLoading: false);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+      rethrow;
+    }
+  }
+
   Future<void> updateProfile(String name, String bio) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
@@ -82,6 +130,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 }
 
+typedef AuthController = AuthNotifier;
+
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>(
   (ref) => AuthNotifier(ref.watch(authRepositoryProvider)),
 );
+
+final authControllerProvider = authProvider;

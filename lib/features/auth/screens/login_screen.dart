@@ -7,6 +7,8 @@ import '../../../core/utils/validators.dart';
 import '../../../shared/widgets/app_text_field.dart';
 import '../../../shared/widgets/gradient_button.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/forgot_password_sheet.dart';
+import '../widgets/tactile_google_button.dart';
 import '../../../core/network/api_exception.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -22,6 +24,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
+  bool _isGoogleLoading = false;
 
   @override
   void dispose() {
@@ -50,6 +53,57 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    setState(() => _isGoogleLoading = true);
+    try {
+      await ref.read(authProvider.notifier).signInWithGoogle();
+      final user = ref.read(authProvider).user;
+      if (user != null && mounted) {
+        context.go('/language-select');
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to sign in with Google: ${e.toString()}'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isGoogleLoading = false);
+    }
+  }
+
+  void _showForgotPasswordSheet() async {
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => ForgotPasswordSheet(
+        initialEmail: _emailController.text.trim(),
+      ),
+    );
+
+    if (result == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Password reset successfully! Please sign in with your new password.'),
+          backgroundColor: AppColors.success,
+        ),
+      );
     }
   }
 
@@ -83,7 +137,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ],
                       ),
                       child: Image.asset(
-                        'assets/images/mascot/dolphin_reading.png',
+                        'assets/images/mascot/dolphin_reading.webp',
                         width: 80,
                         height: 80,
                         fit: BoxFit.contain,
@@ -154,11 +208,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       Align(
                         alignment: Alignment.centerRight,
                         child: TextButton(
-                          onPressed: () {},
+                          onPressed: _showForgotPasswordSheet,
                           child: Text(
                             'Forgot Password?',
                             style: GoogleFonts.inter(
                               fontSize: 13,
+                              fontWeight: FontWeight.w600,
                               color: AppColors.primary,
                             ),
                           ),
@@ -170,7 +225,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         isLoading: _isLoading,
                         onPressed: _isLoading ? null : _login,
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Expanded(child: Divider(color: AppColors.border, thickness: 1)),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            child: Text(
+                              'OR',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                          Expanded(child: Divider(color: AppColors.border, thickness: 1)),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      TactileGoogleButton(
+                        isLoading: _isGoogleLoading,
+                        onPressed: _isGoogleLoading || _isLoading ? null : _signInWithGoogle,
+                      ),
+                      const SizedBox(height: 20),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [

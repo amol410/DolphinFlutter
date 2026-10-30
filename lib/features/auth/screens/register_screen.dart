@@ -7,6 +7,7 @@ import '../../../core/utils/validators.dart';
 import '../../../shared/widgets/app_text_field.dart';
 import '../../../shared/widgets/gradient_button.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/tactile_google_button.dart';
 import '../../../core/network/api_exception.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
@@ -23,6 +24,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
+  bool _isGoogleLoading = false;
   int _passwordStrength = 0;
 
   @override
@@ -51,6 +53,34 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    setState(() => _isGoogleLoading = true);
+    try {
+      await ref.read(authProvider.notifier).signInWithGoogle();
+      final user = ref.read(authProvider).user;
+      if (user != null && mounted) {
+        context.go('/language-select');
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to sign in with Google: ${e.toString()}'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isGoogleLoading = false);
     }
   }
 
@@ -120,7 +150,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         ],
                       ),
                       child: Image.asset(
-                        'assets/images/mascot/dolphin_reading.png',
+                        'assets/images/mascot/dolphin_reading.webp',
                         width: 80,
                         height: 80,
                         fit: BoxFit.contain,
@@ -199,7 +229,30 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         isLoading: _isLoading,
                         onPressed: _isLoading ? null : _register,
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Expanded(child: Divider(color: AppColors.border, thickness: 1)),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            child: Text(
+                              'OR',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                          Expanded(child: Divider(color: AppColors.border, thickness: 1)),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      TactileGoogleButton(
+                        isLoading: _isGoogleLoading,
+                        onPressed: _isGoogleLoading || _isLoading ? null : _signInWithGoogle,
+                      ),
+                      const SizedBox(height: 20),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [

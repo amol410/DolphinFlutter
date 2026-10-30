@@ -32,10 +32,12 @@ import '../../features/profile/screens/change_password_screen.dart';
 import '../../features/profile/screens/settings_screen.dart';
 import '../../shared/widgets/bottom_nav.dart';
 import '../constants/app_constants.dart';
+import '../services/analytics_service.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/',
+    observers: [AnalyticsService().observer],
     redirect: (context, state) async {
       const storage = FlutterSecureStorage();
       final token = await storage.read(key: AppConstants.tokenKey);

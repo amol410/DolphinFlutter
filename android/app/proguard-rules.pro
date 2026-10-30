@@ -77,3 +77,13 @@
 -keep class * extends androidx.room.RoomDatabase { *; }
 -dontwarn androidx.work.**
 
+# -------------------------------------------------------------
+# 9. Firebase Analytics & Crashlytics Line Number Preservation
+# -------------------------------------------------------------
+-keepattributes SourceFile,LineNumberTable
+-keep public class * extends java.lang.Exception
+-dontwarn com.google.android.gms.measurement.**
+-dontwarn com.google.firebase.analytics.**
+-dontwarn com.google.firebase.crashlytics.**
+
+

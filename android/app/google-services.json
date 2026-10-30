@@ -1,0 +1,123 @@
+{
+  "project_info": {
+    "project_number": "954842353363",
+    "firebase_url": "https://speedup-812dc.firebaseio.com",
+    "project_id": "speedup-812dc",
+    "storage_bucket": "speedup-812dc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:954842353363:android:b684bf4906478da4328e26",
+        "android_client_info": {
+          "package_name": "com.dolphin.jetpack"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "954842353363-c1s4fdn68be0end38quegkr5am3t3tdi.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.dolphin.jetpack",
+            "certificate_hash": "66580423e3443ccccf7c11aad265353812735938"
+          }
+        },
+        {
+          "client_id": "954842353363-eff9b6nsj80s9cp85vuv675293ou5nqs.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.dolphin.jetpack",
+            "certificate_hash": "975cab29f553464edac795674c92d9df3c34a085"
+          }
+        },
+        {
+          "client_id": "954842353363-3es8j5j88oinub65ln43563atq6166r5.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDgT9jU1xKQRHnI3XoH637rTu6a62Lt-5g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "954842353363-3es8j5j88oinub65ln43563atq6166r5.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      },
+      "admob_app_id": "ca-app-pub-6038618318911032~5311453883"
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:954842353363:android:f55a2da7ef17e5fd328e26",
+        "android_client_info": {
+          "package_name": "com.dolphincoder.lms"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "954842353363-3es8j5j88oinub65ln43563atq6166r5.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDgT9jU1xKQRHnI3XoH637rTu6a62Lt-5g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "954842353363-3es8j5j88oinub65ln43563atq6166r5.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:954842353363:android:e6633177febbaa89328e26",
+        "android_client_info": {
+          "package_name": "com.novumlogic.jetlist"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "954842353363-um4mt31ip2g3c3ld4k7nrrmbe6gcn2t0.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.novumlogic.jetlist",
+            "certificate_hash": "975cab29f553464edac795674c92d9df3c34a085"
+          }
+        },
+        {
+          "client_id": "954842353363-3es8j5j88oinub65ln43563atq6166r5.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDgT9jU1xKQRHnI3XoH637rTu6a62Lt-5g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "954842353363-3es8j5j88oinub65ln43563atq6166r5.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

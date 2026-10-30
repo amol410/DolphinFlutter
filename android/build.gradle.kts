@@ -1,7 +1,15 @@
 allprojects {
     repositories {
         google()
-        mavenCentral()
+        maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
+        all {
+            if (this is MavenArtifactRepository) {
+                val urlStr = url.toString()
+                if (urlStr.contains("repo.maven.apache.org") || urlStr.contains("repo1.maven.org") || urlStr.contains("plugins.gradle.org")) {
+                    setUrl(uri("https://maven-central.storage-download.googleapis.com/maven2/"))
+                }
+            }
+        }
     }
 }
 

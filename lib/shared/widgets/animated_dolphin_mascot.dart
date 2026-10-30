@@ -114,25 +114,25 @@ class _AnimatedDolphinMascotState extends State<AnimatedDolphinMascot>
   String get _assetPath {
     switch (_effectivePose) {
       case MascotPose.jump:
-        return 'assets/images/mascot/dolphin_jump.png';
+        return 'assets/images/mascot/dolphin_jump.webp';
       case MascotPose.reading:
-        return 'assets/images/mascot/dolphin_reading.png';
+        return 'assets/images/mascot/dolphin_reading.webp';
       case MascotPose.waving:
-        return 'assets/images/mascot/dolphin_waving.png';
+        return 'assets/images/mascot/dolphin_waving.webp';
       case MascotPose.graduation:
-        return 'assets/images/mascot/dolphin_graduation.png';
+        return 'assets/images/mascot/dolphin_graduation.webp';
       case MascotPose.thinking:
-        return 'assets/images/mascot/dolphin_thinking.png';
+        return 'assets/images/mascot/dolphin_thinking.webp';
       case MascotPose.celebrate:
-        return 'assets/images/mascot/dolphin_celebrate.png';
+        return 'assets/images/mascot/dolphin_celebrate.webp';
       case MascotPose.letters:
-        return 'assets/images/mascot/dolphin_letters.png';
+        return 'assets/images/mascot/dolphin_letters.webp';
       case MascotPose.flag:
-        return 'assets/images/mascot/dolphin_flag.png';
+        return 'assets/images/mascot/dolphin_flag.webp';
       case MascotPose.headphones:
-        return 'assets/images/mascot/dolphin_headphones.png';
+        return 'assets/images/mascot/dolphin_headphones.webp';
       case MascotPose.backpack:
-        return 'assets/images/mascot/dolphin_backpack.png';
+        return 'assets/images/mascot/dolphin_backpack.webp';
     }
   }
 

@@ -2,7 +2,7 @@ class AppConstants {
   AppConstants._();
 
   static const String appName = 'LingoDolphy';
-  static const String appVersion = '1.3.4';
+  static const String appVersion = '1.3.5';
   static const String tokenKey = 'auth_token';
   static const String userDataKey = 'user_data';
   static const String apiBaseUrlKey = 'api_base_url';

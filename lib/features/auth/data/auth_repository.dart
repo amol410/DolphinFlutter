@@ -1,4 +1,5 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/network/dio_client.dart';
 import '../../../../core/constants/api_constants.dart';
@@ -7,6 +8,12 @@ import 'models/user_model.dart';
 
 class AuthRepository {
   static const _storage = FlutterSecureStorage();
+  final GoogleSignIn _googleSignIn;
+
+  AuthRepository({GoogleSignIn? googleSignIn})
+      : _googleSignIn = googleSignIn ?? GoogleSignIn(scopes: ['email', 'profile']);
+
+  GoogleSignIn get googleSignIn => _googleSignIn;
 
   Future<Map<String, dynamic>> login(String email, String password) async {
     final dio = await DioClient.getInstance();
@@ -31,6 +38,70 @@ class AuthRepository {
       final user = UserModel.fromJson(response.data['user'] as Map<String, dynamic>);
       await _saveSession(token, user);
       return {'token': token, 'user': user};
+    } catch (e) {
+      throw DioClient.handleError(e);
+    }
+  }
+
+  Future<Map<String, dynamic>?> signInWithGoogle() async {
+    try {
+      final account = await _googleSignIn.signIn();
+      if (account == null) {
+        return null;
+      }
+      final auth = await account.authentication;
+      final dio = await DioClient.getInstance();
+      final response = await dio.post(
+        ApiConstants.googleLogin,
+        data: {
+          'idToken': auth.idToken,
+          'accessToken': auth.accessToken,
+          'token': auth.idToken,
+          'email': account.email,
+          'name': account.displayName,
+          'avatar': account.photoUrl,
+          'photoUrl': account.photoUrl,
+        },
+      );
+      final token = response.data['token'] as String;
+      final user = UserModel.fromJson(response.data['user'] as Map<String, dynamic>);
+      await _saveSession(token, user);
+      return {'token': token, 'user': user};
+    } catch (e) {
+      throw DioClient.handleError(e);
+    }
+  }
+
+  Future<void> requestPasswordResetOtp(String email) async {
+    final dio = await DioClient.getInstance();
+    try {
+      await dio.post(ApiConstants.forgotPassword, data: {'email': email});
+    } catch (e) {
+      throw DioClient.handleError(e);
+    }
+  }
+
+  Future<void> verifyOtp(String email, String otp) async {
+    final dio = await DioClient.getInstance();
+    try {
+      await dio.post(ApiConstants.verifyOtp, data: {'email': email, 'otp': otp});
+    } catch (e) {
+      throw DioClient.handleError(e);
+    }
+  }
+
+  Future<void> resetPassword(String email, String otp, String newPassword) async {
+    final dio = await DioClient.getInstance();
+    try {
+      await dio.post(
+        ApiConstants.resetPassword,
+        data: {
+          'email': email,
+          'otp': otp,
+          'newPassword': newPassword,
+          'password': newPassword,
+        },
+      );
     } catch (e) {
       throw DioClient.handleError(e);
     }
