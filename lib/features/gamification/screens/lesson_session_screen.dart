@@ -296,7 +296,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     // Preserves native recognizer connection for upcoming speech stage (Scenario 2)
   }
 
-  Future<void> _forceReleaseSpeechRecognizer() async {
+  Future<void> _forceReleaseSpeechRecognizer({bool isDisposing = false}) async {
     _silenceTimer?.cancel();
     _silenceTimer = null;
     _confettiTimer?.cancel();
@@ -304,7 +304,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     final speechToRelease = _speech;
     _speech = null;
     _speechInitialized = false;
-    if (mounted) {
+    if (!isDisposing && mounted) {
       setState(() => _speechSessionState = SpeechSessionState.idle);
     } else {
       _speechSessionState = SpeechSessionState.idle;
@@ -330,7 +330,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     _playerCompleteSub?.cancel();
     _playerStateSub?.cancel();
     _positionSub?.cancel();
-    _forceReleaseSpeechRecognizer();
+    _forceReleaseSpeechRecognizer(isDisposing: true);
     TtsService().stop();
     _audioPlayer.stop();
     _typeWordController.dispose();
