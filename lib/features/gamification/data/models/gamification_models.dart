@@ -10,6 +10,9 @@ class GamificationStatusModel {
   final int oxygen;
   final int totalXp;
   final String currentLeague;
+  final int streakFreezeCount;
+  final bool isDoubleXpActive;
+  final String? doubleXpExpiresAt;
 
   const GamificationStatusModel({
     this.streakCount = 1,
@@ -23,6 +26,9 @@ class GamificationStatusModel {
     this.oxygen = 5,
     this.totalXp = 0,
     this.currentLeague = 'Coral Reef',
+    this.streakFreezeCount = 0,
+    this.isDoubleXpActive = false,
+    this.doubleXpExpiresAt,
   });
 
   factory GamificationStatusModel.fromJson(Map<String, dynamic> json) {
@@ -38,6 +44,9 @@ class GamificationStatusModel {
       oxygen: json['oxygen'] ?? 5,
       totalXp: json['totalXp'] ?? 0,
       currentLeague: json['currentLeague'] ?? 'Coral Reef',
+      streakFreezeCount: json['streakFreezeCount'] ?? 0,
+      isDoubleXpActive: json['isDoubleXpActive'] == true,
+      doubleXpExpiresAt: json['doubleXpExpiresAt']?.toString(),
     );
   }
 
@@ -54,6 +63,9 @@ class GamificationStatusModel {
       'oxygen': oxygen,
       'totalXp': totalXp,
       'currentLeague': currentLeague,
+      'streakFreezeCount': streakFreezeCount,
+      'isDoubleXpActive': isDoubleXpActive,
+      'doubleXpExpiresAt': doubleXpExpiresAt,
     };
   }
 
@@ -69,6 +81,9 @@ class GamificationStatusModel {
     int? oxygen,
     int? totalXp,
     String? currentLeague,
+    int? streakFreezeCount,
+    bool? isDoubleXpActive,
+    String? doubleXpExpiresAt,
   }) {
     return GamificationStatusModel(
       streakCount: streakCount ?? this.streakCount,
@@ -82,6 +97,73 @@ class GamificationStatusModel {
       oxygen: oxygen ?? this.oxygen,
       totalXp: totalXp ?? this.totalXp,
       currentLeague: currentLeague ?? this.currentLeague,
+      streakFreezeCount: streakFreezeCount ?? this.streakFreezeCount,
+      isDoubleXpActive: isDoubleXpActive ?? this.isDoubleXpActive,
+      doubleXpExpiresAt: doubleXpExpiresAt ?? this.doubleXpExpiresAt,
+    );
+  }
+}
+
+class QuestModel {
+  final int id;
+  final String title;
+  final String type; // xp, karaoke, speech, lesson
+  final int current;
+  final int target;
+  final int rewardPearls;
+  final int rewardXp;
+  final bool isCompleted;
+  final bool isClaimed;
+
+  const QuestModel({
+    required this.id,
+    required this.title,
+    required this.type,
+    required this.current,
+    required this.target,
+    required this.rewardPearls,
+    required this.rewardXp,
+    required this.isCompleted,
+    required this.isClaimed,
+  });
+
+  factory QuestModel.fromJson(Map<String, dynamic> json) {
+    return QuestModel(
+      id: json['id'] is int ? json['id'] : int.tryParse(json['id'].toString()) ?? 0,
+      title: json['title']?.toString() ?? '',
+      type: json['type']?.toString() ?? 'xp',
+      current: json['current'] as int? ?? 0,
+      target: json['target'] as int? ?? 1,
+      rewardPearls: json['rewardPearls'] as int? ?? 15,
+      rewardXp: json['rewardXp'] as int? ?? 20,
+      isCompleted: json['isCompleted'] == true,
+      isClaimed: json['isClaimed'] == true,
+    );
+  }
+
+  double get progressPct => target <= 0 ? 1.0 : (current / target).clamp(0.0, 1.0);
+
+  QuestModel copyWith({
+    int? id,
+    String? title,
+    String? type,
+    int? current,
+    int? target,
+    int? rewardPearls,
+    int? rewardXp,
+    bool? isCompleted,
+    bool? isClaimed,
+  }) {
+    return QuestModel(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      type: type ?? this.type,
+      current: current ?? this.current,
+      target: target ?? this.target,
+      rewardPearls: rewardPearls ?? this.rewardPearls,
+      rewardXp: rewardXp ?? this.rewardXp,
+      isCompleted: isCompleted ?? this.isCompleted,
+      isClaimed: isClaimed ?? this.isClaimed,
     );
   }
 }

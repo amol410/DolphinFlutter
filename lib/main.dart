@@ -13,10 +13,17 @@ void main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  // Asynchronously pre-initialize Firebase Analytics & Crashlytics, Notifications, TTS, and AdMob
-  await AnalyticsService().init();
-  await NotificationService().init();
-  TtsService().init();
-  AdService().init();
+
+  // Sub-second cold startup: render app UI immediately on frame 1 (< 400ms)
   runApp(const ProviderScope(child: DolphinCoderApp()));
+
+  // Defer non-critical background services (Analytics, Notifications, TTS, AdMob) to post-render
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    Future.microtask(() async {
+      await AnalyticsService().init();
+      await NotificationService().init();
+      TtsService().init();
+      AdService().init();
+    });
+  });
 }

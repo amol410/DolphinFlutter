@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/network/dio_client.dart';
 import '../../../../core/constants/api_constants.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/services/cache_service.dart';
 import 'models/user_model.dart';
 
 class AuthRepository {
@@ -185,6 +186,8 @@ class AuthRepository {
 
   Future<void> logout() async {
     DioClient.clearToken();
+    await CacheService().clearActiveUserCache();
+    await CacheService().setActiveUser(null);
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(AppConstants.userDataKey);
     DioClient.reset();
@@ -201,11 +204,14 @@ class AuthRepository {
     final prefs = await SharedPreferences.getInstance();
     final json = prefs.getString(AppConstants.userDataKey);
     if (json == null) return null;
-    return UserModel.fromJsonString(json);
+    final user = UserModel.fromJsonString(json);
+    await CacheService().setActiveUser(user.id);
+    return user;
   }
 
   Future<void> _saveSession(String token, UserModel user) async {
     DioClient.setToken(token);
+    await CacheService().setActiveUser(user.id);
     await _storage.write(key: AppConstants.tokenKey, value: token);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(AppConstants.userDataKey, user.toJsonString());

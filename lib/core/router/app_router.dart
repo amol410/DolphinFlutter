@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../network/dio_client.dart';
+import '../../features/auth/providers/auth_provider.dart';
 import '../../features/auth/screens/splash_screen.dart';
 import '../../features/auth/screens/onboarding_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
@@ -46,9 +47,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     initialLocation: '/',
     observers: [AnalyticsService().observer],
     redirect: (context, state) async {
-      const storage = FlutterSecureStorage();
-      final token = await storage.read(key: AppConstants.tokenKey);
-      final isAuth = token != null;
+      // High-performance in-memory authentication check (avoids native secure storage disk read on every route)
+      final authState = ref.read(authProvider);
+      final isAuth = authState.user != null || (DioClient.cachedToken != null && DioClient.cachedToken!.isNotEmpty);
       final loc = state.matchedLocation;
 
       final publicRoutes = ['/', '/onboarding', '/login', '/register', '/verify-email'];

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
@@ -163,10 +164,18 @@ class AdService {
 
   /// Show the rewarded ad to the learner
   void showRewardedAd({
+    required String userId,
+    required String rewardType,
+    String? attemptId,
     required Function() onUserEarnedReward,
     Function(String message)? onAdDismissed,
     Function(String error)? onAdFailed,
   }) {
+    if (userId.isEmpty) {
+      onAdFailed?.call('Please sign in again before claiming a reward.');
+      return;
+    }
+
     if (!adsEnabled) {
       debugPrint('AdService: Ads disabled for this test APK — reward granted directly.');
       onUserEarnedReward();
@@ -203,6 +212,15 @@ class AdService {
       },
     );
 
+    _rewardedAd!.setServerSideOptions(
+      ServerSideVerificationOptions(
+        userId: userId,
+        customData: jsonEncode({
+          'rewardType': rewardType,
+          if (attemptId != null) 'attemptId': attemptId,
+        }),
+      ),
+    );
     _rewardedAd!.setImmersiveMode(true);
     _rewardedAd!.show(
       onUserEarnedReward: (AdWithoutView ad, RewardItem reward) async {

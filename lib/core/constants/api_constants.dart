@@ -30,6 +30,11 @@ class ApiConstants {
   static const String gamificationCompleteNode = '/gamification/complete-node';
   static const String gamificationLeaderboard = '/gamification/leaderboard';
   static const String gamificationRefillOxygen = '/gamification/shop/refill-oxygen';
+  static const String gamificationDeductOxygen = '/gamification/deduct-oxygen';
+  static const String gamificationBuyStreakFreeze = '/gamification/shop/buy-streak-freeze';
+  static const String gamificationBuyDoubleXp = '/gamification/shop/buy-double-xp';
+  static const String gamificationQuests = '/gamification/quests';
+  static const String gamificationClaimQuest = '/gamification/claim-quest';
   static const String gamificationSwitchCourse = '/gamification/switch-course';
   static const String gamificationLesson = '/gamification/lesson';
   static const String gamificationClaimAdReward = '/gamification/claim-ad-reward';

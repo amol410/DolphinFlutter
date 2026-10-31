@@ -152,30 +152,43 @@ class GamifiedProfileScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
 
-            // Achievement Cards
-            _buildAchievement(
-              icon: '🔥',
-              title: 'Wildfire',
-              description: 'Reach an 8-day learning streak',
-              progress: streak >= 8 ? 1.0 : (streak / 8.0),
-              status: '$streak / 8',
-              isCompleted: streak >= 8,
-            ),
-            _buildAchievement(
-              icon: '🗣️',
-              title: 'Sprechen Master',
-              description: 'Speak 50 German sentences with >80% accuracy',
-              progress: 0.60,
-              status: '30 / 50',
-              isCompleted: false,
-            ),
-            _buildAchievement(
-              icon: '🎓',
-              title: 'Scholar',
-              description: 'Complete Unit 1 Coral Reef Island',
-              progress: 0.85,
-              status: '6 / 7',
-              isCompleted: false,
+            // Achievement Cards (Dynamically computed from live progress)
+            Builder(
+              builder: (context) {
+                final nodes = ref.watch(pathNodesProvider).value ?? [];
+                final completedNodes = nodes.where((n) => n.status == 'completed').length;
+                final totalNodes = nodes.isNotEmpty ? nodes.length : 7;
+                final targetXp = 200;
+
+                return Column(
+                  children: [
+                    _buildAchievement(
+                      icon: '🔥',
+                      title: 'Wildfire',
+                      description: 'Reach an 8-day learning streak',
+                      progress: streak >= 8 ? 1.0 : (streak / 8.0),
+                      status: '$streak / 8',
+                      isCompleted: streak >= 8,
+                    ),
+                    _buildAchievement(
+                      icon: '⚡',
+                      title: 'XP Champion',
+                      description: 'Earn 200 total XP across lessons & quizzes',
+                      progress: (totalXp / targetXp).clamp(0.0, 1.0),
+                      status: '$totalXp / $targetXp',
+                      isCompleted: totalXp >= targetXp,
+                    ),
+                    _buildAchievement(
+                      icon: '🎓',
+                      title: 'Scholar',
+                      description: 'Complete Archipelago Island course lessons',
+                      progress: totalNodes > 0 ? (completedNodes / totalNodes).clamp(0.0, 1.0) : 0,
+                      status: '$completedNodes / $totalNodes',
+                      isCompleted: completedNodes >= totalNodes && totalNodes > 0,
+                    ),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 20),
 

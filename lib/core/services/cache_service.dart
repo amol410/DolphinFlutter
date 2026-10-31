@@ -14,12 +14,12 @@ class CacheService {
   factory CacheService() => _instance;
   CacheService._internal();
 
-  static const String _prefixPath = 'cached_path_';
-  static const String _keyStatus = 'cached_user_status';
-  static const String _prefixLesson = 'cached_lesson_';
-  static const String _keyOfflineQueue = 'cached_offline_completions';
-
   SharedPreferences? _prefs;
+  Directory? _audioCacheDir;
+  String? _activeUserId;
+  bool _legacyCleanupDone = false;
+
+  String? get activeUserId => _activeUserId;
 
   @visibleForTesting
   void setAudioCacheDir(Directory dir) {
@@ -30,6 +30,27 @@ class CacheService {
   void reset() {
     _prefs = null;
     _audioCacheDir = null;
+    _activeUserId = null;
+    _legacyCleanupDone = false;
+  }
+
+  Future<void> setActiveUser(String? userId) async {
+    if (_activeUserId != userId) {
+      _audioCacheDir = null;
+    }
+    _activeUserId = userId;
+    if (userId == null || _legacyCleanupDone) return;
+
+    final prefs = await _getPrefs();
+    final legacyKeys = prefs.getKeys().where((key) =>
+        key == 'cached_user_status' ||
+        key == 'cached_offline_completions' ||
+        key.startsWith('cached_path_') ||
+        key.startsWith('cached_lesson_'));
+    for (final key in legacyKeys) {
+      await prefs.remove(key);
+    }
+    _legacyCleanupDone = true;
   }
 
   Future<SharedPreferences> _getPrefs() async {
@@ -37,12 +58,22 @@ class CacheService {
     return _prefs!;
   }
 
+  String get _userPrefix {
+    final userId = _activeUserId;
+    if (userId == null || userId.isEmpty) {
+      throw StateError('An active user is required for gamification cache access');
+    }
+    return 'dolphin_u_${Uri.encodeComponent(userId)}_';
+  }
+
+  String _scopedKey(String suffix) => '$_userPrefix$suffix';
+
   // ==========================================
   // 1. COURSE PATH CACHING (Stale-While-Revalidate)
   // ==========================================
 
   String _formatCourseKey(String targetLang, String nativeLang, String level) {
-    return '$_prefixPath${targetLang.toLowerCase()}_${nativeLang.toLowerCase()}_${level.toLowerCase()}';
+    return _scopedKey('path_${targetLang.toLowerCase()}_${nativeLang.toLowerCase()}_${level.toLowerCase()}');
   }
 
   static String _encodePathNodesToJson(List<PathNodeModel> nodes) {
@@ -107,7 +138,7 @@ class CacheService {
   Future<void> saveStatus(GamificationStatusModel status) async {
     try {
       final prefs = await _getPrefs();
-      await prefs.setString(_keyStatus, jsonEncode(status.toJson()));
+      await prefs.setString(_scopedKey('status'), jsonEncode(status.toJson()));
     } catch (e) {
       debugPrint('⚠️ [CacheService] saveStatus error: $e');
     }
@@ -116,7 +147,7 @@ class CacheService {
   Future<GamificationStatusModel?> getCachedStatus() async {
     try {
       final prefs = await _getPrefs();
-      final jsonStr = prefs.getString(_keyStatus);
+      final jsonStr = prefs.getString(_scopedKey('status'));
       if (jsonStr == null || jsonStr.isEmpty) return null;
 
       final dynamic decoded = jsonDecode(jsonStr);
@@ -137,7 +168,7 @@ class CacheService {
     if (lessonId == null) return;
     try {
       final prefs = await _getPrefs();
-      await prefs.setString('$_prefixLesson$lessonId', jsonEncode(lessonData));
+      await prefs.setString(_scopedKey('lesson_$lessonId'), jsonEncode(lessonData));
     } catch (e) {
       debugPrint('⚠️ [CacheService] saveLessonDetails error: $e');
     }
@@ -147,7 +178,7 @@ class CacheService {
     if (lessonId == null) return null;
     try {
       final prefs = await _getPrefs();
-      final jsonStr = prefs.getString('$_prefixLesson$lessonId');
+      final jsonStr = prefs.getString(_scopedKey('lesson_$lessonId'));
       if (jsonStr == null || jsonStr.isEmpty) return null;
 
       final dynamic decoded = jsonDecode(jsonStr);
@@ -172,7 +203,7 @@ class CacheService {
         ...payload,
         '_timestamp': DateTime.now().millisecondsSinceEpoch,
       });
-      await prefs.setString(_keyOfflineQueue, jsonEncode(currentQueue));
+      await prefs.setString(_scopedKey('offline_completions'), jsonEncode(currentQueue));
       debugPrint('📦 [CacheService] Queued offline completion. Total in queue: ${currentQueue.length}');
     } catch (e) {
       debugPrint('⚠️ [CacheService] queueOfflineCompletion error: $e');
@@ -182,7 +213,7 @@ class CacheService {
   Future<List<Map<String, dynamic>>> getPendingOfflineCompletions() async {
     try {
       final prefs = await _getPrefs();
-      final jsonStr = prefs.getString(_keyOfflineQueue);
+      final jsonStr = prefs.getString(_scopedKey('offline_completions'));
       if (jsonStr == null || jsonStr.isEmpty) return [];
 
       final dynamic decoded = jsonDecode(jsonStr);
@@ -195,25 +226,58 @@ class CacheService {
     return [];
   }
 
+  Future<void> removeOfflineCompletion(String attemptId) async {
+    try {
+      final prefs = await _getPrefs();
+      final currentQueue = await getPendingOfflineCompletions();
+      final remaining = currentQueue.where((item) => item['attemptId'] != attemptId).toList();
+      if (remaining.isEmpty) {
+        await prefs.remove(_scopedKey('offline_completions'));
+      } else {
+        await prefs.setString(_scopedKey('offline_completions'), jsonEncode(remaining));
+      }
+    } catch (e) {
+      debugPrint('⚠️ [CacheService] removeOfflineCompletion error: $e');
+    }
+  }
+
   Future<void> clearPendingOfflineCompletions() async {
     try {
       final prefs = await _getPrefs();
-      await prefs.remove(_keyOfflineQueue);
+      await prefs.remove(_scopedKey('offline_completions'));
     } catch (e) {
       debugPrint('⚠️ [CacheService] clearPendingOfflineCompletions error: $e');
     }
   }
 
+  Future<void> clearActiveUserCache() async {
+    if (_activeUserId == null) return;
+    try {
+      final prefs = await _getPrefs();
+      final prefix = _userPrefix;
+      for (final key in prefs.getKeys().where((key) => key.startsWith(prefix))) {
+        await prefs.remove(key);
+      }
+      if (_audioCacheDir != null && await _audioCacheDir!.exists()) {
+        await _audioCacheDir!.delete(recursive: true);
+        _audioCacheDir = null;
+      }
+    } catch (e) {
+      debugPrint('⚠️ [CacheService] clearActiveUserCache error: $e');
+    }
+  }
+
   // ==========================================
-  // 5. LOCAL AUDIO DISK CACHE (CacheDir.AUDIO_TTS)
+  // 5. LOCAL AUDIO DISK CACHE (Bounded LRU Eviction)
   // ==========================================
 
-  Directory? _audioCacheDir;
+  static const int maxAudioCacheBytes = 50 * 1024 * 1024; // 50 MB bounded cache limit
+  static const int maxAudioFileCount = 50; // max 50 cached audio clips
 
   Future<Directory> _getAudioCacheDir() async {
     if (_audioCacheDir != null) return _audioCacheDir!;
     final baseDir = await getApplicationSupportDirectory();
-    final audioDir = Directory('${baseDir.path}/cache_audio_tts');
+    final audioDir = Directory('${baseDir.path}/cache_audio_tts/$_userPrefix');
     if (!await audioDir.exists()) {
       await audioDir.create(recursive: true);
     }
@@ -238,6 +302,10 @@ class CacheService {
       final filename = _sanitizeUrlToFilename(url);
       final file = File('${dir.path}/$filename');
       if (await file.exists() && await file.length() > 0) {
+        // Touch file last modified date for LRU recency tracking
+        try {
+          await file.setLastModified(DateTime.now());
+        } catch (_) {}
         return file;
       }
     } catch (e) {
@@ -253,10 +321,50 @@ class CacheService {
       final filename = _sanitizeUrlToFilename(url);
       final file = File('${dir.path}/$filename');
       await file.writeAsBytes(bytes, flush: true);
+
+      // Enforce storage bounds with LRU eviction
+      await pruneAudioCacheLru();
       return file;
     } catch (e) {
       debugPrint('⚠️ [CacheService] saveAudioBytes error: $e');
       return null;
+    }
+  }
+
+  /// Prunes oldest unaccessed files when total size or file count exceeds configured thresholds
+  Future<void> pruneAudioCacheLru({
+    int maxBytes = maxAudioCacheBytes,
+    int maxFiles = maxAudioFileCount,
+  }) async {
+    try {
+      final dir = await _getAudioCacheDir();
+      if (!await dir.exists()) return;
+
+      final entities = dir.listSync().whereType<File>().toList();
+      if (entities.isEmpty) return;
+
+      // Map files to their stats and sort by last modified ascending (oldest first)
+      final filesWithStat = entities.map((f) {
+        return (file: f, stat: f.statSync());
+      }).toList();
+
+      filesWithStat.sort((a, b) => a.stat.modified.compareTo(b.stat.modified));
+
+      int totalBytes = filesWithStat.fold(0, (acc, item) => acc + item.stat.size);
+      int totalFiles = filesWithStat.length;
+
+      for (final item in filesWithStat) {
+        if (totalBytes <= maxBytes && totalFiles <= maxFiles) break;
+        try {
+          final size = item.stat.size;
+          item.file.deleteSync();
+          totalBytes -= size;
+          totalFiles -= 1;
+          debugPrint('🧹 [CacheService] LRU evicted audio cache file: ${item.file.path} ($size bytes)');
+        } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint('⚠️ [CacheService] pruneAudioCacheLru error: $e');
     }
   }
 }

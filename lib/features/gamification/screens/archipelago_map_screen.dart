@@ -690,23 +690,27 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
     }
 
     if (node.type == 'chest') {
-      ref.read(pathNodesProvider.notifier).completeNode(
-        node.index,
-        stars: 3,
-        scorePct: 100,
-        xp: node.xpReward,
-        pearls: node.pearlsReward > 0 ? node.pearlsReward : 30,
-      ).then((_) {
+      ref.read(pathNodesProvider.notifier).completeNode(node.index).then((result) {
+        if (!context.mounted) return;
+        if (result['success'] != true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result['offlineQueued'] == true
+                  ? 'Chest saved offline. Its reward will appear after synchronization.'
+                  : 'Chest reward could not be saved. Please try again.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          return;
+        }
         final currentNodes = ref.read(pathNodesProvider).asData?.value;
-        if (currentNodes != null && mounted) {
+        if (currentNodes != null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              _scrollToActiveNode(currentNodes, animate: true);
-            }
+            if (mounted) _scrollToActiveNode(currentNodes, animate: true);
           });
         }
+        _showChestDialog(context, node);
       });
-      _showChestDialog(context, node);
       return;
     }
 

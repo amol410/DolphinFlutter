@@ -24,6 +24,7 @@ import '../../../core/services/cache_service.dart';
 import '../../../core/services/prefetch_service.dart';
 import '../../../core/services/ad_service.dart';
 import '../../../core/services/sound_effects_service.dart';
+import '../../auth/providers/auth_provider.dart';
 
 /// Interactive Lesson Session Screen
 /// Multi-stage interactive tasks based on Basics & Greetings and backend notes.
@@ -79,13 +80,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     return baseXp + bonus;
   }
 
-  int get _earnedPearls {
-    return _calculatedAccuracy == 100 ? 1 : 0;
-  }
-
   // Rewarded Ad Bonus XP state
   bool _hasClaimedDoubleXp = false;
   bool _isLoadingDoubleXpAd = false;
+  String? _completionAttemptId;
 
   late final AudioPlayer _audioPlayer;
   StreamSubscription? _playerCompleteSub;
@@ -1319,25 +1317,18 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       }
 
       if (!available) {
-        debugPrint(
-            '⚠️ Speech recognition unavailable; fallback test simulation');
-        // VERIFIED FIX #3: Must transition to listening state BEFORE setting
-        // the timer. Previously, state was still 'starting' here, so the timer's
-        // guard (_speechSessionState == listening) was always false → timer was
-        // a no-op → state stuck at 'starting' forever → mic button permanently frozen.
+        debugPrint('⚠️ Speech recognition unavailable');
+        _silenceTimer?.cancel();
         if (mounted) {
           setState(() {
-            _speechSessionState = SpeechSessionState.listening;
-            _listeningStartTime = DateTime.now();
+            _speechSessionState = SpeechSessionState.idle;
+            _spokenText = '';
+            _speechAccuracy = 0;
+            _speechPassed = null;
+            _evaluatedTokens = [];
           });
+          _showSpeechUnavailableDialog();
         }
-        _silenceTimer?.cancel();
-        _silenceTimer = Timer(const Duration(milliseconds: 1800), () {
-          if (mounted && _speechSessionState == SpeechSessionState.listening) {
-            _spokenText = _sprechenPrompt;
-            _stopListeningGracefully();
-          }
-        });
         return;
       }
 
@@ -1420,9 +1411,12 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       if (mounted) {
         setState(() {
           _speechSessionState = SpeechSessionState.idle;
-          _spokenText = _sprechenPrompt;
+          _spokenText = '';
+          _speechAccuracy = 0;
+          _speechPassed = null;
+          _evaluatedTokens = [];
         });
-        _evaluateSpeechPronunciation();
+        _showSpeechUnavailableDialog();
       }
     }
   }
@@ -1852,19 +1846,34 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     }
   }
 
-  Future<void> _finishLesson() async {
-    final xp = _earnedXp;
-    final pearls = _earnedPearls;
-    final accuracy = _calculatedAccuracy;
-
-    // Complete node on archipelago map and save gamification stats to backend
-    await ref.read(pathNodesProvider.notifier).completeNode(
+  Future<Map<String, dynamic>> _saveLessonCompletion() async {
+    final result = await ref.read(pathNodesProvider.notifier).completeNode(
       widget.nodeIndex,
-      stars: accuracy == 100 ? 3 : (accuracy >= 80 ? 2 : 1),
-      scorePct: accuracy,
-      xp: xp,
-      pearls: pearls,
+      scorePct: _calculatedAccuracy,
+      attemptId: _completionAttemptId,
     );
+    _completionAttemptId = result['attemptId']?.toString() ?? _completionAttemptId;
+    return result;
+  }
+
+  Future<void> _finishLesson() async {
+    final result = await _saveLessonCompletion();
+    if (!mounted) return;
+    if (result['offlineQueued'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Lesson saved offline. Rewards will appear after synchronization.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else if (result['success'] != true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['message']?.toString() ?? 'Progress could not be saved. Please try again.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
 
     await AdService().incrementLessonCount();
     if (!mounted) return;
@@ -5090,23 +5099,48 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     );
   }
 
-  void _claimDoubleXpReward() {
+  Future<void> _claimDoubleXpReward() async {
     setState(() => _isLoadingDoubleXpAd = true);
     final bonusXp = _earnedXp;
+    final completion = await _saveLessonCompletion();
+    if (!mounted) return;
+    if (completion['success'] != true || _completionAttemptId == null) {
+      setState(() => _isLoadingDoubleXpAd = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Synchronize this lesson before claiming double XP.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
 
+    final startingXp = ref.read(gamificationStatusProvider).value?.totalXp ?? 0;
     AdService().showRewardedAd(
+      userId: ref.read(authProvider).user?.id ?? '',
+      rewardType: 'double_xp',
+      attemptId: _completionAttemptId,
       onUserEarnedReward: () async {
+        var verified = false;
+        for (var attempt = 0; attempt < 5; attempt++) {
+          await Future.delayed(const Duration(seconds: 1));
+          await ref.read(gamificationStatusProvider.notifier).refresh();
+          if ((ref.read(gamificationStatusProvider).value?.totalXp ?? 0) >= startingXp + bonusXp) {
+            verified = true;
+            break;
+          }
+        }
         if (!mounted) return;
         setState(() {
           _isLoadingDoubleXpAd = false;
-          _hasClaimedDoubleXp = true;
+          _hasClaimedDoubleXp = verified;
         });
-        await ref.read(gamificationStatusProvider.notifier).claimAdReward('double_xp', bonusXp);
-        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('🎉 2X Double XP activated! (+$bonusXp XP bonus!)'),
-            backgroundColor: const Color(0xFF059669),
+            content: Text(verified
+                ? '🎉 Verified 2X Double XP! (+$bonusXp XP bonus!)'
+                : 'Ad completed. Double XP is still being verified; please check again shortly.'),
+            backgroundColor: verified ? const Color(0xFF059669) : null,
             behavior: SnackBarBehavior.floating,
           ),
         );

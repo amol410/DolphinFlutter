@@ -47,12 +47,59 @@ class SpeechLifecycleBridge {
   static const MethodChannel _channel =
       MethodChannel('com.dolphincoder.lms/speech_lifecycle');
 
-  static VoidCallback? _onAudioBecomingNoisy;
-  static VoidCallback? _onAudioFocusLost;
-  static VoidCallback? _onAudioFocusGained;
+  static final Set<VoidCallback> _onAudioBecomingNoisyListeners = {};
+  static final Set<VoidCallback> _onAudioFocusLostListeners = {};
+  static final Set<VoidCallback> _onAudioFocusGainedListeners = {};
   static bool _listenersInitialized = false;
   static SpeechEngineResolution? _lastResolution;
   static SpeechEngineResolution? get lastResolution => _lastResolution;
+
+  static void _ensureMethodCallHandler() {
+    if (!_listenersInitialized) {
+      _listenersInitialized = true;
+      _channel.setMethodCallHandler((call) async {
+        switch (call.method) {
+          case 'onAudioBecomingNoisy':
+            debugPrint('🎧 [SpeechLifecycleBridge] Headphone unplugged: ACTION_AUDIO_BECOMING_NOISY received');
+            for (final listener in List.of(_onAudioBecomingNoisyListeners)) {
+              try { listener(); } catch (_) {}
+            }
+            break;
+          case 'onAudioFocusLost':
+            debugPrint('🔇 [SpeechLifecycleBridge] Audio focus lost (phone call/alarm): pausing lesson audio');
+            for (final listener in List.of(_onAudioFocusLostListeners)) {
+              try { listener(); } catch (_) {}
+            }
+            break;
+          case 'onAudioFocusGained':
+            debugPrint('🔊 [SpeechLifecycleBridge] Audio focus regained');
+            for (final listener in List.of(_onAudioFocusGainedListeners)) {
+              try { listener(); } catch (_) {}
+            }
+            break;
+        }
+      });
+    }
+  }
+
+  /// Subscribes native lifecycle callbacks with automatic multicast routing and returns an unsubscribe token.
+  static VoidCallback subscribeAudioLifecycle({
+    VoidCallback? onAudioBecomingNoisy,
+    VoidCallback? onAudioFocusLost,
+    VoidCallback? onAudioFocusGained,
+  }) {
+    if (onAudioBecomingNoisy != null) _onAudioBecomingNoisyListeners.add(onAudioBecomingNoisy);
+    if (onAudioFocusLost != null) _onAudioFocusLostListeners.add(onAudioFocusLost);
+    if (onAudioFocusGained != null) _onAudioFocusGainedListeners.add(onAudioFocusGained);
+
+    _ensureMethodCallHandler();
+
+    return () {
+      if (onAudioBecomingNoisy != null) _onAudioBecomingNoisyListeners.remove(onAudioBecomingNoisy);
+      if (onAudioFocusLost != null) _onAudioFocusLostListeners.remove(onAudioFocusLost);
+      if (onAudioFocusGained != null) _onAudioFocusGainedListeners.remove(onAudioFocusGained);
+    };
+  }
 
   /// Register native lifecycle callbacks (Headphone unplug, phone call, alarm interruption)
   static void registerAudioLifecycleListeners({
@@ -60,29 +107,11 @@ class SpeechLifecycleBridge {
     VoidCallback? onAudioFocusLost,
     VoidCallback? onAudioFocusGained,
   }) {
-    _onAudioBecomingNoisy = onAudioBecomingNoisy;
-    _onAudioFocusLost = onAudioFocusLost;
-    _onAudioFocusGained = onAudioFocusGained;
-
-    if (!_listenersInitialized) {
-      _listenersInitialized = true;
-      _channel.setMethodCallHandler((call) async {
-        switch (call.method) {
-          case 'onAudioBecomingNoisy':
-            debugPrint('🎧 [SpeechLifecycleBridge] Headphone unplugged: ACTION_AUDIO_BECOMING_NOISY received');
-            _onAudioBecomingNoisy?.call();
-            break;
-          case 'onAudioFocusLost':
-            debugPrint('🔇 [SpeechLifecycleBridge] Audio focus lost (phone call/alarm): pausing lesson audio');
-            _onAudioFocusLost?.call();
-            break;
-          case 'onAudioFocusGained':
-            debugPrint('🔊 [SpeechLifecycleBridge] Audio focus regained');
-            _onAudioFocusGained?.call();
-            break;
-        }
-      });
-    }
+    subscribeAudioLifecycle(
+      onAudioBecomingNoisy: onAudioBecomingNoisy,
+      onAudioFocusLost: onAudioFocusLost,
+      onAudioFocusGained: onAudioFocusGained,
+    );
   }
 
   /// Calls native Android Activity to forcefully cancel and destroy

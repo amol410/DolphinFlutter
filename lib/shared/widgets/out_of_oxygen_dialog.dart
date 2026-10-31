@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/services/ad_service.dart';
+import '../../features/auth/providers/auth_provider.dart';
 import '../../features/gamification/providers/gamification_provider.dart';
 import 'animated_dolphin_mascot.dart';
 import 'tactile_game_button.dart';
@@ -37,24 +38,35 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
     setState(() => _isLoadingAd = true);
 
     AdService().showRewardedAd(
+      userId: ref.read(authProvider).user?.id ?? '',
+      rewardType: 'oxygen',
       onUserEarnedReward: () async {
+        for (var attempt = 0; attempt < 5; attempt++) {
+          await Future.delayed(const Duration(seconds: 1));
+          await ref.read(gamificationStatusProvider.notifier).refresh();
+          if ((ref.read(gamificationStatusProvider).value?.oxygen ?? 0) > 0) break;
+        }
         if (!mounted) return;
         setState(() => _isLoadingAd = false);
 
-        await ref.read(gamificationStatusProvider.notifier).claimAdReward('oxygen', 2);
-
-        if (!mounted) return;
-        Navigator.of(context).pop();
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('🎉 Ad reward granted! +2 Oxygen bubbles added! 🫧'),
-            backgroundColor: Color(0xFF059669),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-
-        widget.onRefilled?.call();
+        if ((ref.read(gamificationStatusProvider).value?.oxygen ?? 0) > 0) {
+          Navigator.of(context).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🎉 Verified reward: +2 Oxygen bubbles added! 🫧'),
+              backgroundColor: Color(0xFF059669),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          widget.onRefilled?.call();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Ad completed. Your reward is still being verified; please check again shortly.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
       },
       onAdFailed: (error) {
         if (!mounted) return;

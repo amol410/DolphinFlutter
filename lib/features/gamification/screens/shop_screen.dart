@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/services/ad_service.dart';
 import '../../../shared/widgets/animated_dolphin_mascot.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../providers/gamification_provider.dart';
 
 class ShopScreen extends ConsumerWidget {
@@ -11,8 +12,9 @@ class ShopScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final statusAsync = ref.watch(gamificationStatusProvider);
-    final pearls = statusAsync.value?.pearls ?? 100;
-    final oxygen = statusAsync.value?.oxygen ?? 5;
+    final status = statusAsync.value;
+    final pearls = status?.pearls ?? 100;
+    final oxygen = status?.oxygen ?? 5;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -132,13 +134,15 @@ class ShopScreen extends ConsumerWidget {
                   shadowColor: const Color(0xFF059669),
                   onWatch: () {
                     AdService().showRewardedAd(
+                      userId: ref.read(authProvider).user?.id ?? '',
+                      rewardType: 'oxygen',
                       onUserEarnedReward: () async {
-                        await ref.read(gamificationStatusProvider.notifier).claimAdReward('oxygen', 2);
+                        await Future.delayed(const Duration(seconds: 2));
+                        await ref.read(gamificationStatusProvider.notifier).refresh();
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('🎉 Ad reward granted! +2 Oxygen bubbles added! 🫧'),
-                              backgroundColor: Color(0xFF059669),
+                              content: Text('Ad completed. Oxygen will be added after AdMob verification.'),
                               behavior: SnackBarBehavior.floating,
                             ),
                           );
@@ -170,13 +174,15 @@ class ShopScreen extends ConsumerWidget {
               shadowColor: const Color(0xFF0369A1),
               onWatch: () {
                 AdService().showRewardedAd(
-                  onUserEarnedReward: () {
-                    ref.read(gamificationStatusProvider.notifier).optimisticAddRewards(0, 25);
+                  userId: ref.read(authProvider).user?.id ?? '',
+                  rewardType: 'pearls',
+                  onUserEarnedReward: () async {
+                    await Future.delayed(const Duration(seconds: 2));
+                    await ref.read(gamificationStatusProvider.notifier).refresh();
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('🎉 Claimed +25 Free Pearls! 💎'),
-                          backgroundColor: Color(0xFF059669),
+                          content: Text('Ad completed. Pearls will be added after AdMob verification.'),
                           behavior: SnackBarBehavior.floating,
                         ),
                       );
@@ -241,14 +247,22 @@ class ShopScreen extends ConsumerWidget {
               context,
               icon: '🧊',
               title: 'Streak Freeze',
-              subtitle: 'Protects your streak if you miss a day of practice',
+              subtitle: (status?.streakFreezeCount ?? 0) > 0
+                  ? 'Active protection equipped (${status?.streakFreezeCount} available) — protects your streak if you miss a day'
+                  : 'Protects your streak if you miss a day of practice',
               cost: 100,
               canAfford: pearls >= 100,
-              buttonText: 'GET',
-              onBuy: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Streak freeze active! 🔥'), behavior: SnackBarBehavior.floating),
-                );
+              buttonText: (status?.streakFreezeCount ?? 0) > 0 ? 'BUY MORE' : 'GET',
+              onBuy: () async {
+                final res = await ref.read(gamificationStatusProvider.notifier).buyStreakFreeze();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(res['message']?.toString() ?? 'Streak freeze active! 🔥'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
               },
             ),
 
@@ -257,14 +271,31 @@ class ShopScreen extends ConsumerWidget {
               context,
               icon: '⚡',
               title: 'Double XP Potion',
-              subtitle: 'Earn 2x XP points for the next 30 minutes of study',
+              subtitle: (status?.isDoubleXpActive ?? false)
+                  ? '⚡ 2X XP Boost currently ACTIVE! Complete lessons now to earn double XP'
+                  : 'Earn 2x XP points for the next 30 minutes of study',
               cost: 150,
               canAfford: pearls >= 150,
-              buttonText: 'GET',
-              onBuy: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Double XP boost enabled! ⚡'), behavior: SnackBarBehavior.floating),
-                );
+              buttonText: (status?.isDoubleXpActive ?? false) ? 'ACTIVE' : 'GET',
+              onBuy: () async {
+                if (status?.isDoubleXpActive ?? false) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Double XP boost is already active! Go study lessons! ⚡'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
+                final res = await ref.read(gamificationStatusProvider.notifier).buyDoubleXp();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(res['message']?.toString() ?? 'Double XP boost enabled! ⚡'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
               },
             ),
           ],

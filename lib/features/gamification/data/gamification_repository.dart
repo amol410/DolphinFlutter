@@ -1,3 +1,5 @@
+import 'dart:math';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../../../../core/constants/api_constants.dart';
 import '../../../../core/network/dio_client.dart';
@@ -28,17 +30,7 @@ class GamificationRepository {
     }
 
     if (cached != null) return cached;
-
-    return const GamificationStatusModel(
-      streakCount: 1,
-      longestStreak: 1,
-      dailyTargetXp: 20,
-      targetLanguage: 'de',
-      pearls: 100,
-      oxygen: 5,
-      totalXp: 120,
-      currentLeague: 'Coral Reef',
-    );
+    throw StateError('Gamification status is unavailable');
   }
 
   static List<PathNodeModel> _parseRawNodes(dynamic rawData) {
@@ -208,22 +200,24 @@ class GamificationRepository {
     ];
   }
 
+  String _newAttemptId() {
+    final random = Random.secure();
+    return List.generate(16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+  }
+
   Future<Map<String, dynamic>> completeNode({
     required int nodeIndex,
-    int stars = 3,
     int scorePct = 100,
-    int xpEarned = 20,
-    int pearlsEarned = 10,
+    String? attemptId,
     String? targetLanguage,
     String? nativeLanguage,
     String? level,
   }) async {
+    final completionAttemptId = attemptId ?? _newAttemptId();
     final payload = <String, dynamic>{
       'nodeIndex': nodeIndex,
-      'stars': stars,
       'scorePct': scorePct,
-      'xpEarned': xpEarned,
-      'pearlsEarned': pearlsEarned,
+      'attemptId': completionAttemptId,
       if (targetLanguage != null) 'targetLanguage': targetLanguage,
       if (nativeLanguage != null) 'nativeLanguage': nativeLanguage,
       if (level != null) 'level': level,
@@ -236,28 +230,60 @@ class GamificationRepository {
         data: payload,
       );
       if (response.data is Map<String, dynamic>) {
-        _replayOfflineCompletions();
+        await replayOfflineCompletions();
         return response.data as Map<String, dynamic>;
       }
-    } catch (e) {
+      return {'success': false, 'attemptId': completionAttemptId};
+    } on DioException catch (e) {
+      if (e.response != null) {
+        final data = e.response!.data;
+        if (data is Map<String, dynamic>) return data;
+        return {
+          'success': false,
+          'attemptId': completionAttemptId,
+          'message': 'Lesson completion was rejected by the server',
+        };
+      }
       debugPrint('⚠️ [GamificationRepository] completeNode network error, queueing offline: $e');
       await _cache.queueOfflineCompletion(payload);
+      return {'success': false, 'offlineQueued': true, 'attemptId': completionAttemptId};
+    } catch (e) {
+      debugPrint('⚠️ [GamificationRepository] completeNode error, queueing offline: $e');
+      await _cache.queueOfflineCompletion(payload);
+      return {'success': false, 'offlineQueued': true, 'attemptId': completionAttemptId};
     }
-    return {'success': true, 'offlineQueued': true};
   }
 
-  void _replayOfflineCompletions() async {
-    try {
-      final queue = await _cache.getPendingOfflineCompletions();
-      if (queue.isEmpty) return;
-      debugPrint('🔄 [GamificationRepository] Replaying ${queue.length} offline completions...');
-      final dio = await DioClient.getInstance();
-      for (final item in queue) {
-        await dio.post(ApiConstants.gamificationCompleteNode, data: item);
+  Future<void>? _replayInFlight;
+
+  Future<void> replayOfflineCompletions() {
+    final inFlight = _replayInFlight;
+    if (inFlight != null) return inFlight;
+    final replay = _performOfflineReplay();
+    _replayInFlight = replay;
+    return replay.whenComplete(() => _replayInFlight = null);
+  }
+
+  Future<void> _performOfflineReplay() async {
+    final queue = await _cache.getPendingOfflineCompletions();
+    if (queue.isEmpty) return;
+    debugPrint('🔄 [GamificationRepository] Replaying ${queue.length} offline completions...');
+    final dio = await DioClient.getInstance();
+
+    for (final item in queue) {
+      final attemptId = item['attemptId']?.toString();
+      if (attemptId == null || attemptId.isEmpty) continue;
+      try {
+        final response = await dio.post(ApiConstants.gamificationCompleteNode, data: item);
+        if (response.data is Map<String, dynamic> && response.data['success'] == true) {
+          await _cache.removeOfflineCompletion(attemptId);
+        } else {
+          break;
+        }
+      } catch (_) {
+        break;
       }
-      await _cache.clearPendingOfflineCompletions();
-      debugPrint('✅ [GamificationRepository] Offline queue synchronized successfully.');
-    } catch (_) {}
+    }
   }
 
   Future<List<LeaderboardEntryModel>> getLeaderboard({String? league}) async {
@@ -290,23 +316,77 @@ class GamificationRepository {
       final response = await dio.post(ApiConstants.gamificationRefillOxygen);
       return response.data['success'] == true;
     } catch (_) {
-      return true;
+      return false;
     }
   }
 
-  Future<bool> claimAdReward(String rewardType, int amount) async {
+  Future<bool> deductOxygen() async {
+    try {
+      final dio = await DioClient.getInstance();
+      final response = await dio.post(ApiConstants.gamificationDeductOxygen);
+      return response.data is Map<String, dynamic> && response.data['success'] == true;
+    } catch (e) {
+      debugPrint('⚠️ [GamificationRepository] deductOxygen error: $e');
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>> buyStreakFreeze() async {
+    try {
+      final dio = await DioClient.getInstance();
+      final response = await dio.post(ApiConstants.gamificationBuyStreakFreeze);
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('⚠️ [GamificationRepository] buyStreakFreeze error: $e');
+    }
+    return {'success': false, 'message': 'Failed to purchase streak freeze'};
+  }
+
+  Future<Map<String, dynamic>> buyDoubleXp() async {
+    try {
+      final dio = await DioClient.getInstance();
+      final response = await dio.post(ApiConstants.gamificationBuyDoubleXp);
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('⚠️ [GamificationRepository] buyDoubleXp error: $e');
+    }
+    return {'success': false, 'message': 'Failed to activate double XP'};
+  }
+
+  Future<List<QuestModel>> getQuests() async {
+    try {
+      final dio = await DioClient.getInstance();
+      final response = await dio.get(ApiConstants.gamificationQuests);
+      if (response.data is Map<String, dynamic> &&
+          response.data['success'] == true &&
+          response.data['quests'] is List) {
+        final list = response.data['quests'] as List;
+        return list.whereType<Map<String, dynamic>>().map((j) => QuestModel.fromJson(j)).toList();
+      }
+    } catch (e) {
+      debugPrint('⚠️ [GamificationRepository] getQuests error: $e');
+    }
+    return [];
+  }
+
+  Future<Map<String, dynamic>> claimQuest(int questId) async {
     try {
       final dio = await DioClient.getInstance();
       final response = await dio.post(
-        ApiConstants.gamificationClaimAdReward,
-        data: {'rewardType': rewardType, 'amount': amount},
+        ApiConstants.gamificationClaimQuest,
+        data: {'questId': questId},
       );
-      return response.data is Map<String, dynamic> &&
-          response.data['success'] == true;
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
     } catch (e) {
-      debugPrint('⚠️ [GamificationRepository] claimAdReward network error: $e');
-      return true;
+      debugPrint('⚠️ [GamificationRepository] claimQuest error: $e');
     }
+    return {'success': false, 'message': 'Failed to claim quest'};
   }
 
   Future<bool> switchCourse({

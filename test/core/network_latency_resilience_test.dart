@@ -505,6 +505,10 @@ void main() {
   // 4. OFFLINE CACHE RESILIENCE TESTS
   // =========================================================================
   group('4. Offline Cache Resilience Tests', () {
+    setUp(() async {
+      await CacheService().setActiveUser('test_resilience_user');
+    });
+
     test('Serves course path from Tier-2 cache when network is unreachable', () async {
       final cache = CacheService();
       const cachedNodes = [
@@ -650,20 +654,17 @@ void main() {
       final repo = GamificationRepository();
       final result = await repo.completeNode(
         nodeIndex: 2,
-        stars: 3,
         scorePct: 100,
-        xpEarned: 25,
-        pearlsEarned: 10,
         targetLanguage: 'de',
       );
 
-      expect(result['success'], isTrue);
       expect(result['offlineQueued'], isTrue);
 
       final queue = await cache.getPendingOfflineCompletions();
       expect(queue.length, 1);
       expect(queue.first['nodeIndex'], 2);
-      expect(queue.first['xpEarned'], 25);
+      expect(queue.first['scorePct'], 100);
+      expect(queue.first['attemptId'], isNotNull);
       expect(queue.first['_timestamp'], isNotNull);
     });
 
