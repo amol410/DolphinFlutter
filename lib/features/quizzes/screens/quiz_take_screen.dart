@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:percent_indicator/percent_indicator.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/services/sound_effects_service.dart';
 import '../../../shared/widgets/gradient_button.dart';
 import '../providers/quiz_provider.dart';
 import '../data/models/quiz_model.dart';
@@ -146,6 +147,12 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
         'timeTaken': timeTaken,
         'questions': quiz.questions,
       };
+
+      if (result.passed) {
+        SoundEffectsService.instance.playFanfare();
+      } else {
+        SoundEffectsService.instance.playWrong();
+      }
 
       ref.read(quizResultProvider(widget.quizId).notifier).state = resultData;
 
@@ -369,6 +376,7 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
                         question: question,
                         currentMatches: qState.matchAnswers[question.id] ?? [],
                         onMatchesChanged: (matches) {
+                          SoundEffectsService.instance.playPop();
                           ref.read(quizTakeProvider.notifier).setMatchAnswer(question.id, matches);
                         },
                       ),
@@ -382,7 +390,10 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
                         final selected = qState.selectedAnswers[question.id] == idx;
 
                         return GestureDetector(
-                          onTap: () => ref.read(quizTakeProvider.notifier).selectAnswer(question.id, idx),
+                          onTap: () {
+                            SoundEffectsService.instance.playPop();
+                            ref.read(quizTakeProvider.notifier).selectAnswer(question.id, idx);
+                          },
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 150),
                             margin: const EdgeInsets.only(bottom: 10),

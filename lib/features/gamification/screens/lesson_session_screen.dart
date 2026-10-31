@@ -960,6 +960,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
 
   // ── Stage: Cloze Test Handlers ────────────────────────────────────
   void _onClozeOptionTap(String option) {
+    SoundEffectsService.instance.playPop();
     TtsService().speakWord(option);
     setState(() {
       _clozeSelectedOption = option;
@@ -970,6 +971,11 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   void _evaluateCloze() {
     if (_clozeSelectedOption == null) return;
     final isCorrect = _clozeSelectedOption!.trim().toLowerCase() == _clozeBlank.trim().toLowerCase();
+    if (isCorrect) {
+      SoundEffectsService.instance.playCorrect();
+    } else {
+      SoundEffectsService.instance.playWrong();
+    }
     setState(() {
       _clozeCorrect = isCorrect;
     });
@@ -981,6 +987,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
 
   // ── Stage: Type Word Handlers ─────────────────────────────────────
   void _addUmlautToInput(String char) {
+    SoundEffectsService.instance.playPop();
     final text = _typeWordController.text;
     final selection = _typeWordController.selection;
     final newText = (selection.start >= 0 && selection.end >= 0)
@@ -1008,7 +1015,10 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
 
     final isCorrect = (typed == target) || (normTyped == normTarget);
     if (isCorrect) {
+      SoundEffectsService.instance.playCorrect();
       TtsService().speakWord(_typeTarget);
+    } else {
+      SoundEffectsService.instance.playWrong();
     }
     setState(() {
       _typeCorrect = isCorrect;
@@ -1022,6 +1032,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   // ── Stage: Dialogue Bubble Handlers ───────────────────────────────
   void _onDialogueOptionTap(int index) {
     if (index >= _dialogueOptions.length) return;
+    SoundEffectsService.instance.playPop();
     final opt = _dialogueOptions[index];
     final text = (opt['text'] ?? '').toString();
     if (text.isNotEmpty) {
@@ -1037,6 +1048,11 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     if (_dialogueSelectedIdx == null || _dialogueSelectedIdx! >= _dialogueOptions.length) return;
     final opt = _dialogueOptions[_dialogueSelectedIdx!];
     final isCorrect = (opt['isCorrect'] != null) ? (opt['isCorrect'] == true) : (_dialogueSelectedIdx == 0);
+    if (isCorrect) {
+      SoundEffectsService.instance.playCorrect();
+    } else {
+      SoundEffectsService.instance.playWrong();
+    }
     setState(() {
       _dialogueCorrect = isCorrect;
     });
@@ -1048,6 +1064,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
 
   // ── Stage: Listen Select Handlers ─────────────────────────────────
   void _onListenSelectOptionTap(int index) {
+    SoundEffectsService.instance.playPop();
     setState(() {
       _listenSelectSelectedIdx = index;
       _listenSelectCorrect = null;
@@ -1058,6 +1075,11 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     if (_listenSelectSelectedIdx == null || _listenSelectSelectedIdx! >= _listenSelectOptions.length) return;
     final opt = _listenSelectOptions[_listenSelectSelectedIdx!];
     final isCorrect = (opt['isCorrect'] != null) ? (opt['isCorrect'] == true) : (_listenSelectSelectedIdx == 0);
+    if (isCorrect) {
+      SoundEffectsService.instance.playCorrect();
+    } else {
+      SoundEffectsService.instance.playWrong();
+    }
     setState(() {
       _listenSelectCorrect = isCorrect;
     });
@@ -1489,6 +1511,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     final nLang = ref.read(gamificationStatusProvider).value?.nativeLanguage ?? (isEn ? 'hi' : 'en');
 
     if (isPassed) {
+      SoundEffectsService.instance.playCorrect();
       if (mounted) {
         setState(() {
           _showConfetti = true;
@@ -1518,6 +1541,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
         ),
       );
     } else {
+      SoundEffectsService.instance.playWrong();
       if (mounted && _showConfetti) {
         setState(() {
           _showConfetti = false;
@@ -1542,6 +1566,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   }
 
   void _handleIncorrectAnswer() {
+    SoundEffectsService.instance.playWrong();
     _mistakesCount++;
     // 1. Mistakes Review Loop: re-enqueue stage at end of active stages (Objective 3)
     if (!_currentStageReEnqueued && _currentStage < _activeStageTypes.length) {
@@ -1796,6 +1821,8 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     });
     if (_currentStage < _activeStageTypes.length) {
       _resetStageStateForType(_activeStageTypes[_currentStage]);
+    } else {
+      SoundEffectsService.instance.playFanfare();
     }
     TtsService().warmUp();
     if (_currentStage < _activeStageTypes.length) {
@@ -2828,6 +2855,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
                       final word = _listenBank[bankIndex];
                       return GestureDetector(
                         onTap: () {
+                          SoundEffectsService.instance.playPop();
                           setState(() {
                             _listenSelectedIndices.remove(bankIndex);
                             _listenCorrect = null;
@@ -2867,6 +2895,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
                       onTap: isUsed
                           ? null
                           : () {
+                              SoundEffectsService.instance.playPop();
                               TtsService().speakWord(word);
                               setState(() {
                                 _listenSelectedIndices.add(index);
@@ -2924,6 +2953,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
                       final selectedClean = selectedWords.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
                       final targetClean = _listenTarget.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
                       final isMatch = selectedClean == targetClean || selectedWords.join(' ') == _listenTarget.join(' ');
+                      if (isMatch) {
+                        SoundEffectsService.instance.playCorrect();
+                      }
                       setState(() => _listenCorrect = isMatch);
                       _triggerPrewarmForNext();
                       if (!isMatch) {
@@ -3277,6 +3309,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
                       final word = _builderBank[bankIndex];
                       return GestureDetector(
                         onTap: () {
+                          SoundEffectsService.instance.playPop();
                           setState(() {
                             _builderSelectedIndices.remove(bankIndex);
                             _builderCorrect = null;
@@ -3316,6 +3349,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
                       onTap: isUsed
                           ? null
                           : () {
+                              SoundEffectsService.instance.playPop();
                               TtsService().speakWord(word);
                               setState(() {
                                 _builderSelectedIndices.add(index);
@@ -3372,6 +3406,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
                       final selClean = selectedWords.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
                       final tgtClean = _builderTarget.join(' ').toLowerCase().replaceAll(RegExp(r'[^\w\s]'), '');
                       final isMatch = selClean == tgtClean || selectedWords.join(' ') == _builderTarget.join(' ');
+                      if (isMatch) {
+                        SoundEffectsService.instance.playCorrect();
+                      }
                       setState(() => _builderCorrect = isMatch);
                       _triggerPrewarmForNext();
                       if (!isMatch) {

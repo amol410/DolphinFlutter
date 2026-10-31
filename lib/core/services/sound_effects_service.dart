@@ -67,26 +67,16 @@ class SoundEffectsService {
           if (_correctPlayer != null) _correctPlayer!.setSource(AssetSource(_correctAsset)),
           if (_wrongPlayer != null) _wrongPlayer!.setSource(AssetSource(_wrongAsset)),
           if (_fanfarePlayer != null) _fanfarePlayer!.setSource(AssetSource(_fanfareAsset)),
-        ]).timeout(const Duration(milliseconds: 300));
+        ]).timeout(const Duration(milliseconds: 1500));
       } catch (assetErr) {
-        debugPrint('⚠️ [SoundEffectsService] Asset preload warning (falling back to memory buffers): $assetErr');
+        debugPrint('ℹ️ [SoundEffectsService] Asset preload notice: $assetErr');
       }
 
       // Synthesize in-memory fallback buffers matching exact DSP specs
-      _popFallbackWav = _generateSineWav(frequency: 750.0, durationMs: 50.0);
-      _correctFallbackWav = _generateChimeWav(
-        frequencies: [523.25, 659.25, 783.99],
-        durationsMs: [75.0, 75.0, 150.0],
-      );
-      _wrongFallbackWav = _generateSawtoothSweepWav(
-        startFreq: 220.0,
-        endFreq: 180.0,
-        durationMs: 200.0,
-      );
-      _fanfareFallbackWav = _generateChimeWav(
-        frequencies: [523.25, 659.25, 783.99, 1046.50],
-        durationsMs: [110.0, 110.0, 110.0, 520.0],
-      );
+      _popFallbackWav = _generatePopWav();
+      _correctFallbackWav = _generateMarimbaWav();
+      _wrongFallbackWav = _generateSawtoothSweepWav();
+      _fanfareFallbackWav = _generateHarpCascadeWav();
 
       _initialized = true;
     } catch (e) {
@@ -100,7 +90,7 @@ class SoundEffectsService {
     }
   }
 
-  /// Triggers a crisp 750Hz sine pop and light haptic feedback.
+  /// Triggers a tactile Crisp Water Bubble pop and light haptic feedback.
   Future<void> playPop() async {
     _ensureInitialized();
     try {
@@ -110,22 +100,22 @@ class SoundEffectsService {
     try {
       if (_popPlayer != null) {
         await _popPlayer!.stop();
-        await _popPlayer!.play(AssetSource(_popAsset), mode: PlayerMode.lowLatency).timeout(const Duration(milliseconds: 300));
+        await _popPlayer!.play(AssetSource(_popAsset), volume: 1.0, mode: PlayerMode.lowLatency).timeout(const Duration(milliseconds: 300));
       } else if (_popFallbackWav != null) {
         final p = AudioPlayer();
-        await p.play(BytesSource(_popFallbackWav!)).timeout(const Duration(milliseconds: 300));
+        await p.play(BytesSource(_popFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
       }
     } catch (e) {
       if (_popFallbackWav != null && _popPlayer != null) {
         try {
           await _popPlayer!.stop();
-          await _popPlayer!.play(BytesSource(_popFallbackWav!)).timeout(const Duration(milliseconds: 300));
+          await _popPlayer!.play(BytesSource(_popFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
         } catch (_) {}
       }
     }
   }
 
-  /// Triggers a joyful C-Major triad chime and light haptic feedback.
+  /// Triggers a joyful Warm Acoustic Marimba chord and light haptic feedback.
   Future<void> playCorrect() async {
     _ensureInitialized();
     try {
@@ -135,22 +125,22 @@ class SoundEffectsService {
     try {
       if (_correctPlayer != null) {
         await _correctPlayer!.stop();
-        await _correctPlayer!.play(AssetSource(_correctAsset), mode: PlayerMode.lowLatency).timeout(const Duration(milliseconds: 300));
+        await _correctPlayer!.play(AssetSource(_correctAsset), volume: 1.0, mode: PlayerMode.lowLatency).timeout(const Duration(milliseconds: 300));
       } else if (_correctFallbackWav != null) {
         final p = AudioPlayer();
-        await p.play(BytesSource(_correctFallbackWav!)).timeout(const Duration(milliseconds: 300));
+        await p.play(BytesSource(_correctFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
       }
     } catch (e) {
       if (_correctFallbackWav != null && _correctPlayer != null) {
         try {
           await _correctPlayer!.stop();
-          await _correctPlayer!.play(BytesSource(_correctFallbackWav!)).timeout(const Duration(milliseconds: 300));
+          await _correctPlayer!.play(BytesSource(_correctFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
         } catch (_) {}
       }
     }
   }
 
-  /// Triggers a gentle 220Hz->180Hz downward saw-tooth bump and medium haptic feedback.
+  /// Triggers a classic downward saw-tooth mistake tone and medium haptic feedback.
   Future<void> playWrong() async {
     _ensureInitialized();
     try {
@@ -160,22 +150,22 @@ class SoundEffectsService {
     try {
       if (_wrongPlayer != null) {
         await _wrongPlayer!.stop();
-        await _wrongPlayer!.play(AssetSource(_wrongAsset), mode: PlayerMode.lowLatency).timeout(const Duration(milliseconds: 300));
+        await _wrongPlayer!.play(AssetSource(_wrongAsset), volume: 1.0, mode: PlayerMode.lowLatency).timeout(const Duration(milliseconds: 300));
       } else if (_wrongFallbackWav != null) {
         final p = AudioPlayer();
-        await p.play(BytesSource(_wrongFallbackWav!)).timeout(const Duration(milliseconds: 300));
+        await p.play(BytesSource(_wrongFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
       }
     } catch (e) {
       if (_wrongFallbackWav != null && _wrongPlayer != null) {
         try {
           await _wrongPlayer!.stop();
-          await _wrongPlayer!.play(BytesSource(_wrongFallbackWav!)).timeout(const Duration(milliseconds: 300));
+          await _wrongPlayer!.play(BytesSource(_wrongFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
         } catch (_) {}
       }
     }
   }
 
-  /// Triggers a 4-note victory flourish (C5 -> E5 -> G5 -> C6) and celebratory haptics.
+  /// Triggers an Orchestral Harp Cascade victory flourish and celebratory haptics.
   Future<void> playFanfare() async {
     _ensureInitialized();
     try {
@@ -185,16 +175,16 @@ class SoundEffectsService {
     try {
       if (_fanfarePlayer != null) {
         await _fanfarePlayer!.stop();
-        await _fanfarePlayer!.play(AssetSource(_fanfareAsset), mode: PlayerMode.lowLatency).timeout(const Duration(milliseconds: 300));
+        await _fanfarePlayer!.play(AssetSource(_fanfareAsset), volume: 1.0, mode: PlayerMode.lowLatency).timeout(const Duration(milliseconds: 300));
       } else if (_fanfareFallbackWav != null) {
         final p = AudioPlayer();
-        await p.play(BytesSource(_fanfareFallbackWav!)).timeout(const Duration(milliseconds: 300));
+        await p.play(BytesSource(_fanfareFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
       }
     } catch (e) {
       if (_fanfareFallbackWav != null && _fanfarePlayer != null) {
         try {
           await _fanfarePlayer!.stop();
-          await _fanfarePlayer!.play(BytesSource(_fanfareFallbackWav!)).timeout(const Duration(milliseconds: 300));
+          await _fanfarePlayer!.play(BytesSource(_fanfareFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
         } catch (_) {}
       }
     }
@@ -202,80 +192,164 @@ class SoundEffectsService {
 
   // --- In-Memory DSP Fallback Synthesis Helpers (RIFF PCM 16-bit Mono 44.1kHz) ---
 
-  static Uint8List _generateSineWav({
-    required double frequency,
-    required double durationMs,
-    int sampleRate = 44100,
-  }) {
-    final totalSamples = (sampleRate * (durationMs / 1000.0)).round();
-    final byteData = ByteData(44 + totalSamples * 2);
-    _writeWavHeader(byteData, totalSamples, sampleRate);
-
-    int sampleOffset = 44;
-    for (int i = 0; i < totalSamples; i++) {
-      final t = i / sampleRate;
-      final decay = (1.0 - (i / totalSamples));
-      final env = decay * decay;
-      final sampleVal = (sin(2 * pi * frequency * t) * env * 28000).clamp(-32768, 32767).toInt();
-      byteData.setInt16(sampleOffset, sampleVal, Endian.little);
-      sampleOffset += 2;
-    }
-
-    return byteData.buffer.asUint8List();
-  }
-
-  static Uint8List _generateChimeWav({
-    required List<double> frequencies,
-    required List<double> durationsMs,
-    int sampleRate = 44100,
-  }) {
-    final totalDurationMs = durationsMs.reduce((a, b) => a + b);
-    final totalSamples = (sampleRate * (totalDurationMs / 1000.0)).round();
-    final byteData = ByteData(44 + totalSamples * 2);
-    _writeWavHeader(byteData, totalSamples, sampleRate);
-
-    int sampleOffset = 44;
-    for (int seg = 0; seg < frequencies.length; seg++) {
-      final freq = frequencies[seg];
-      final segSamples = (sampleRate * (durationsMs[seg] / 1000.0)).round();
-
-      for (int i = 0; i < segSamples; i++) {
-        if (sampleOffset >= 44 + totalSamples * 2) break;
-        final t = i / sampleRate;
-        final decay = exp(-4.0 * (i / segSamples));
-        final tone = sin(2 * pi * freq * t) + 0.25 * sin(2 * pi * (freq * 2) * t);
-        final sampleVal = (tone * decay * 24000).clamp(-32768, 32767).toInt();
-        byteData.setInt16(sampleOffset, sampleVal, Endian.little);
-        sampleOffset += 2;
-      }
-    }
-
-    return byteData.buffer.asUint8List();
-  }
-
-  static Uint8List _generateSawtoothSweepWav({
-    required double startFreq,
-    required double endFreq,
-    required double durationMs,
-    int sampleRate = 44100,
-  }) {
-    final totalSamples = (sampleRate * (durationMs / 1000.0)).round();
+  // 1. Crisp Water Bubble (450Hz -> 1100Hz exponential sweep, 60ms)
+  static Uint8List _generatePopWav({int sampleRate = 44100}) {
+    const duration = 0.06;
+    final totalSamples = (sampleRate * duration).round();
     final byteData = ByteData(44 + totalSamples * 2);
     _writeWavHeader(byteData, totalSamples, sampleRate);
 
     double phase = 0.0;
     int sampleOffset = 44;
     for (int i = 0; i < totalSamples; i++) {
-      final progress = i / totalSamples;
-      final f = startFreq + (endFreq - startFreq) * progress;
+      final t = i / sampleRate;
+      final f = t <= 0.038 ? 450.0 * pow(1100.0 / 450.0, t / 0.038) : 1100.0;
       phase += 2 * pi * f / sampleRate;
-      final decay = pow(1.0 - progress, 1.8);
-      final val = (sin(phase) + 0.35 * sin(2 * phase) + 0.15 * sin(3 * phase)) * decay;
-      final sampleVal = (val * 24000).clamp(-32768, 32767).toInt();
+
+      double env = 0.0;
+      if (t <= 0.004) {
+        env = t / 0.004;
+      } else if (t <= 0.055) {
+        env = exp(-log(1000) * (t - 0.004) / 0.046);
+      }
+      final sampleVal = (sin(phase) * env * 31500).clamp(-32768, 32767).toInt();
       byteData.setInt16(sampleOffset, sampleVal, Endian.little);
       sampleOffset += 2;
     }
+    return byteData.buffer.asUint8List();
+  }
 
+  // 2. Warm Acoustic Marimba (Duolingo style C5, E5, G5 with harmonic overtones and lowpass warmth)
+  static Uint8List _generateMarimbaWav({int sampleRate = 44100}) {
+    final notes = [523.25, 659.25, 783.99]; // C5, E5, G5
+    final delays = [0.0, 0.08, 0.16];
+    const totalDuration = 0.58;
+    final totalSamples = (sampleRate * totalDuration).round();
+    final rawSamples = Float64List(totalSamples);
+
+    for (int idx = 0; idx < notes.length; idx++) {
+      final freq = notes[idx];
+      final delay = delays[idx];
+      final startSample = (delay * sampleRate).round();
+      final noteSamples = (0.38 * sampleRate).round();
+
+      for (int i = 0; i < noteSamples; i++) {
+        final globalIdx = startSample + i;
+        if (globalIdx >= totalSamples) break;
+        final t = i / sampleRate;
+
+        final env1 = (t <= 0.008)
+            ? (t / 0.008)
+            : exp(-log(1000) * (t - 0.008) / 0.372);
+        final tone1 = sin(2 * pi * freq * t) * env1 * 0.85;
+
+        final env2 = (t <= 0.005)
+            ? (t / 0.005)
+            : exp(-log(1000) * (t - 0.005) / 0.115);
+        final tone2 = sin(2 * pi * (freq * 3.98) * t) * env2 * 0.35;
+
+        rawSamples[globalIdx] += (tone1 + tone2);
+      }
+    }
+
+    // Acoustic warmth lowpass filter at 2600 Hz
+    const fc = 2600.0;
+    const rc = 1.0 / (2 * pi * fc);
+    final dt = 1.0 / sampleRate;
+    final alpha = dt / (rc + dt);
+    double y = 0.0;
+    double maxAbs = 0.0;
+    for (int i = 0; i < totalSamples; i++) {
+      y += alpha * (rawSamples[i] - y);
+      rawSamples[i] = y;
+      final absVal = y.abs();
+      if (absVal > maxAbs) maxAbs = absVal;
+    }
+
+    final gain = maxAbs > 0 ? (31500.0 / maxAbs) : 31500.0;
+    final byteData = ByteData(44 + totalSamples * 2);
+    _writeWavHeader(byteData, totalSamples, sampleRate);
+    int sampleOffset = 44;
+    for (int i = 0; i < totalSamples; i++) {
+      final sampleVal = (rawSamples[i] * gain).clamp(-32768, 32767).toInt();
+      byteData.setInt16(sampleOffset, sampleVal, Endian.little);
+      sampleOffset += 2;
+    }
+    return byteData.buffer.asUint8List();
+  }
+
+  // 3. Classic Downward Sawtooth Sweep (220Hz -> 180Hz)
+  static Uint8List _generateSawtoothSweepWav({int sampleRate = 44100}) {
+    const duration = 0.22;
+    final totalSamples = (sampleRate * duration).round();
+    final byteData = ByteData(44 + totalSamples * 2);
+    _writeWavHeader(byteData, totalSamples, sampleRate);
+
+    double phase = 0.0;
+    int sampleOffset = 44;
+    for (int i = 0; i < totalSamples; i++) {
+      final t = i / sampleRate;
+      final progress = t / duration;
+      final f = 220.0 - (220.0 - 180.0) * progress;
+      phase += 2 * pi * f / sampleRate;
+
+      final saw = 2.0 * ((phase / (2 * pi)) % 1.0) - 1.0;
+      final env = exp(-log(1000) * t / 0.20);
+      final sampleVal = (saw * env * 31500).clamp(-32768, 32767).toInt();
+      byteData.setInt16(sampleOffset, sampleVal, Endian.little);
+      sampleOffset += 2;
+    }
+    return byteData.buffer.asUint8List();
+  }
+
+  // 4. Orchestral Harp Cascade (A-major flourish 440Hz -> 1318.51Hz)
+  static Uint8List _generateHarpCascadeWav({int sampleRate = 44100}) {
+    final notes = [440.0, 554.37, 659.25, 880.0, 1108.73, 1318.51];
+    final delays = [0.0, 0.05, 0.10, 0.15, 0.21, 0.28];
+    const totalDuration = 1.15;
+    final totalSamples = (sampleRate * totalDuration).round();
+    final rawSamples = Float64List(totalSamples);
+
+    for (int idx = 0; idx < notes.length; idx++) {
+      final freq = notes[idx];
+      final delay = delays[idx];
+      final isLast = idx == notes.length - 1;
+      final dur = isLast ? 0.85 : 0.35;
+      final noteWeight = isLast ? 0.95 : 0.45;
+      final startSample = (delay * sampleRate).round();
+      final noteSamples = (dur * sampleRate).round();
+
+      double phase = 0.0;
+      for (int i = 0; i < noteSamples; i++) {
+        final globalIdx = startSample + i;
+        if (globalIdx >= totalSamples) break;
+        final t = i / sampleRate;
+        phase += 2 * pi * freq / sampleRate;
+
+        final tri = (2.0 / pi) * asin(sin(phase));
+        final env = (t <= 0.005)
+            ? (t / 0.005)
+            : exp(-log(1000) * (t - 0.005) / (dur - 0.005));
+
+        rawSamples[globalIdx] += tri * env * noteWeight;
+      }
+    }
+
+    double maxAbs = 0.0;
+    for (int i = 0; i < totalSamples; i++) {
+      final a = rawSamples[i].abs();
+      if (a > maxAbs) maxAbs = a;
+    }
+
+    final gain = maxAbs > 0 ? (31500.0 / maxAbs) : 31500.0;
+    final byteData = ByteData(44 + totalSamples * 2);
+    _writeWavHeader(byteData, totalSamples, sampleRate);
+    int sampleOffset = 44;
+    for (int i = 0; i < totalSamples; i++) {
+      final sampleVal = (rawSamples[i] * gain).clamp(-32768, 32767).toInt();
+      byteData.setInt16(sampleOffset, sampleVal, Endian.little);
+      sampleOffset += 2;
+    }
     return byteData.buffer.asUint8List();
   }
 

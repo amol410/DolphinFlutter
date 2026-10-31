@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
 import 'core/services/ad_service.dart';
@@ -8,6 +9,10 @@ import 'core/services/tts_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
   // Asynchronously pre-initialize Firebase Analytics & Crashlytics, Notifications, TTS, and AdMob
   await AnalyticsService().init();
   await NotificationService().init();

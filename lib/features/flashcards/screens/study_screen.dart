@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:percent_indicator/percent_indicator.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/services/sound_effects_service.dart';
 import '../../../shared/widgets/gradient_button.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
 import '../providers/flashcard_provider.dart';
@@ -19,6 +20,7 @@ class StudyScreen extends ConsumerStatefulWidget {
 class _StudyScreenState extends ConsumerState<StudyScreen> {
   FlashcardDeck? _deck;
   bool _loading = true;
+  bool _hasPlayedFanfare = false;
 
   @override
   void initState() {
@@ -79,6 +81,12 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
     final total = cards.length;
 
     if (session.isComplete) {
+      if (!_hasPlayedFanfare) {
+        _hasPlayedFanfare = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          SoundEffectsService.instance.playFanfare();
+        });
+      }
       final mastered = session.masteredCount();
       final pct = total > 0 ? mastered / total : 0.0;
       return Scaffold(
@@ -209,7 +217,10 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: GestureDetector(
-                    onTap: () => ref.read(studySessionProvider.notifier).flip(),
+                    onTap: () {
+                      SoundEffectsService.instance.playPop();
+                      ref.read(studySessionProvider.notifier).flip();
+                    },
                     child: AnimatedSwitcher(
                       duration: const Duration(milliseconds: 400),
                       transitionBuilder: (child, animation) {
@@ -296,7 +307,10 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                       children: [
                         Expanded(
                           child: OutlinedButton(
-                            onPressed: () => ref.read(studySessionProvider.notifier).rate(card.id, 'unknown', total),
+                            onPressed: () {
+                              SoundEffectsService.instance.playWrong();
+                              ref.read(studySessionProvider.notifier).rate(card.id, 'unknown', total);
+                            },
                             style: OutlinedButton.styleFrom(
                               side: const BorderSide(color: AppColors.error),
                               foregroundColor: AppColors.error,
@@ -310,7 +324,10 @@ class _StudyScreenState extends ConsumerState<StudyScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: ElevatedButton(
-                            onPressed: () => ref.read(studySessionProvider.notifier).rate(card.id, 'known', total),
+                            onPressed: () {
+                              SoundEffectsService.instance.playCorrect();
+                              ref.read(studySessionProvider.notifier).rate(card.id, 'known', total);
+                            },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.success,
                               foregroundColor: Colors.white,
