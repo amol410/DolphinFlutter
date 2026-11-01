@@ -99,6 +99,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   void _showForgotPasswordSheet() async {
+    FocusScope.of(context).unfocus();
     final result = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,

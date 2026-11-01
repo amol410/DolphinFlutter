@@ -78,6 +78,7 @@ class _ForgotPasswordSheetState extends ConsumerState<ForgotPasswordSheet> {
   }
 
   Future<void> _requestOtp() async {
+    FocusScope.of(context).unfocus();
     if (!_emailFormKey.currentState!.validate()) return;
     setState(() {
       _isLoading = true;
@@ -152,6 +153,7 @@ class _ForgotPasswordSheetState extends ConsumerState<ForgotPasswordSheet> {
   }
 
   Future<void> _submitReset() async {
+    FocusScope.of(context).unfocus();
     final otp = _otpController.text.trim();
     if (otp.length != 6) {
       setState(() => _errorMessage = 'Please enter the complete 6-digit OTP code.');
@@ -226,7 +228,9 @@ class _ForgotPasswordSheetState extends ConsumerState<ForgotPasswordSheet> {
             left: 24,
             right: 24,
             top: 12,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+            bottom: MediaQuery.of(context).viewInsets.bottom > 0
+                ? MediaQuery.of(context).viewInsets.bottom + 12
+                : 24,
           ),
           child: SingleChildScrollView(
             child: Column(
@@ -318,7 +322,7 @@ class _ForgotPasswordSheetState extends ConsumerState<ForgotPasswordSheet> {
           ),
           const SizedBox(height: 24),
 
-          if (_errorMessage != null) ...[
+          if (_step == 1 && _errorMessage != null) ...[
             _buildErrorBanner(_errorMessage!),
             const SizedBox(height: 16),
           ],
@@ -436,7 +440,7 @@ class _ForgotPasswordSheetState extends ConsumerState<ForgotPasswordSheet> {
           ),
           const SizedBox(height: 20),
 
-          if (_errorMessage != null) ...[
+          if (_step == 2 && _errorMessage != null) ...[
             _buildErrorBanner(_errorMessage!),
             const SizedBox(height: 14),
           ],
@@ -549,6 +553,7 @@ class _ForgotPasswordSheetState extends ConsumerState<ForgotPasswordSheet> {
 
   Widget _buildTactilePinInput(bool isDark) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () => _otpFocusNode.requestFocus(),
       child: Stack(
         alignment: Alignment.center,

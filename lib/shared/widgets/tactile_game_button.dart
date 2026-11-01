@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 enum GameButtonVariant { primary, secondary, success, danger, outline }
@@ -49,6 +50,13 @@ class _TactileGameButtonState extends State<TactileGameButton> {
     }
   }
 
+  void _handleTap() {
+    if (widget.onPressed != null && !widget.isLoading) {
+      HapticFeedback.lightImpact();
+      widget.onPressed!();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = _getColors();
@@ -58,14 +66,16 @@ class _TactileGameButtonState extends State<TactileGameButton> {
     final topColor = isEnabled ? colors.$1 : const Color(0xFFCBD5E1);
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTapDown: isEnabled ? (_) => setState(() => _isPressed = true) : null,
       onTapUp: isEnabled ? (_) => setState(() => _isPressed = false) : null,
       onTapCancel: isEnabled ? () => setState(() => _isPressed = false) : null,
-      onTap: isEnabled ? widget.onPressed : null,
+      onTap: isEnabled ? _handleTap : null,
       child: SizedBox(
         width: widget.width ?? double.infinity,
         height: widget.height,
         child: Stack(
+          clipBehavior: Clip.none,
           children: [
             // 3D bottom base (the tactile lip / extrusion)
             Positioned(
@@ -80,15 +90,16 @@ class _TactileGameButtonState extends State<TactileGameButton> {
                 ),
               ),
             ),
-            // Surface button that depresses down
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 60),
-              curve: Curves.easeOutQuad,
+            // Surface button that depresses down via matrix transform (safe for gesture arena)
+            Positioned(
               left: 0,
               right: 0,
-              top: _isPressed ? depth : 0,
-              bottom: _isPressed ? 0 : depth,
-              child: Container(
+              top: 0,
+              bottom: depth,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 60),
+                curve: Curves.easeOutQuad,
+                transform: Matrix4.translationValues(0, _isPressed ? depth : 0, 0),
                 decoration: BoxDecoration(
                   color: topColor,
                   borderRadius: BorderRadius.circular(16),

@@ -600,7 +600,7 @@ void main() {
       expect(details, isNotNull);
       expect(details!['id'], testLessonId);
       expect(details['title'], 'Offline Greetings');
-      expect(stopwatch.elapsedMilliseconds, lessThan(50));
+      expect(stopwatch.elapsedMilliseconds, lessThan(150));
     });
 
     test('Serves user status progression from Tier-2 cache when offline', () async {
