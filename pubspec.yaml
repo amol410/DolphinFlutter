@@ -1,7 +1,7 @@
 name: dolphincoder
 description: DolphinCoder LMS — Mobile Learning App
 publish_to: 'none'
-version: 1.4.2+28
+version: 1.4.3+29
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

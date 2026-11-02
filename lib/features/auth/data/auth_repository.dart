@@ -9,10 +9,16 @@ import 'models/user_model.dart';
 
 class AuthRepository {
   static const _storage = FlutterSecureStorage();
+  static const _googleWebClientId =
+      '954842353363-3es8j5j88oinub65ln43563atq6166r5.apps.googleusercontent.com';
   final GoogleSignIn _googleSignIn;
 
   AuthRepository({GoogleSignIn? googleSignIn})
-      : _googleSignIn = googleSignIn ?? GoogleSignIn(scopes: ['email', 'profile']);
+      : _googleSignIn = googleSignIn ??
+            GoogleSignIn(
+              scopes: ['email', 'profile'],
+              serverClientId: _googleWebClientId,
+            );
 
   GoogleSignIn get googleSignIn => _googleSignIn;
 
