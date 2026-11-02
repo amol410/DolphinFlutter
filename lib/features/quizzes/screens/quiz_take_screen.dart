@@ -22,6 +22,7 @@ class QuizTakeScreen extends ConsumerStatefulWidget {
 class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
   Timer? _timer;
   QuizModel? _quiz;
+  String? _loadError;
   int _startTime = 0;
 
   @override
@@ -31,12 +32,24 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
   }
 
   Future<void> _loadQuiz() async {
-    final quiz = await ref.read(quizRepositoryProvider).getQuizById(widget.quizId);
-    if (!mounted) return;
-    setState(() => _quiz = quiz);
-    ref.read(quizTakeProvider.notifier).init(quiz.timeLimit);
-    if (quiz.timeLimit > 0) _startTimer();
-    _startTime = DateTime.now().millisecondsSinceEpoch;
+    if (mounted) {
+      setState(() => _loadError = null);
+    }
+    try {
+      final quiz = await ref.read(quizRepositoryProvider).getQuizById(widget.quizId);
+      if (!mounted) return;
+      setState(() {
+        _quiz = quiz;
+        _loadError = null;
+      });
+      ref.read(quizTakeProvider.notifier).init(quiz.timeLimit);
+      if (quiz.timeLimit > 0) _startTimer();
+      _startTime = DateTime.now().millisecondsSinceEpoch;
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loadError = e.toString());
+      }
+    }
   }
 
   void _startTimer() {
@@ -214,10 +227,112 @@ class _QuizTakeScreenState extends ConsumerState<QuizTakeScreen> {
     final textSecondary = isDark ? AppColors.pitchBlackTextSecondary : AppColors.lightTextSecondary;
     final textMuted = isDark ? AppColors.pitchBlackTextMuted : AppColors.lightTextMuted;
 
+    if (_loadError != null) {
+      return Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back, color: onSurface),
+            onPressed: () {
+              if (Navigator.of(context).canPop()) {
+                context.pop();
+              } else {
+                context.go('/quizzes');
+              }
+            },
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, color: AppColors.error, size: 48),
+                const SizedBox(height: 12),
+                Text(
+                  'Failed to load quiz',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: onSurface,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _loadError!,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(fontSize: 14, color: textSecondary),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: _loadQuiz,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     if (quiz == null) {
       return Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+      );
+    }
+
+    if (quiz.questions.isEmpty) {
+      return Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back, color: onSurface),
+            onPressed: () {
+              if (Navigator.of(context).canPop()) {
+                context.pop();
+              } else {
+                context.go('/quizzes');
+              }
+            },
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.quiz_outlined, color: textMuted, size: 48),
+                const SizedBox(height: 12),
+                Text(
+                  'No questions available in this quiz.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: onSurface,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton(
+                  onPressed: () {
+                    if (Navigator.of(context).canPop()) {
+                      context.pop();
+                    } else {
+                      context.go('/quizzes');
+                    }
+                  },
+                  child: const Text('Back to Quizzes'),
+                ),
+              ],
+            ),
+          ),
+        ),
       );
     }
 

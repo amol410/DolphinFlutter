@@ -4230,6 +4230,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       SoundEffectsService.instance.playCorrect();
     } else {
       SoundEffectsService.instance.playWrong();
+      _handleIncorrectAnswer();
     }
     _triggerPrewarmForNext();
   }

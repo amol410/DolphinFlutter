@@ -29,7 +29,6 @@ class QuizReviewScreen extends ConsumerWidget {
     final onSurface = Theme.of(context).colorScheme.onSurface;
     final surfaceColor = isDark ? AppColors.pitchBlackSurface : AppColors.lightSurface;
     final surface2Color = isDark ? AppColors.pitchBlackSurface2 : AppColors.lightSurface2;
-    final borderColor = isDark ? AppColors.pitchBlackBorder : AppColors.lightBorder;
     final textSecondary = isDark ? AppColors.pitchBlackTextSecondary : AppColors.lightTextSecondary;
     final textMuted = isDark ? AppColors.pitchBlackTextMuted : AppColors.lightTextMuted;
 
@@ -293,17 +292,32 @@ class _QuestionReviewCard extends ConsumerWidget {
 
   const _QuestionReviewCard({required this.index, required this.data});
 
-  String _extractCorrectAnswer(Map<String, dynamic> data, String? explanation) {
-    final options = (data['options'] as List? ?? []).cast<Map<String, dynamic>>();
-    final correctOpt = options.firstWhere(
-      (o) => o['isCorrect'] == true,
-      orElse: () => <String, dynamic>{},
-    );
-    final correctText = (correctOpt['text'] ?? '').toString();
+  String _extractCorrectAnswer(Map<String, dynamic> data, [String? explanation]) {
+    final rawOptions = data['options'] as List? ?? [];
+    final rawIdx = data['correctIndex'] ?? data['correctAnswer'];
+    final int? correctIdx = rawIdx is int
+        ? rawIdx
+        : (rawIdx is num ? rawIdx.toInt() : int.tryParse(rawIdx?.toString() ?? ''));
+
+    String correctText = '';
+    if (correctIdx != null && correctIdx >= 0 && correctIdx < rawOptions.length) {
+      final item = rawOptions[correctIdx];
+      correctText = item is Map ? (item['text']?.toString() ?? '') : item.toString();
+    } else {
+      for (final o in rawOptions) {
+        if (o is Map && (o['isCorrect'] == true || o['correct'] == true)) {
+          correctText = o['text']?.toString() ?? '';
+          break;
+        }
+      }
+    }
+    if (correctText.isEmpty) {
+      correctText = data['correctAnswer']?.toString() ?? '';
+    }
     if (explanation != null && explanation.trim().isNotEmpty) {
       return correctText.isEmpty ? explanation : '$correctText\n\n💡 $explanation';
     }
-    return correctText;
+    return correctText.isNotEmpty ? correctText : 'See explanation';
   }
 
   Widget _buildStarButton({
@@ -518,7 +532,10 @@ class _QuestionReviewCard extends ConsumerWidget {
     Color surface2Color,
     Color defaultBorderColor,
   ) {
-    final options = (data['options'] as List? ?? []).cast<String>();
+    final rawOptions = data['options'] as List? ?? [];
+    final options = rawOptions
+        .map((o) => o is Map ? (o['text']?.toString() ?? '') : o.toString())
+        .toList();
     final correctIndex = data['correctIndex'] as int?;
     final chosenIndex = data['chosenIndex'] as int? ?? -1;
 
@@ -529,7 +546,9 @@ class _QuestionReviewCard extends ConsumerWidget {
         final letter = ['A', 'B', 'C', 'D'][optIdx % 4];
 
         final isUserPick = optIdx == chosenIndex;
-        final isCorrectOpt = optIdx == correctIndex;
+        final rawOpt = optIdx < rawOptions.length ? rawOptions[optIdx] : null;
+        final isCorrectOpt = optIdx == correctIndex ||
+            (rawOpt is Map && (rawOpt['isCorrect'] == true || rawOpt['correct'] == true));
 
         Color itemBorderColor = defaultBorderColor;
         Color bgColor = surface2Color.withOpacity(0.5);

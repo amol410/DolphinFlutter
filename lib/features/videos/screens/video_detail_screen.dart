@@ -1,58 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/subject_badge.dart';
 import '../../../shared/widgets/shimmer_loader.dart';
 import '../providers/videos_provider.dart';
 
-class VideoDetailScreen extends ConsumerStatefulWidget {
+class VideoDetailScreen extends ConsumerWidget {
   final String videoId;
   const VideoDetailScreen({super.key, required this.videoId});
 
   @override
-  ConsumerState<VideoDetailScreen> createState() => _VideoDetailScreenState();
-}
-
-class _VideoDetailScreenState extends ConsumerState<VideoDetailScreen> {
-  late final WebViewController _webController;
-  bool _playerReady = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _webController = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(NavigationDelegate(
-        onPageFinished: (_) => setState(() => _playerReady = true),
-      ));
-  }
-
-  void _loadVideo(String youtubeId) {
-    final embedHtml = '''
-<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    * { margin:0; padding:0; background:#000; }
-    iframe { width:100%; height:100vh; border:none; }
-  </style>
-</head>
-<body>
-  <iframe src="https://www.youtube.com/embed/$youtubeId?autoplay=1&rel=0"
-    allow="autoplay; encrypted-media" allowfullscreen></iframe>
-</body>
-</html>''';
-    _webController.loadHtmlString(embedHtml);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final videoAsync = ref.watch(videoDetailProvider(widget.videoId));
+  Widget build(BuildContext context, WidgetRef ref) {
+    final videoAsync = ref.watch(videoDetailProvider(videoId));
 
     final isLight = Theme.of(context).brightness == Brightness.light;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
     return videoAsync.when(
       loading: () => Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -70,7 +33,7 @@ class _VideoDetailScreenState extends ConsumerState<VideoDetailScreen> {
               Text('Failed to load video',
                 style: GoogleFonts.inter(color: isLight ? AppColors.lightTextSecondary : AppColors.textSecondary)),
               TextButton(
-                onPressed: () => ref.invalidate(videoDetailProvider(widget.videoId)),
+                onPressed: () => ref.invalidate(videoDetailProvider(videoId)),
                 child: const Text('Retry'),
               ),
             ],
@@ -78,40 +41,25 @@ class _VideoDetailScreenState extends ConsumerState<VideoDetailScreen> {
         ),
       ),
       data: (video) {
-        _loadVideo(video.youtubeVideoId);
         return Scaffold(
           backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            leading: IconButton(
+              icon: Icon(Icons.arrow_back, color: onSurface),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            title: Text(
+              video.title,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: onSurface,
+              ),
+            ),
+          ),
           body: Column(
             children: [
-              // YouTube Player
-              Stack(
-                children: [
-                  AspectRatio(
-                    aspectRatio: 16 / 9,
-                    child: WebViewWidget(controller: _webController),
-                  ),
-                  // Back button
-                  SafeArea(
-                    child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: GestureDetector(
-                        onTap: () => Navigator.of(context).pop(),
-                        child: Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.arrow_back,
-                              color: Colors.white, size: 18),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
               // Video info
               Expanded(
                 child: SingleChildScrollView(

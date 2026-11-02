@@ -162,38 +162,46 @@ class ShopScreen extends ConsumerWidget {
             ),
 
             // Ad Reward 2: Free 25 Pearls
-            _buildRewardedShopItem(
-              context,
-              icon: '🎁',
-              badge: 'FREE PEARLS',
-              title: 'Watch Ad: Claim +25 Pearls',
-              subtitle: 'Watch a quick 20-second video to claim free pearls for boosters',
-              buttonText: '+25 💎',
-              isActionable: true,
-              buttonColor: const Color(0xFF0284C7),
-              shadowColor: const Color(0xFF0369A1),
-              onWatch: () {
-                AdService().showRewardedAd(
-                  userId: ref.read(authProvider).user?.id ?? '',
-                  rewardType: 'pearls',
-                  onUserEarnedReward: () async {
-                    await Future.delayed(const Duration(seconds: 2));
-                    await ref.read(gamificationStatusProvider.notifier).refresh();
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Ad completed. Pearls will be added after AdMob verification.'),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    }
-                  },
-                  onAdFailed: (error) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(error), behavior: SnackBarBehavior.floating),
-                      );
-                    }
+            Builder(
+              builder: (context) {
+                final canWatchPearlAd = AdService().canWatchRewardedAdToday;
+                final adsRemaining = AdService().remainingRewardedAdsToday;
+                return _buildRewardedShopItem(
+                  context,
+                  icon: '🎁',
+                  badge: 'FREE PEARLS',
+                  title: 'Watch Ad: Claim +25 Pearls',
+                  subtitle: canWatchPearlAd
+                      ? 'Watch a quick 20-second video to claim free pearls for boosters ($adsRemaining/6 ads left today)'
+                      : 'Daily ad limit reached (6/6). Come back tomorrow for more free pearls!',
+                  buttonText: canWatchPearlAd ? '+25 💎' : 'MAX (6/6)',
+                  isActionable: canWatchPearlAd,
+                  buttonColor: const Color(0xFF0284C7),
+                  shadowColor: const Color(0xFF0369A1),
+                  onWatch: () {
+                    AdService().showRewardedAd(
+                      userId: ref.read(authProvider).user?.id ?? '',
+                      rewardType: 'pearls',
+                      onUserEarnedReward: () async {
+                        await Future.delayed(const Duration(seconds: 2));
+                        await ref.read(gamificationStatusProvider.notifier).refresh();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Ad completed. Pearls will be added after AdMob verification.'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      },
+                      onAdFailed: (error) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(error), behavior: SnackBarBehavior.floating),
+                          );
+                        }
+                      },
+                    );
                   },
                 );
               },
@@ -275,7 +283,7 @@ class ShopScreen extends ConsumerWidget {
                   ? '⚡ 2X XP Boost currently ACTIVE! Complete lessons now to earn double XP'
                   : 'Earn 2x XP points for the next 30 minutes of study',
               cost: 150,
-              canAfford: pearls >= 150,
+              canAfford: pearls >= 150 && !(status?.isDoubleXpActive ?? false),
               buttonText: (status?.isDoubleXpActive ?? false) ? 'ACTIVE' : 'GET',
               onBuy: () async {
                 if (status?.isDoubleXpActive ?? false) {
@@ -371,7 +379,7 @@ class ShopScreen extends ConsumerWidget {
                     color: canAfford ? Colors.white : const Color(0xFF94A3B8),
                   ),
                 ),
-                if (buttonText != 'FULL') ...[
+                if (buttonText != 'FULL' && buttonText != 'ACTIVE') ...[
                   const SizedBox(width: 4),
                   const Text('💎', style: TextStyle(fontSize: 12)),
                   Text(

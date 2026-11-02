@@ -22,7 +22,7 @@ class QuizResultScreen extends ConsumerWidget {
     final cached = ref.watch(quizResultProvider(quizId));
     final hasCached = cached != null && cached.isNotEmpty;
     final hasRoute = result.isNotEmpty;
-    final data = hasCached ? cached! : result;
+    final data = hasCached ? cached : result;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final onSurface = Theme.of(context).colorScheme.onSurface;
@@ -88,15 +88,29 @@ class QuizResultScreen extends ConsumerWidget {
 
     final ringColor = passed ? AppColors.success : AppColors.error;
     int correct = 0, wrong = 0, skipped = 0;
-    for (final a in answers) {
+    for (int idx = 0; idx < answers.length; idx++) {
+      final a = answers[idx];
+      final q = idx < questions.length ? questions[idx] : null;
+      final isMatchPairsQ = (q is QuizQuestion && q.isMatchPairs) ||
+          (q is Map && (q['type'] == 'match-pairs' || q['type'] == 'match_pairs'));
       if (a is AttemptAnswer) {
-        if (a.selectedIndex == -1) skipped++;
-        else if (a.correct) correct++;
-        else wrong++;
+        final hasMatches = a.matches.isNotEmpty || a.totalPairs > 0 || a.pointsEarned > 0;
+        if (a.correct) {
+          correct++;
+        } else if (a.selectedIndex == -1 && !isMatchPairsQ && !hasMatches) {
+          skipped++;
+        } else {
+          wrong++;
+        }
       } else if (a is Map) {
-        if ((a['selectedIndex'] ?? -1) == -1) skipped++;
-        else if (a['correct'] == true) correct++;
-        else wrong++;
+        final hasMatches = a['matches'] != null || a['submittedMatches'] != null || (a['pointsEarned'] is num && (a['pointsEarned'] as num) > 0);
+        if (a['correct'] == true || a['isCorrect'] == true) {
+          correct++;
+        } else if ((a['selectedIndex'] ?? -1) == -1 && !isMatchPairsQ && !hasMatches) {
+          skipped++;
+        } else {
+          wrong++;
+        }
       }
     }
 
@@ -246,12 +260,37 @@ class QuizResultScreen extends ConsumerWidget {
                 separatorBuilder: (_, __) => const SizedBox(height: 12),
                 itemBuilder: (_, i) {
                   final answer = answers[i];
+                  QuizQuestion? question;
+                  Map<String, dynamic>? questionMap;
+                  if (i < questions.length) {
+                    if (questions[i] is QuizQuestion) {
+                      question = questions[i] as QuizQuestion;
+                    } else if (questions[i] is Map) {
+                      questionMap = Map<String, dynamic>.from(questions[i] as Map);
+                    }
+                  }
+
+                  final isMatchPairsQ = (question?.isMatchPairs ?? false) ||
+                      (questionMap != null &&
+                          (questionMap['type'] == 'match-pairs' || questionMap['type'] == 'match_pairs')) ||
+                      (answer is AttemptAnswer && (answer.matches.isNotEmpty || answer.totalPairs > 0)) ||
+                      (answer is Map &&
+                          (answer['type'] == 'match-pairs' ||
+                              answer['type'] == 'match_pairs' ||
+                              answer['matches'] != null ||
+                              answer['submittedMatches'] != null));
+
                   final isCorrect = answer is AttemptAnswer
                       ? answer.correct
-                      : (answer is Map ? answer['correct'] == true : false);
-                  final isSkipped = answer is AttemptAnswer
-                      ? answer.selectedIndex == -1
-                      : (answer is Map ? (answer['selectedIndex'] ?? -1) == -1 : false);
+                      : (answer is Map ? (answer['correct'] == true || answer['isCorrect'] == true) : false);
+                  final isSkipped = isMatchPairsQ
+                      ? false
+                      : (answer is AttemptAnswer
+                          ? (!answer.correct && answer.selectedIndex == -1)
+                          : (answer is Map
+                              ? (!(answer['correct'] == true || answer['isCorrect'] == true) &&
+                                  (answer['selectedIndex'] ?? -1) == -1)
+                              : false));
                   final selectedIdx = answer is AttemptAnswer
                       ? answer.selectedIndex
                       : (answer is Map ? (answer['selectedIndex'] ?? -1) as int : -1);
@@ -261,11 +300,6 @@ class QuizResultScreen extends ConsumerWidget {
                   final explanation = answer is AttemptAnswer
                       ? answer.explanation
                       : (answer is Map ? answer['explanation'] as String? : null);
-
-                  QuizQuestion? question;
-                  if (i < questions.length && questions[i] is QuizQuestion) {
-                    question = questions[i] as QuizQuestion;
-                  }
 
                   final itemBorderColor = isSkipped
                       ? textMuted

@@ -257,15 +257,23 @@ class PathNodesNotifier extends StateNotifier<AsyncValue<List<PathNodeModel>>> {
     final serverStars = result['stars'] as int? ?? 1;
     final serverScore = result['scorePct'] as int? ?? scorePct;
     state.whenData((currentNodes) {
-      if (nodeIndex >= 0 && nodeIndex < currentNodes.length) {
-        final updated = List<PathNodeModel>.from(currentNodes);
-        updated[nodeIndex] = updated[nodeIndex].copyWith(
+      final updated = List<PathNodeModel>.from(currentNodes);
+      final targetPos = updated.indexWhere((n) => n.index == nodeIndex);
+      final resolvedPos = targetPos != -1
+          ? targetPos
+          : (nodeIndex >= 0 && nodeIndex < updated.length ? nodeIndex : -1);
+      if (resolvedPos != -1) {
+        updated[resolvedPos] = updated[resolvedPos].copyWith(
           status: 'completed',
           stars: serverStars,
           scorePct: serverScore,
         );
-        if (nodeIndex + 1 < updated.length && updated[nodeIndex + 1].status == 'locked') {
-          updated[nodeIndex + 1] = updated[nodeIndex + 1].copyWith(status: 'available');
+        final nextPos = updated.indexWhere((n) => n.index == nodeIndex + 1);
+        final resolvedNextPos = nextPos != -1
+            ? nextPos
+            : (resolvedPos + 1 < updated.length ? resolvedPos + 1 : -1);
+        if (resolvedNextPos != -1 && updated[resolvedNextPos].status == 'locked') {
+          updated[resolvedNextPos] = updated[resolvedNextPos].copyWith(status: 'available');
         }
         state = AsyncValue.data(updated);
 

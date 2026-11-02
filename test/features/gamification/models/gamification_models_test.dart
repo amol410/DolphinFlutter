@@ -1,7 +1,90 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:dolphincoder/core/network/dio_client.dart';
+import 'package:dolphincoder/features/gamification/data/gamification_repository.dart';
 import 'package:dolphincoder/features/gamification/data/models/gamification_models.dart';
+import 'package:dolphincoder/features/gamification/providers/gamification_provider.dart';
+
+class _FakeWindowedGamificationRepository extends GamificationRepository {
+  @override
+  Future<GamificationStatusModel> getStatus() async {
+    return const GamificationStatusModel(
+      pearls: 100,
+      oxygen: 5,
+      totalXp: 38,
+      targetLanguage: 'de',
+      nativeLanguage: 'en',
+      currentLevel: 'A1',
+    );
+  }
+
+  @override
+  Future<List<PathNodeModel>> getPath({
+    String? targetLanguage,
+    String? nativeLanguage,
+    String? level,
+    int? section,
+    int? unit,
+    int? startUnit,
+    int? endUnit,
+  }) async {
+    return const [
+      PathNodeModel(
+        id: 501,
+        index: 5,
+        title: 'Unit 2 Lesson 1',
+        subtitle: 'Windowed Node 5',
+        type: 'lesson',
+        status: 'available',
+        unitNumber: 2,
+      ),
+      PathNodeModel(
+        id: 502,
+        index: 6,
+        title: 'Unit 2 Lesson 2',
+        subtitle: 'Windowed Node 6',
+        type: 'lesson',
+        status: 'locked',
+        unitNumber: 2,
+      ),
+    ];
+  }
+
+  @override
+  Future<Map<String, dynamic>> completeNode({
+    required int nodeIndex,
+    int scorePct = 100,
+    int? stars,
+    int? xpEarned,
+    int? pearlsEarned,
+    String? attemptId,
+    String? targetLanguage,
+    String? nativeLanguage,
+    String? level,
+  }) async {
+    return {
+      'success': true,
+      'stars': 3,
+      'scorePct': scorePct,
+      'pearls': 110,
+      'oxygen': 5,
+      'totalXp': 50,
+    };
+  }
+}
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
+    DioClient.reset();
+    DioClient.setToken('test-token');
+  });
+
   group('GamificationStatusModel Tests', () {
     test('fromJson parses full JSON payload correctly', () {
       final json = {
@@ -92,6 +175,28 @@ void main() {
       expect(completed.status, 'completed');
       expect(completed.stars, 3);
       expect(completed.title, node.title);
+    });
+
+    test('PathNodesNotifier.completeNode matches by node.index on windowed slices', () async {
+      final container = ProviderContainer(
+        overrides: [
+          gamificationRepositoryProvider.overrideWithValue(_FakeWindowedGamificationRepository()),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(pathNodesProvider.notifier);
+      // Allow constructor _initPath() microtasks to settle before interacting
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await notifier.loadPath(startUnit: 2, endUnit: 2);
+
+      await notifier.completeNode(5, scorePct: 100, attemptId: 'att-win-5');
+      final updatedNodes = container.read(pathNodesProvider).value!;
+      expect(updatedNodes[0].index, 5);
+      expect(updatedNodes[0].status, 'completed');
+      expect(updatedNodes[0].stars, 3);
+      expect(updatedNodes[1].index, 6);
+      expect(updatedNodes[1].status, 'available');
     });
   });
 }

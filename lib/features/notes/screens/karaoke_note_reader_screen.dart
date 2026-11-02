@@ -243,12 +243,12 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
     await _audioPlayer.setPlaybackRate(rate);
   }
 
-  Future<void> _forceReleaseSpeechRecognizer() async {
+  Future<void> _forceReleaseSpeechRecognizer({bool isDisposing = false}) async {
     _silenceTimer?.cancel();
     _silenceTimer = null;
     final speechToRelease = _speech;
     _speech = null;
-    if (mounted) {
+    if (!isDisposing && mounted) {
       setState(() => _speechSessionState = SpeechSessionState.idle);
     } else {
       _speechSessionState = SpeechSessionState.idle;
@@ -642,7 +642,7 @@ class _KaraokeNoteReaderScreenState extends ConsumerState<KaraokeNoteReaderScree
     _playerStateSub?.cancel();
     _positionSub?.cancel();
     _durationSub?.cancel();
-    _forceReleaseSpeechRecognizer();
+    _forceReleaseSpeechRecognizer(isDisposing: true);
     _audioPlayer.stop();
     _audioPlayer.dispose();
     _scrollController.dispose();

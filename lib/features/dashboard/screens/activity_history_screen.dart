@@ -488,36 +488,37 @@ class _ActivityCard extends StatelessWidget {
     String route;
     final isQuiz = item.activityType == 'quiz';
 
-    switch (item.activityType) {
-      case 'quiz':
-        typeIcon = Icons.psychology_outlined;
-        typeColor = AppColors.accent;
-        typeLabel = 'QUIZ';
-        route = '/quizzes/${item.resourceId}/review';
-        break;
-      case 'karaoke':
-        typeIcon = Icons.mic_rounded;
-        typeColor = const Color(0xFF06B6D4);
-        typeLabel = 'KARAOKE';
-        route = '/notes/${item.resourceId}';
-        break;
-      case 'note':
-        typeIcon = Icons.article_outlined;
-        typeColor = AppColors.noteBlue;
-        typeLabel = 'NOTE';
-        route = '/notes/${item.resourceId}';
-        break;
-      case 'flashcard':
-        typeIcon = Icons.style_outlined;
-        typeColor = AppColors.success;
-        typeLabel = 'CARDS';
-        route = '/flashcards/${item.resourceId}/study';
-        break;
-      default:
-        typeIcon = Icons.school_outlined;
-        typeColor = isDark ? const Color(0xFFA1A1AA) : AppColors.primary;
-        typeLabel = 'STUDY';
-        route = '/home';
+    if (item.isKaraoke || item.activityType == 'karaoke') {
+      typeIcon = Icons.mic_rounded;
+      typeColor = const Color(0xFF06B6D4);
+      typeLabel = 'KARAOKE';
+      route = '/notes/karaoke/${item.resourceId}';
+    } else {
+      switch (item.activityType) {
+        case 'quiz':
+          typeIcon = Icons.psychology_outlined;
+          typeColor = AppColors.accent;
+          typeLabel = 'QUIZ';
+          route = '/quizzes/${item.resourceId}/review';
+          break;
+        case 'note':
+          typeIcon = Icons.article_outlined;
+          typeColor = AppColors.noteBlue;
+          typeLabel = 'NOTE';
+          route = '/notes/${item.resourceId}';
+          break;
+        case 'flashcard':
+          typeIcon = Icons.style_outlined;
+          typeColor = AppColors.success;
+          typeLabel = 'CARDS';
+          route = '/flashcards/${item.resourceId}/study';
+          break;
+        default:
+          typeIcon = Icons.school_outlined;
+          typeColor = isDark ? const Color(0xFFA1A1AA) : AppColors.primary;
+          typeLabel = 'STUDY';
+          route = '/home';
+      }
     }
 
     return Material(

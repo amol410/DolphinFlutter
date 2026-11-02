@@ -43,9 +43,9 @@ class UserModel {
       UserModel.fromJson(jsonDecode(jsonStr) as Map<String, dynamic>);
 
   String get initials {
-    final parts = name.trim().split(' ');
+    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
     if (parts.length >= 2) return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    return name.isNotEmpty ? name[0].toUpperCase() : 'U';
+    return parts.isNotEmpty ? parts[0][0].toUpperCase() : 'U';
   }
 
   UserModel copyWith({String? name, String? bio, String? avatar}) {

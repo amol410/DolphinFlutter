@@ -48,6 +48,8 @@ class StudySessionState {
   }
 
   int masteredCount() => cardResults.values.where((v) => v == 'known').length;
+
+  bool get isCompleted => isComplete;
 }
 
 class StudySessionNotifier extends StateNotifier<StudySessionState> {
@@ -77,6 +79,12 @@ class StudySessionNotifier extends StateNotifier<StudySessionState> {
         currentIndex: state.currentIndex + 1,
         isFlipped: false,
         showHint: false,
+      );
+    } else {
+      state = state.copyWith(
+        isFlipped: false,
+        showHint: false,
+        isComplete: true,
       );
     }
   }
