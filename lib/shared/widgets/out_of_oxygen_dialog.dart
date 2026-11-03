@@ -287,5 +287,4 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
       ),
     );
   }
-  }
 }
