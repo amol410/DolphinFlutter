@@ -18,8 +18,10 @@ class GamificationStatusNotifier extends StateNotifier<AsyncValue<GamificationSt
   Future<void> refresh() async {
     try {
       final status = await _repo.getStatus();
+      if (!mounted) return;
       state = AsyncValue.data(status);
     } catch (e, st) {
+      if (!mounted) return;
       state = AsyncValue.error(e, st);
     }
   }
@@ -137,6 +139,7 @@ class PathNodesNotifier extends StateNotifier<AsyncValue<List<PathNodeModel>>> {
       nativeLanguage: nLang,
       level: lvl,
     );
+    if (!mounted) return;
     if (cachedNodes != null && cachedNodes.isNotEmpty) {
       state = AsyncValue.data(cachedNodes);
       final maxU = cachedNodes.map((n) => n.unitNumber).fold(1, (prev, u) => u > prev ? u : prev);
@@ -144,6 +147,7 @@ class PathNodesNotifier extends StateNotifier<AsyncValue<List<PathNodeModel>>> {
     }
 
     // 2. Background sync with Hostinger API seamlessly (silent = true if cached data is painted)
+    if (!mounted) return;
     await loadPath(
       targetLanguage: tLang,
       nativeLanguage: nLang,
@@ -177,6 +181,7 @@ class PathNodesNotifier extends StateNotifier<AsyncValue<List<PathNodeModel>>> {
         startUnit: startUnit,
         endUnit: endUnit,
       );
+      if (!mounted) return;
 
       if (startUnit != null && endUnit != null && state.value != null && state.value!.isNotEmpty) {
         // Merge windowed nodes into existing list smoothly
@@ -191,6 +196,7 @@ class PathNodesNotifier extends StateNotifier<AsyncValue<List<PathNodeModel>>> {
         state = AsyncValue.data(nodes);
       }
     } catch (e, st) {
+      if (!mounted) return;
       if (!silent && state.value == null) {
         state = AsyncValue.error(e, st);
       }

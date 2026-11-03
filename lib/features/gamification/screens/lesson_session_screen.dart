@@ -57,6 +57,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     with WidgetsBindingObserver {
   int _currentStage = 0;
   List<String> _activeStageTypes = [];
+  List<ParsedLessonStage> _parsedStages = [];
   int get _totalStages => _activeStageTypes.length;
   bool get _isCelebrationStage => _currentStage >= _totalStages;
   bool _currentStageReEnqueued = false;
@@ -64,6 +65,11 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   // Economy & Accuracy Tracking
   int _initialTotalStages = 0;
   int _mistakesCount = 0;
+
+  // Mistakes Review Interstitial State
+  bool _hasShownMistakesReviewInterstitial = false;
+  bool _isShowingMistakesReviewInterstitial = false;
+  Timer? _mistakesInterstitialTimer;
 
   int get _calculatedAccuracy {
     final baseCount = _initialTotalStages > 0 ? _initialTotalStages : (_totalStages > 0 ? _totalStages : 1);
@@ -269,8 +275,15 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.detached) {
-      debugPrint('📱 [LessonSessionScreen] Lifecycle $state -> releasing SpeechRecognizer');
+      debugPrint('📱 [LessonSessionScreen] Lifecycle $state -> releasing SpeechRecognizer, pausing audio & cancelling timers');
+      _pauseAllAudio();
+      _sprechenAutoPlayTimer?.cancel();
+      _sprechenAutoPlayTimer = null;
+      _ttsHighlightTimer?.cancel();
+      _ttsHighlightTimer = null;
       _forceReleaseSpeechRecognizer();
+    } else if (state == AppLifecycleState.resumed) {
+      debugPrint('📱 [LessonSessionScreen] Lifecycle resumed cleanly');
     }
   }
 
@@ -323,6 +336,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     WidgetsBinding.instance.removeObserver(this);
     _silenceTimer?.cancel();
     _confettiTimer?.cancel();
+    _mistakesInterstitialTimer?.cancel();
     _ttsHighlightTimer?.cancel();
     _sprechenAutoPlayTimer?.cancel();
     _playerCompleteSub?.cancel();
@@ -381,7 +395,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
           await _audioPlayer.play(DeviceFileSource(cachedFile.path));
         } else {
           debugPrint('🔊 [_playListenAudio] Playing studio audio: $url (speed: $speed)');
-          await _audioPlayer.play(UrlSource(url));
+          await _audioPlayer.play(UrlSource(url)).timeout(const Duration(seconds: 4));
           PrefetchService().prefetchAudioUrl(url);
         }
         if (!mounted) return;
@@ -422,7 +436,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
           await _audioPlayer.play(DeviceFileSource(cachedFile.path));
         } else {
           debugPrint('🔊 [_playListenSelectAudio] Playing studio audio: $url (speed: $speed)');
-          await _audioPlayer.play(UrlSource(url));
+          await _audioPlayer.play(UrlSource(url)).timeout(const Duration(seconds: 4));
           PrefetchService().prefetchAudioUrl(url);
         }
         if (!mounted) return;
@@ -492,10 +506,17 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     if (stages == null || stages.isEmpty) {
       if (activeNode?.id != null) {
         final lessonId = activeNode!.id;
+        final serverUpdatedAt = activeNode?.updatedAt;
         // Check Tier-2 cache for instant 0ms launch
         CacheService().getCachedLessonDetails(lessonId).then((cachedData) {
           if (!mounted) return;
+          final isStale = CacheService().isCacheStale(
+            serverUpdatedAt: serverUpdatedAt,
+            cachedUpdatedAt: cachedData?['updatedAt']?.toString(),
+          );
+
           if (cachedData != null &&
+              !isStale &&
               cachedData['stages'] is List &&
               (cachedData['stages'] as List).isNotEmpty) {
             debugPrint('⚡ [_initStagesData] Instant 0ms launch from Tier-2 cache for lesson $lessonId');
@@ -506,9 +527,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
             _startFirstStage();
             return;
           }
-          // If not in cache, fallback to background fetch
+          // If not in cache or stale, fallback to background fetch
           _isLoadingLessonDetails = true;
-          _fetchLessonDetails(lessonId);
+          _fetchLessonDetails(lessonId, serverUpdatedAt: serverUpdatedAt);
         });
         return;
       }
@@ -519,9 +540,12 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     _applyStages(stages);
   }
 
-  Future<void> _fetchLessonDetails(dynamic lessonId) async {
+  Future<void> _fetchLessonDetails(dynamic lessonId, {String? serverUpdatedAt}) async {
     try {
-      final lessonData = await ref.read(gamificationRepositoryProvider).getLessonDetails(lessonId);
+      final lessonData = await ref.read(gamificationRepositoryProvider).getLessonDetails(
+        lessonId,
+        serverUpdatedAt: serverUpdatedAt,
+      );
       if (!mounted) return;
       if (lessonData != null && lessonData['stages'] is List && (lessonData['stages'] as List).isNotEmpty) {
         final stages = lessonData['stages'] as List;
@@ -634,125 +658,134 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     _precacheAllVocab();
   }
 
-  void _applyStages(List<dynamic> stages) {
-    final activeTypes = <String>[];
-    for (final rawStage in stages) {
-      if (rawStage is! Map) continue;
-      final stage = Map<String, dynamic>.from(rawStage);
-      final type = stage['type']?.toString();
+  void _applyParsedStageToFields(ParsedLessonStage stageEntry) {
+    final type = stageEntry.canonicalType;
+    final data = stageEntry.data;
 
-      if ((type == 'match_pairs' || type == 'word_match') && stage['pairs'] is List) {
-        final parsed = LessonStageParser.parseWordMatch(stage);
-        if (parsed != null) {
-          _germanWords = parsed.germanWords;
-          _englishWords = parsed.englishWords;
-          _solutionPairs = parsed.solutionPairs;
-          activeTypes.add('word_match');
-        }
-      } else if (type == 'listen_tap') {
-        final parsed = LessonStageParser.parseListenTap(stage);
-        if (parsed != null) {
-          if (parsed.targetSentence.isNotEmpty) {
-            _listenTargetSentence = parsed.targetSentence;
-            _listenTarget = parsed.targetWords;
+    if (type == 'word_match' && data is WordMatchStageData) {
+      _germanWords = List<String>.from(data.germanWords);
+      _englishWords = List<String>.from(data.englishWords)..shuffle();
+      _solutionPairs = Map<String, String>.from(data.solutionPairs);
+    } else if (type == 'listen_tap' && data is ListenTapStageData) {
+      if (data.targetSentence.isNotEmpty) {
+        _listenTargetSentence = data.targetSentence;
+        _listenTarget = List<String>.from(data.targetWords);
+      }
+      if (data.wordBank.isNotEmpty) {
+        _listenBank = List<String>.from(data.wordBank)..shuffle();
+      }
+      _listenAudioUrl = data.audioUrl;
+    } else if (type == 'cloze_test' && data is ClozeStageData) {
+      if (data.sentence.isNotEmpty) _clozeSentence = data.sentence;
+      if (data.translation.isNotEmpty) _clozeTranslation = data.translation;
+      if (data.blank.isNotEmpty) _clozeBlank = data.blank;
+      if (data.options.isNotEmpty) _clozeOptions = List<String>.from(data.options);
+    } else if (type == 'sentence_builder' && data is SentenceBuilderStageData) {
+      if (data.prompt.isNotEmpty) _sentencePrompt = data.prompt;
+      if (data.targetSentence.isNotEmpty) {
+        _builderTargetSentence = data.targetSentence;
+        _builderTarget = List<String>.from(data.targetWords);
+      }
+      if (data.wordBank.isNotEmpty) {
+        _builderBank = List<String>.from(data.wordBank)..shuffle();
+      }
+    } else if (type == 'type_word' && data is TypeWordStageData) {
+      if (data.prompt.isNotEmpty) _typePrompt = data.prompt;
+      if (data.translation.isNotEmpty) _typeTranslation = data.translation;
+      if (data.target.isNotEmpty) _typeTarget = data.target;
+      _typeHint = data.hint;
+    } else if (type == 'dialogue_bubble' && data is DialogueStageData) {
+      _dialoguePartnerName = data.partnerName;
+      _dialoguePartnerMessage = data.partnerMessage;
+      _dialoguePartnerTranslation = data.translation;
+      if (data.options.isNotEmpty) {
+        _dialogueOptions = data.options.map((o) => Map<String, dynamic>.from(o)).toList();
+      }
+    } else if (type == 'listen_select' && data is ListenSelectStageData) {
+      if (data.sentence.isNotEmpty) _listenSelectSentence = data.sentence;
+      if (data.question.isNotEmpty) _listenSelectQuestion = data.question;
+      _listenSelectAudioUrl = data.audioUrl;
+      if (data.options.isNotEmpty) {
+        _listenSelectOptions = data.options.map((o) => Map<String, dynamic>.from(o)).toList();
+      }
+    } else if (type == 'picture_select' && data is PictureSelectStageData) {
+      _picturePrompt = data.prompt;
+      _pictureTargetWord = data.targetWord;
+      _pictureTranslation = data.translation;
+      _pictureOptions = List<PictureOptionData>.from(data.options);
+    } else if (type == 'sprechen' && data is SprechenStageData) {
+      _sprechenPrompt = data.prompt;
+      if (data.translation.isNotEmpty) _sprechenTranslation = data.translation;
+      _sprechenMinAccuracy = data.minAccuracy;
+      _sprechenAudioUrl = data.audioUrl;
+      _sprechenKaraokeWords = [];
+      if (data.karaokeData != null) {
+        final kd = data.karaokeData;
+        if (kd is Map && kd['words'] is List) {
+          _sprechenKaraokeWords = (kd['words'] as List)
+              .map((w) => KaraokeWord.fromJson(Map<String, dynamic>.from(w as Map)))
+              .toList();
+        } else if (kd is List) {
+          _sprechenKaraokeWords = kd
+              .map((w) => KaraokeWord.fromJson(Map<String, dynamic>.from(w as Map)))
+              .toList();
+        } else if (kd is Map && kd['sentences'] is List && (kd['sentences'] as List).isNotEmpty) {
+          final firstS = kd['sentences'][0];
+          if (firstS is Map && firstS['words'] is List) {
+            _sprechenKaraokeWords = (firstS['words'] as List)
+                .map((w) => KaraokeWord.fromJson(Map<String, dynamic>.from(w as Map)))
+                .toList();
           }
-          if (parsed.wordBank.isNotEmpty) {
-            _listenBank = parsed.wordBank;
-          }
-          _listenAudioUrl = parsed.audioUrl;
-          activeTypes.add('listen_tap');
-        }
-      } else if (type == 'cloze_test' || type == 'cloze') {
-        final parsed = LessonStageParser.parseCloze(stage);
-        if (parsed != null) {
-          if (parsed.sentence.isNotEmpty) _clozeSentence = parsed.sentence;
-          if (parsed.translation.isNotEmpty) _clozeTranslation = parsed.translation;
-          if (parsed.blank.isNotEmpty) _clozeBlank = parsed.blank;
-          if (parsed.options.isNotEmpty) _clozeOptions = parsed.options;
-          activeTypes.add('cloze_test');
-        }
-      } else if (type == 'sentence_builder') {
-        final parsed = LessonStageParser.parseSentenceBuilder(stage);
-        if (parsed != null) {
-          if (parsed.prompt.isNotEmpty) _sentencePrompt = parsed.prompt;
-          if (parsed.targetSentence.isNotEmpty) {
-            _builderTargetSentence = parsed.targetSentence;
-            _builderTarget = parsed.targetWords;
-          }
-          if (parsed.wordBank.isNotEmpty) {
-            _builderBank = parsed.wordBank;
-          }
-          activeTypes.add('sentence_builder');
-        }
-      } else if (type == 'type_word' || type == 'type_input') {
-        final parsed = LessonStageParser.parseTypeWord(stage);
-        if (parsed != null) {
-          if (parsed.prompt.isNotEmpty) _typePrompt = parsed.prompt;
-          if (parsed.translation.isNotEmpty) _typeTranslation = parsed.translation;
-          if (parsed.target.isNotEmpty) _typeTarget = parsed.target;
-          if (parsed.hint.isNotEmpty) _typeHint = parsed.hint;
-          activeTypes.add('type_word');
-        }
-      } else if (type == 'dialogue_bubble' || type == 'dialogue') {
-        final parsed = LessonStageParser.parseDialogue(stage);
-        if (parsed != null) {
-          _dialoguePartnerName = parsed.partnerName;
-          _dialoguePartnerMessage = parsed.partnerMessage;
-          _dialoguePartnerTranslation = parsed.translation;
-          if (parsed.options.isNotEmpty) {
-            _dialogueOptions = parsed.options;
-          }
-          activeTypes.add('dialogue_bubble');
-        }
-      } else if (type == 'listen_select' || type == 'listen_comprehension') {
-        final parsed = LessonStageParser.parseListenSelect(stage);
-        if (parsed != null) {
-          if (parsed.sentence.isNotEmpty) _listenSelectSentence = parsed.sentence;
-          if (parsed.question.isNotEmpty) _listenSelectQuestion = parsed.question;
-          _listenSelectAudioUrl = parsed.audioUrl;
-          if (parsed.options.isNotEmpty) {
-            _listenSelectOptions = parsed.options;
-          }
-          activeTypes.add('listen_select');
-        }
-      } else if (type == 'picture_select' || type == 'picture_cards') {
-        final parsed = LessonStageParser.parsePictureSelect(stage);
-        if (parsed != null) {
-          _picturePrompt = parsed.prompt;
-          _pictureTargetWord = parsed.targetWord;
-          _pictureTranslation = parsed.translation;
-          _pictureOptions = parsed.options;
-          activeTypes.add('picture_select');
-        }
-      } else if (type == 'sprechen') {
-        final parsed = LessonStageParser.parseSprechen(stage);
-        if (parsed != null) {
-          _sprechenPrompt = parsed.prompt;
-          if (parsed.translation.isNotEmpty) _sprechenTranslation = parsed.translation;
-          _sprechenMinAccuracy = parsed.minAccuracy;
-          _sprechenAudioUrl = parsed.audioUrl;
-          if (parsed.karaokeData != null) {
-            final kd = parsed.karaokeData;
-            if (kd is Map && kd['words'] is List) {
-              _sprechenKaraokeWords = (kd['words'] as List)
-                  .map((w) => KaraokeWord.fromJson(Map<String, dynamic>.from(w as Map)))
-                  .toList();
-            } else if (kd is List) {
-              _sprechenKaraokeWords = kd
-                  .map((w) => KaraokeWord.fromJson(Map<String, dynamic>.from(w as Map)))
-                  .toList();
-            } else if (kd is Map && kd['sentences'] is List && (kd['sentences'] as List).isNotEmpty) {
-              final firstS = kd['sentences'][0];
-              if (firstS is Map && firstS['words'] is List) {
-                _sprechenKaraokeWords = (firstS['words'] as List)
-                    .map((w) => KaraokeWord.fromJson(Map<String, dynamic>.from(w as Map)))
-                    .toList();
-              }
-            }
-          }
-          activeTypes.add('sprechen');
         }
       }
+      if (_sprechenKaraokeWords.isEmpty && _sprechenPrompt.isNotEmpty) {
+        final words = _sprechenPrompt.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+        _sprechenKaraokeWords = words
+            .asMap()
+            .entries
+            .map((e) => KaraokeWord(
+                  word: e.value,
+                  clean: e.value.replaceAll(RegExp(r"[.,/#!$%^&*;:{}=\-_`~()?'«»„“”’]"), '').trim(),
+                  start: e.key * 0.5,
+                  end: (e.key * 0.5) + 0.45,
+                ))
+            .toList();
+      }
+    }
+  }
+
+  void _loadStageDataAtIndex(int index) {
+    if (index < 0 || index >= _activeStageTypes.length) return;
+    final stageType = _activeStageTypes[index];
+    if (index < _parsedStages.length) {
+      _applyParsedStageToFields(_parsedStages[index]);
+    }
+    _resetStageStateForType(stageType);
+  }
+
+  void _applyStages(List<dynamic> stages) {
+    final parsedList = LessonStageParser.parseStages(stages);
+    _parsedStages = parsedList;
+
+    if (parsedList.isNotEmpty) {
+      _activeStageTypes = parsedList.map((s) => s.canonicalType).toList();
+      // Apply in reverse order so initial variables for all present stage types are seeded,
+      // and index 0 is applied last (active for Stage 0).
+      for (int i = parsedList.length - 1; i >= 0; i--) {
+        _applyParsedStageToFields(parsedList[i]);
+      }
+      _resetStageStateForType(_activeStageTypes.first);
+    } else {
+      _activeStageTypes = [
+        'word_match',
+        'listen_tap',
+        'cloze_test',
+        'sentence_builder',
+        'type_word',
+        'dialogue_bubble',
+        'listen_select',
+        'sprechen',
+      ];
     }
 
     if (_sprechenKaraokeWords.isEmpty && _sprechenPrompt.isNotEmpty) {
@@ -769,20 +802,6 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
           .toList();
     }
 
-    if (activeTypes.isNotEmpty) {
-      _activeStageTypes = activeTypes;
-    } else {
-      _activeStageTypes = [
-        'word_match',
-        'listen_tap',
-        'cloze_test',
-        'sentence_builder',
-        'type_word',
-        'dialogue_bubble',
-        'listen_select',
-        'sprechen',
-      ];
-    }
     if (_initialTotalStages == 0) {
       _initialTotalStages = _activeStageTypes.length;
     }
@@ -801,6 +820,42 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     if (index < 0 || index >= _activeStageTypes.length) return;
     final stageType = _activeStageTypes[index];
     final words = <String>[];
+
+    if (index < _parsedStages.length) {
+      final data = _parsedStages[index].data;
+      if (data is SentenceBuilderStageData) {
+        words.addAll(data.wordBank);
+        if (data.targetSentence.isNotEmpty) words.add(data.targetSentence);
+      } else if (data is ClozeStageData) {
+        words.addAll(data.options);
+        if (data.blank.isNotEmpty) words.add(data.blank);
+        if (data.sentence.isNotEmpty) words.add(data.sentence);
+      } else if (data is TypeWordStageData) {
+        if (data.target.isNotEmpty) words.add(data.target);
+        if (data.prompt.isNotEmpty) words.add(data.prompt);
+      } else if (data is DialogueStageData) {
+        if (data.partnerMessage.isNotEmpty) words.add(data.partnerMessage);
+        for (final opt in data.options) {
+          if (opt['text'] != null) words.add(opt['text'].toString());
+        }
+      } else if (data is ListenSelectStageData) {
+        if (data.sentence.isNotEmpty) words.add(data.sentence);
+      } else if (data is ListenTapStageData) {
+        words.addAll(data.wordBank);
+        if (data.targetSentence.isNotEmpty) words.add(data.targetSentence);
+      } else if (data is WordMatchStageData) {
+        words.addAll(data.germanWords);
+      } else if (data is PictureSelectStageData) {
+        if (data.targetWord.isNotEmpty) words.add(data.targetWord);
+        for (final opt in data.options) {
+          if (opt.text.isNotEmpty) words.add(opt.text);
+        }
+      } else if (data is SprechenStageData) {
+        if (data.prompt.isNotEmpty) words.add(data.prompt);
+      }
+      TtsService().prewarmForStage(stageType, words);
+      return;
+    }
 
     switch (stageType) {
       case 'sentence_builder':
@@ -846,6 +901,43 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     // CRITICAL OPTIMIZATION: Only pre-cache vocabulary for stages that are actually active in this lesson!
     // Prevents unneeded TTS synthesis, saves mobile battery, and eliminates audio thread micro-stutters.
     final allVocab = <String>{};
+    if (_parsedStages.isNotEmpty) {
+      for (final stageEntry in _parsedStages) {
+        final data = stageEntry.data;
+        if (data is WordMatchStageData) {
+          allVocab.addAll(data.germanWords);
+        } else if (data is ListenTapStageData) {
+          allVocab.addAll(data.targetWords);
+          allVocab.addAll(data.wordBank);
+        } else if (data is SentenceBuilderStageData) {
+          allVocab.addAll(data.targetWords);
+          allVocab.addAll(data.wordBank);
+        } else if (data is ClozeStageData) {
+          allVocab.addAll(data.options);
+          if (data.blank.isNotEmpty) allVocab.add(data.blank);
+        } else if (data is TypeWordStageData) {
+          if (data.target.isNotEmpty) allVocab.add(data.target);
+        } else if (data is DialogueStageData) {
+          for (final opt in data.options) {
+            if (opt['text'] != null) {
+              allVocab.addAll(opt['text'].toString().split(RegExp(r'\s+')));
+            }
+          }
+        } else if (data is PictureSelectStageData) {
+          if (data.targetWord.isNotEmpty) allVocab.add(data.targetWord);
+          for (final opt in data.options) {
+            if (opt.text.isNotEmpty) allVocab.add(opt.text);
+          }
+        } else if (data is SprechenStageData) {
+          allVocab.addAll(data.prompt.split(RegExp(r'\s+')).where((w) => w.isNotEmpty));
+        }
+      }
+      if (allVocab.isNotEmpty) {
+        TtsService().precacheWords(allVocab.toList());
+      }
+      return;
+    }
+
     if (_activeStageTypes.contains('word_match')) {
       allVocab.addAll(_germanWords);
     }
@@ -1122,7 +1214,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
           await _audioPlayer.play(DeviceFileSource(cachedFile.path));
         } else {
           debugPrint('🔊 [_playSprechenDemo] Starting studio reference playback: $url');
-          await _audioPlayer.play(UrlSource(url));
+          await _audioPlayer.play(UrlSource(url)).timeout(const Duration(seconds: 4));
           PrefetchService().prefetchAudioUrl(url);
         }
         return;
@@ -1567,6 +1659,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       _currentStageReEnqueued = true;
       final currentType = _activeStageTypes[_currentStage];
       _activeStageTypes.add(currentType);
+      if (_currentStage < _parsedStages.length) {
+        _parsedStages.add(_parsedStages[_currentStage]);
+      }
       debugPrint('🔁 [Mistakes Review] Re-enqueued $currentType at end of stages. Total stages: ${_activeStageTypes.length}');
     }
 
@@ -1808,41 +1903,71 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     _audioPlayer.pause();
     TtsService().stop();
     _currentStageReEnqueued = false;
+
+    // Check if entering the mistakes review phase (first retry question only)
+    final willEnterMistakesReview = nextIndex == _initialTotalStages &&
+        _activeStageTypes.length > _initialTotalStages &&
+        !_hasShownMistakesReviewInterstitial;
+
     setState(() {
       _isPlayingAudio = false;
       _isSprechenDemoPlaying = false;
       _currentStage++;
+      if (willEnterMistakesReview) {
+        _hasShownMistakesReviewInterstitial = true;
+        _isShowingMistakesReviewInterstitial = true;
+      }
+      if (_currentStage < _activeStageTypes.length) {
+        _loadStageDataAtIndex(_currentStage);
+      }
     });
     if (_currentStage < _activeStageTypes.length) {
-      _resetStageStateForType(_activeStageTypes[_currentStage]);
+      _triggerPrewarmForStage(_currentStage + 1);
     } else {
       SoundEffectsService.instance.playFanfare();
     }
     TtsService().warmUp();
-    if (_currentStage < _activeStageTypes.length) {
-      final nextType = _activeStageTypes[_currentStage];
-      if (nextType == 'listen_tap') {
-        _prepareListenAudio();
-        Future.delayed(const Duration(milliseconds: 350), () {
-          if (mounted && _currentStage < _activeStageTypes.length && _activeStageTypes[_currentStage] == 'listen_tap') {
-            _playListenAudio();
-          }
-        });
-      } else if (nextType == 'sprechen') {
-        _triggerSprechenAutoPlay();
-      } else if (nextType == 'dialogue_bubble') {
-        Future.delayed(const Duration(milliseconds: 350), () {
-          if (mounted && _currentStage < _activeStageTypes.length && _activeStageTypes[_currentStage] == 'dialogue_bubble') {
-            TtsService().speakSentence(_dialoguePartnerMessage);
-          }
-        });
-      } else if (nextType == 'listen_select') {
-        Future.delayed(const Duration(milliseconds: 350), () {
-          if (mounted && _currentStage < _activeStageTypes.length && _activeStageTypes[_currentStage] == 'listen_select') {
-            _playListenSelectAudio();
-          }
-        });
-      }
+
+    if (willEnterMistakesReview) {
+      SoundEffectsService.instance.playPop();
+      _mistakesInterstitialTimer?.cancel();
+      _mistakesInterstitialTimer = Timer(const Duration(milliseconds: 2200), () {
+        if (mounted) {
+          setState(() {
+            _isShowingMistakesReviewInterstitial = false;
+          });
+          _triggerStageAutoPlay();
+        }
+      });
+    } else {
+      _triggerStageAutoPlay();
+    }
+  }
+
+  void _triggerStageAutoPlay() {
+    if (_currentStage >= _activeStageTypes.length) return;
+    final nextType = _activeStageTypes[_currentStage];
+    if (nextType == 'listen_tap') {
+      _prepareListenAudio();
+      Future.delayed(const Duration(milliseconds: 350), () {
+        if (mounted && _currentStage < _activeStageTypes.length && _activeStageTypes[_currentStage] == 'listen_tap') {
+          _playListenAudio();
+        }
+      });
+    } else if (nextType == 'sprechen') {
+      _triggerSprechenAutoPlay();
+    } else if (nextType == 'dialogue_bubble') {
+      Future.delayed(const Duration(milliseconds: 350), () {
+        if (mounted && _currentStage < _activeStageTypes.length && _activeStageTypes[_currentStage] == 'dialogue_bubble') {
+          TtsService().speakSentence(_dialoguePartnerMessage);
+        }
+      });
+    } else if (nextType == 'listen_select') {
+      Future.delayed(const Duration(milliseconds: 350), () {
+        if (mounted && _currentStage < _activeStageTypes.length && _activeStageTypes[_currentStage] == 'listen_select') {
+          _playListenSelectAudio();
+        }
+      });
     }
   }
 
@@ -2493,43 +2618,95 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     }
   }
 
+  Widget _buildMistakesReviewInterstitial() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final imageWidth = (screenWidth * 0.90).clamp(300.0, 440.0);
+
+    return Center(
+      key: const ValueKey('mistakes_review_interstitial'),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0.0, end: 1.0),
+        duration: const Duration(milliseconds: 650),
+        curve: Curves.easeOutCubic,
+        builder: (context, progress, child) {
+          final scale = 0.80 + (0.20 * progress);
+          return Opacity(
+            opacity: progress,
+            child: Transform.scale(
+              scale: scale,
+              child: child,
+            ),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20.0),
+          child: Image.asset(
+            'assets/images/mascot/turtle_mistakes.webp',
+            width: imageWidth,
+            fit: BoxFit.contain,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildCurrentStageView() {
+    if (_isShowingMistakesReviewInterstitial) {
+      return _buildMistakesReviewInterstitial();
+    }
+
     if (_isCelebrationStage || _currentStage >= _activeStageTypes.length) {
       return _buildCelebrationStage();
     }
 
     final stageType = _activeStageTypes[_currentStage];
+    final Widget stageWidget;
     switch (stageType) {
       case 'word_match':
       case 'match_pairs':
-        return _buildWordMatchStage();
+        stageWidget = _buildWordMatchStage();
+        break;
       case 'listen_tap':
-        return _buildListeningStage();
+        stageWidget = _buildListeningStage();
+        break;
       case 'cloze_test':
       case 'cloze':
-        return _buildClozeStage();
+        stageWidget = _buildClozeStage();
+        break;
       case 'sentence_builder':
-        return _buildSentenceBuilderStage();
+        stageWidget = _buildSentenceBuilderStage();
+        break;
       case 'type_word':
       case 'type_input':
-        return _buildTypeWordStage();
+        stageWidget = _buildTypeWordStage();
+        break;
       case 'dialogue_bubble':
       case 'dialogue':
-        return _buildDialogueBubbleStage();
+        stageWidget = _buildDialogueBubbleStage();
+        break;
       case 'listen_select':
       case 'listen_comprehension':
-        return _buildListenSelectStage();
+        stageWidget = _buildListenSelectStage();
+        break;
       case 'picture_select':
       case 'picture_cards':
-        return _buildPictureSelectStage();
+        stageWidget = _buildPictureSelectStage();
+        break;
       case 'sprechen':
         if (ref.watch(speechPreferencesProvider).isCurrentlyMuted) {
-          return _buildSnoozedSprechenStage();
+          stageWidget = _buildSnoozedSprechenStage();
+        } else {
+          stageWidget = _buildSprechenStage();
         }
-        return _buildSprechenStage();
+        break;
       default:
         return _buildCelebrationStage();
     }
+
+    return KeyedSubtree(
+      key: ValueKey('stage_${_currentStage}_$stageType'),
+      child: stageWidget,
+    );
   }
 
   // ══════════════════════════════════════════════════════════════════

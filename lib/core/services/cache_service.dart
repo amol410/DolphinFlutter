@@ -191,6 +191,30 @@ class CacheService {
     return null;
   }
 
+  Future<void> removeLessonDetails(dynamic lessonId) async {
+    if (lessonId == null) return;
+    try {
+      final prefs = await _getPrefs();
+      await prefs.remove(_scopedKey('lesson_$lessonId'));
+    } catch (e) {
+      debugPrint('⚠️ [CacheService] removeLessonDetails error: $e');
+    }
+  }
+
+  /// Determines whether a cached lesson is stale compared to the server updatedAt timestamp.
+  /// If server has a timestamp and cached either has none (legacy cache) or an older one, it is stale.
+  bool isCacheStale({String? serverUpdatedAt, String? cachedUpdatedAt}) {
+    if (serverUpdatedAt == null || serverUpdatedAt.isEmpty) return false;
+    if (cachedUpdatedAt == null || cachedUpdatedAt.isEmpty) return true;
+    try {
+      final serverDate = DateTime.parse(serverUpdatedAt);
+      final cachedDate = DateTime.parse(cachedUpdatedAt);
+      return serverDate.isAfter(cachedDate);
+    } catch (_) {
+      return serverUpdatedAt != cachedUpdatedAt;
+    }
+  }
+
   // ==========================================
   // 4. OFFLINE REQUEST REPLAY QUEUE
   // ==========================================

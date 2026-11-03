@@ -3,6 +3,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dolphincoder/core/network/dio_client.dart';
+import 'package:dolphincoder/core/services/cache_service.dart';
 import 'package:dolphincoder/features/gamification/data/gamification_repository.dart';
 import 'package:dolphincoder/features/gamification/data/models/gamification_models.dart';
 import 'package:dolphincoder/features/gamification/providers/gamification_provider.dart';
@@ -197,6 +198,77 @@ void main() {
       expect(updatedNodes[0].stars, 3);
       expect(updatedNodes[1].index, 6);
       expect(updatedNodes[1].status, 'available');
+    });
+
+    test('PathNodeModel serializes and deserializes updatedAt timestamp', () {
+      const timestamp = '2026-11-03T18:00:00.000Z';
+      final json = {
+        'id': 105,
+        'index': 4,
+        'title': 'Lesson 5 Clean',
+        'subtitle': 'Greetings',
+        'type': 'lesson',
+        'status': 'available',
+        'updatedAt': timestamp,
+      };
+
+      final node = PathNodeModel.fromJson(json);
+      expect(node.updatedAt, timestamp);
+
+      final serialized = node.toJson();
+      expect(serialized['updatedAt'], timestamp);
+
+      final copy = node.copyWith(title: 'Lesson 5 Updated');
+      expect(copy.updatedAt, timestamp);
+    });
+
+    test('CacheService.isCacheStale accurately identifies stale vs fresh lesson timestamps', () {
+      final cache = CacheService();
+
+      // Legacy cache without updatedAt is considered stale when server provides a timestamp
+      expect(
+        cache.isCacheStale(
+          serverUpdatedAt: '2026-11-03T20:00:00.000Z',
+          cachedUpdatedAt: null,
+        ),
+        isTrue,
+      );
+
+      // Server has a newer timestamp than cache -> stale
+      expect(
+        cache.isCacheStale(
+          serverUpdatedAt: '2026-11-03T20:00:00.000Z',
+          cachedUpdatedAt: '2026-11-03T19:00:00.000Z',
+        ),
+        isTrue,
+      );
+
+      // Cache is up to date with server -> not stale
+      expect(
+        cache.isCacheStale(
+          serverUpdatedAt: '2026-11-03T19:00:00.000Z',
+          cachedUpdatedAt: '2026-11-03T19:00:00.000Z',
+        ),
+        isFalse,
+      );
+
+      // Cache is newer than server -> not stale
+      expect(
+        cache.isCacheStale(
+          serverUpdatedAt: '2026-11-03T18:00:00.000Z',
+          cachedUpdatedAt: '2026-11-03T19:00:00.000Z',
+        ),
+        isFalse,
+      );
+
+      // Server timestamp is null or empty -> not stale
+      expect(
+        cache.isCacheStale(
+          serverUpdatedAt: null,
+          cachedUpdatedAt: '2026-11-03T19:00:00.000Z',
+        ),
+        isFalse,
+      );
     });
   });
 }

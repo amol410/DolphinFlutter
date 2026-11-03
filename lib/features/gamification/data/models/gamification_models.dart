@@ -191,6 +191,7 @@ class PathNodeModel {
   final String sectionTitle;
   final int sectionUnitNumber;
   final String colorHex;
+  final String? updatedAt;
 
   const PathNodeModel({
     this.id,
@@ -215,6 +216,7 @@ class PathNodeModel {
     this.sectionTitle = 'Rookie',
     this.sectionUnitNumber = 1,
     this.colorHex = '#1CB0F6',
+    this.updatedAt,
   });
 
   factory PathNodeModel.fromJson(Map<String, dynamic> json) {
@@ -251,6 +253,7 @@ class PathNodeModel {
       sectionTitle: secTitle,
       sectionUnitNumber: secUnit,
       colorHex: json['colorHex']?.toString() ?? '#1CB0F6',
+      updatedAt: json['updatedAt']?.toString(),
     );
   }
 
@@ -278,6 +281,7 @@ class PathNodeModel {
       'sectionTitle': sectionTitle,
       'sectionUnitNumber': sectionUnitNumber,
       'colorHex': colorHex,
+      'updatedAt': updatedAt,
     };
   }
 
@@ -304,6 +308,7 @@ class PathNodeModel {
     String? sectionTitle,
     int? sectionUnitNumber,
     String? colorHex,
+    String? updatedAt,
   }) {
     return PathNodeModel(
       id: id ?? this.id,
@@ -328,6 +333,7 @@ class PathNodeModel {
       sectionTitle: sectionTitle ?? this.sectionTitle,
       sectionUnitNumber: sectionUnitNumber ?? this.sectionUnitNumber,
       colorHex: colorHex ?? this.colorHex,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 }
