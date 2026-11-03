@@ -1931,7 +1931,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     if (willEnterMistakesReview) {
       SoundEffectsService.instance.playPop();
       _mistakesInterstitialTimer?.cancel();
-      _mistakesInterstitialTimer = Timer(const Duration(milliseconds: 2200), () {
+      _mistakesInterstitialTimer = Timer(const Duration(seconds: 3), () {
         if (mounted) {
           setState(() {
             _isShowingMistakesReviewInterstitial = false;
@@ -2620,10 +2620,11 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
 
   Widget _buildMistakesReviewInterstitial() {
     final screenWidth = MediaQuery.of(context).size.width;
-    final imageWidth = (screenWidth * 0.90).clamp(300.0, 440.0);
+    final imageWidth = (screenWidth * 0.95).clamp(340.0, 480.0);
 
-    return Center(
+    return Align(
       key: const ValueKey('mistakes_review_interstitial'),
+      alignment: const Alignment(0.0, -0.22),
       child: TweenAnimationBuilder<double>(
         tween: Tween(begin: 0.0, end: 1.0),
         duration: const Duration(milliseconds: 650),
