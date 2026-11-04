@@ -404,6 +404,29 @@ class GamificationRepository {
     return {'success': false, 'message': 'Failed to claim quest'};
   }
 
+  Future<Map<String, dynamic>?> claimAdReward({
+    required String rewardType,
+    String? attemptId,
+  }) async {
+    try {
+      final dio = await DioClient.getInstance();
+      final response = await dio.post(
+        ApiConstants.gamificationClaimAdReward,
+        data: {
+          'rewardType': rewardType,
+          if (attemptId != null) 'attemptId': attemptId,
+        },
+      );
+      if (response.data is Map<String, dynamic> &&
+          response.data['success'] == true) {
+        return response.data as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('⚠️ [GamificationRepository] claimAdReward error: $e');
+    }
+    return null;
+  }
+
   Future<bool> switchCourse({
     required String targetLanguage,
     required String nativeLanguage,

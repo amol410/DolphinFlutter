@@ -41,15 +41,14 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
       userId: ref.read(authProvider).user?.id ?? '',
       rewardType: 'oxygen',
       onUserEarnedReward: () async {
-        for (var attempt = 0; attempt < 5; attempt++) {
-          await Future.delayed(const Duration(seconds: 1));
-          await ref.read(gamificationStatusProvider.notifier).refresh();
-          if ((ref.read(gamificationStatusProvider).value?.oxygen ?? 0) > 0) break;
-        }
+        final success = await ref
+            .read(gamificationStatusProvider.notifier)
+            .claimAdReward(rewardType: 'oxygen');
+
         if (!mounted) return;
         setState(() => _isLoadingAd = false);
 
-        if ((ref.read(gamificationStatusProvider).value?.oxygen ?? 0) > 0) {
+        if (success || (ref.read(gamificationStatusProvider).value?.oxygen ?? 0) > 0) {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -62,7 +61,7 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Ad completed. Your reward is still being verified; please check again shortly.'),
+              content: Text('Could not credit reward. Please check your internet connection and try again.'),
               behavior: SnackBarBehavior.floating,
             ),
           );

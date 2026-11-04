@@ -5294,21 +5294,15 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       return;
     }
 
-    final startingXp = ref.read(gamificationStatusProvider).value?.totalXp ?? 0;
     AdService().showRewardedAd(
       userId: ref.read(authProvider).user?.id ?? '',
       rewardType: 'double_xp',
       attemptId: _completionAttemptId,
       onUserEarnedReward: () async {
-        var verified = false;
-        for (var attempt = 0; attempt < 5; attempt++) {
-          await Future.delayed(const Duration(seconds: 1));
-          await ref.read(gamificationStatusProvider.notifier).refresh();
-          if ((ref.read(gamificationStatusProvider).value?.totalXp ?? 0) >= startingXp + bonusXp) {
-            verified = true;
-            break;
-          }
-        }
+        final verified = await ref
+            .read(gamificationStatusProvider.notifier)
+            .claimAdReward(rewardType: 'double_xp', attemptId: _completionAttemptId);
+
         if (!mounted) return;
         setState(() {
           _isLoadingDoubleXpAd = false;
@@ -5318,7 +5312,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
           SnackBar(
             content: Text(verified
                 ? '🎉 Verified 2X Double XP! (+$bonusXp XP bonus!)'
-                : 'Ad completed. Double XP is still being verified; please check again shortly.'),
+                : 'Double XP will be updated shortly.'),
             backgroundColor: verified ? const Color(0xFF059669) : null,
             behavior: SnackBarBehavior.floating,
           ),

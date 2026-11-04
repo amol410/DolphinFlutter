@@ -137,12 +137,16 @@ class ShopScreen extends ConsumerWidget {
                       userId: ref.read(authProvider).user?.id ?? '',
                       rewardType: 'oxygen',
                       onUserEarnedReward: () async {
-                        await Future.delayed(const Duration(seconds: 2));
-                        await ref.read(gamificationStatusProvider.notifier).refresh();
+                        final success = await ref
+                            .read(gamificationStatusProvider.notifier)
+                            .claimAdReward(rewardType: 'oxygen');
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Ad completed. Oxygen will be added after AdMob verification.'),
+                            SnackBar(
+                              content: Text(success
+                                  ? '🎉 +2 Oxygen bubbles added! 🫧'
+                                  : 'Oxygen will update shortly.'),
+                              backgroundColor: success ? const Color(0xFF059669) : null,
                               behavior: SnackBarBehavior.floating,
                             ),
                           );
@@ -183,12 +187,16 @@ class ShopScreen extends ConsumerWidget {
                       userId: ref.read(authProvider).user?.id ?? '',
                       rewardType: 'pearls',
                       onUserEarnedReward: () async {
-                        await Future.delayed(const Duration(seconds: 2));
-                        await ref.read(gamificationStatusProvider.notifier).refresh();
+                        final success = await ref
+                            .read(gamificationStatusProvider.notifier)
+                            .claimAdReward(rewardType: 'pearls');
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Ad completed. Pearls will be added after AdMob verification.'),
+                            SnackBar(
+                              content: Text(success
+                                  ? '🎉 +25 Pearls added! 💎'
+                                  : 'Pearls will update shortly.'),
+                              backgroundColor: success ? const Color(0xFF059669) : null,
                               behavior: SnackBarBehavior.floating,
                             ),
                           );
