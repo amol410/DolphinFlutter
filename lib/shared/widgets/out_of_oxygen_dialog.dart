@@ -33,9 +33,13 @@ class OutOfOxygenSheet extends ConsumerStatefulWidget {
 class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
   bool _isLoadingAd = false;
   bool _isSpendingPearls = false;
+  bool _showInsufficientPearlsWarning = false;
 
   void _watchAdToRefill() {
-    setState(() => _isLoadingAd = true);
+    setState(() {
+      _isLoadingAd = true;
+      _showInsufficientPearlsWarning = false;
+    });
 
     AdService().showRewardedAd(
       userId: ref.read(authProvider).user?.id ?? '',
@@ -52,7 +56,7 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('🎉 Verified reward: +2 Oxygen bubbles added! 🫧'),
+              content: Text('🎉 Verified reward: +3 Oxygen bubbles added! 🫧'),
               backgroundColor: Color(0xFF059669),
               behavior: SnackBarBehavior.floating,
             ),
@@ -88,16 +92,16 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
     final pearls = status?.pearls ?? 0;
 
     if (pearls < 50) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Not enough pearls (need 50 💎)! Watch a quick video to refill for free 🎬'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      // Clear any pending system snackbars so nothing queues or leaks onto other screens
+      ScaffoldMessenger.of(context).clearSnackBars();
+      setState(() => _showInsufficientPearlsWarning = true);
       return;
     }
 
-    setState(() => _isSpendingPearls = true);
+    setState(() {
+      _isSpendingPearls = true;
+      _showInsufficientPearlsWarning = false;
+    });
     final ok = await ref.read(gamificationStatusProvider.notifier).refillOxygen();
     if (!mounted) return;
     setState(() => _isSpendingPearls = false);
@@ -168,7 +172,7 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
 
               // Header Title
               Text(
-                'Watch Ad: +2 Oxygen Bubbles',
+                'Watch Ad: +3 Oxygen Bubbles',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 21,
@@ -186,7 +190,7 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
                   final adsRemaining = AdService().remainingRewardedAdsToday;
                   return Text(
                     canWatch
-                        ? 'Restore +2 bubbles for free without spending pearls ($oxygen/5 currently • $adsRemaining/6 ads left today)'
+                        ? 'Restore +3 bubbles for free without spending pearls ($oxygen/5 currently • $adsRemaining/6 ads left today)'
                         : 'Daily ad limit reached (6/6). Refill with pearls or wait for passive regen ($oxygen/5 currently)',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.outfit(
@@ -236,13 +240,13 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
               ),
               const SizedBox(height: 18),
 
-              // PRIMARY OPT-IN: Watch Rewarded Ad (Free +2 Oxygen Bubbles, max 6/day)
+              // PRIMARY OPT-IN: Watch Rewarded Ad (Free +3 Oxygen Bubbles, max 6/day)
               Builder(
                 builder: (context) {
                   final canWatch = AdService().canWatchRewardedAdToday;
                   return TactileGameButton(
                     text: canWatch
-                        ? 'WATCH AD: +2 OXYGEN BUBBLES (+2 🫧)'
+                        ? 'WATCH AD: +3 OXYGEN BUBBLES (+3 🫧)'
                         : 'DAILY AD LIMIT REACHED (6/6 TODAY)',
                     icon: canWatch ? Icons.play_circle_fill_rounded : Icons.lock_clock_rounded,
                     variant: canWatch ? GameButtonVariant.success : GameButtonVariant.outline,
@@ -254,6 +258,69 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
                 },
               ),
               const SizedBox(height: 10),
+
+              // In-sheet themed warning banner if insufficient pearls (Suggestion A)
+              if (_showInsufficientPearlsWarning) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFEF4444), width: 1.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFEF4444).withOpacity(0.25),
+                        blurRadius: 12,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF7F1D1D),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.diamond_outlined,
+                          size: 18,
+                          color: Color(0xFFFCA5A5),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Need 50 Pearls (You have $pearls)',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFFFCA5A5),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Tap the green button above to refill for free! 🎬',
+                              style: GoogleFonts.outfit(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFFE2E8F0),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
 
               // SECONDARY OPT-IN: Pay with Pearls (Cost: 50 Pearls)
               TactileGameButton(

@@ -102,7 +102,7 @@ class GamificationStatusNotifier extends StateNotifier<AsyncValue<GamificationSt
     // Optimistic fallback for testing / offline resilience
     if (rewardType == 'oxygen') {
       state.whenData((status) {
-        final newOxygen = (status.oxygen + 2).clamp(0, 5);
+        final newOxygen = (status.oxygen + 3).clamp(0, 5);
         final updated = status.copyWith(oxygen: newOxygen);
         state = AsyncValue.data(updated);
         CacheService().saveStatus(updated);

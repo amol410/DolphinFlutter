@@ -113,7 +113,7 @@ class ShopScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 10),
 
-            // Ad Reward 1: Free +2 Oxygen Bubbles (Max 6 ads/day)
+            // Ad Reward 1: Free +3 Oxygen Bubbles (Max 6 ads/day)
             Builder(
               builder: (context) {
                 final canWatchOxygenAd = AdService().canWatchRewardedAdToday;
@@ -121,10 +121,10 @@ class ShopScreen extends ConsumerWidget {
                 return _buildRewardedShopItem(
                   context,
                   icon: '🎬',
-                  badge: '+2 BUBBLES',
-                  title: 'Watch Ad: +2 Oxygen Bubbles',
+                  badge: '+3 BUBBLES',
+                  title: 'Watch Ad: +3 Oxygen Bubbles',
                   subtitle: canWatchOxygenAd
-                      ? 'Restore +2 bubbles for free without spending pearls ($oxygen/5 currently • $adsRemaining/6 ads left today)'
+                      ? 'Restore +3 bubbles for free without spending pearls ($oxygen/5 currently • $adsRemaining/6 ads left today)'
                       : 'Daily ad limit reached (6/6). Refill with pearls or wait for passive regen ($oxygen/5 currently)',
                   buttonText: oxygen >= 5
                       ? 'FULL'
@@ -144,7 +144,7 @@ class ShopScreen extends ConsumerWidget {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(success
-                                  ? '🎉 +2 Oxygen bubbles added! 🫧'
+                                  ? '🎉 +3 Oxygen bubbles added! 🫧'
                                   : 'Oxygen will update shortly.'),
                               backgroundColor: success ? const Color(0xFF059669) : null,
                               behavior: SnackBarBehavior.floating,
