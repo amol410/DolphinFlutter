@@ -284,6 +284,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       _forceReleaseSpeechRecognizer();
     } else if (state == AppLifecycleState.resumed) {
       debugPrint('📱 [LessonSessionScreen] Lifecycle resumed cleanly');
+      unawaited(TtsService().warmUp(force: true));
     }
   }
 
