@@ -414,6 +414,7 @@ class LessonStageParser {
     for (final raw in stages) {
       if (raw is! Map) continue;
       final map = Map<String, dynamic>.from(raw);
+      if (map['enabled'] == false) continue;
       final type = map['type']?.toString();
       if (type == null || type.isEmpty) continue;
 
@@ -509,6 +510,7 @@ class LessonStageParser {
     for (final raw in stages) {
       if (raw is! Map) continue;
       final map = Map<String, dynamic>.from(raw);
+      if (map['enabled'] == false) continue;
       final type = map['type']?.toString();
       if (type == null || type.isEmpty) continue;
 
