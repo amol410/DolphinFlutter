@@ -107,6 +107,21 @@ class GamificationRepository {
           );
         }
 
+        // Evict any stale cached lessons based on server updatedAt timestamps
+        for (final n in nodes) {
+          if (n.id != null && n.updatedAt != null) {
+            final cached = await _cache.getCachedLessonDetails(n.id);
+            if (cached != null &&
+                _cache.isCacheStale(
+                  serverUpdatedAt: n.updatedAt,
+                  cachedUpdatedAt: cached['updatedAt']?.toString(),
+                )) {
+              debugPrint('🔄 [GamificationRepository] Evicting stale cache for lesson ${n.id} (updated: ${n.updatedAt})');
+              await _cache.removeLessonDetails(n.id);
+            }
+          }
+        }
+
         // Predictive background prefetch for upcoming unfinished nodes & voice clips
         _prefetch.prefetchUpcomingLessons(nodes);
 
@@ -389,6 +404,29 @@ class GamificationRepository {
     return {'success': false, 'message': 'Failed to claim quest'};
   }
 
+  Future<Map<String, dynamic>?> claimAdReward({
+    required String rewardType,
+    String? attemptId,
+  }) async {
+    try {
+      final dio = await DioClient.getInstance();
+      final response = await dio.post(
+        ApiConstants.gamificationClaimAdReward,
+        data: {
+          'rewardType': rewardType,
+          if (attemptId != null) 'attemptId': attemptId,
+        },
+      );
+      if (response.data is Map<String, dynamic> &&
+          response.data['success'] == true) {
+        return response.data as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('⚠️ [GamificationRepository] claimAdReward error: $e');
+    }
+    return null;
+  }
+
   Future<bool> switchCourse({
     required String targetLanguage,
     required String nativeLanguage,
@@ -411,12 +449,17 @@ class GamificationRepository {
     }
   }
 
-  Future<Map<String, dynamic>?> getLessonDetails(dynamic lessonId) async {
+  Future<Map<String, dynamic>?> getLessonDetails(dynamic lessonId, {String? serverUpdatedAt}) async {
     if (lessonId == null) return null;
 
     // 1. Check local Tier-2 cache first (0ms latency!)
     final cached = await _cache.getCachedLessonDetails(lessonId);
-    if (cached != null) {
+    final isStale = _cache.isCacheStale(
+      serverUpdatedAt: serverUpdatedAt,
+      cachedUpdatedAt: cached?['updatedAt']?.toString(),
+    );
+
+    if (cached != null && !isStale) {
       debugPrint('⚡ [GamificationRepository] Serving lesson $lessonId from Tier-2 cache (0ms instant play)');
       return cached;
     }
@@ -434,6 +477,13 @@ class GamificationRepository {
     } catch (e) {
       debugPrint('⚠️ [GamificationRepository] getLessonDetails network error: $e');
     }
+
+    // Offline fallback: if network fails, return cached copy even if potentially stale
+    if (cached != null) {
+      debugPrint('⚡ [GamificationRepository] Offline fallback: Serving lesson $lessonId from local cache');
+      return cached;
+    }
+
     return null;
   }
 }

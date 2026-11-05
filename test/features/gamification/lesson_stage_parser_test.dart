@@ -194,5 +194,68 @@ void main() {
       expect(valid!.prompt, 'Guten Tag');
       expect(valid.minAccuracy, 80);
     });
+
+    test('parseStages preserves multiple repeated instances of any challenge type independently', () {
+      final rawStages = [
+        {
+          'type': 'word_match',
+          'pairs': [
+            {'target': 'Hallo', 'native': 'Hello'},
+            {'target': 'Tschüss', 'native': 'Bye'},
+          ],
+        },
+        {
+          'type': 'word_match',
+          'pairs': [
+            {'target': 'Wasser', 'native': 'Water'},
+            {'target': 'Brot', 'native': 'Bread'},
+          ],
+        },
+        {
+          'type': 'listen_tap',
+          'targetSentence': 'Guten Morgen',
+          'tokens': ['Guten', 'Morgen', 'Abend'],
+        },
+        {
+          'type': 'listen_tap',
+          'targetSentence': 'Wie geht es dir',
+          'tokens': ['Wie', 'geht', 'es', 'dir'],
+        },
+        {
+          'type': 'cloze_test',
+          'sentence': 'Ich _____ aus Indien.',
+          'blank': 'komme',
+          'options': ['komme', 'wohne'],
+        },
+        {
+          'type': 'cloze_test',
+          'sentence': 'Du _____ Deutsch.',
+          'blank': 'sprichst',
+          'options': ['sprichst', 'spreche'],
+        },
+      ];
+
+      final parsedStages = LessonStageParser.parseStages(rawStages);
+      expect(parsedStages.length, 6);
+      expect(
+        parsedStages.map((s) => s.canonicalType).toList(),
+        ['word_match', 'word_match', 'listen_tap', 'listen_tap', 'cloze_test', 'cloze_test'],
+      );
+
+      final match1 = parsedStages[0].data as WordMatchStageData;
+      final match2 = parsedStages[1].data as WordMatchStageData;
+      expect(match1.germanWords, ['Hallo', 'Tschüss']);
+      expect(match2.germanWords, ['Wasser', 'Brot']);
+
+      final listen1 = parsedStages[2].data as ListenTapStageData;
+      final listen2 = parsedStages[3].data as ListenTapStageData;
+      expect(listen1.targetSentence, 'Guten Morgen');
+      expect(listen2.targetSentence, 'Wie geht es dir');
+
+      final cloze1 = parsedStages[4].data as ClozeStageData;
+      final cloze2 = parsedStages[5].data as ClozeStageData;
+      expect(cloze1.blank, 'komme');
+      expect(cloze2.blank, 'sprichst');
+    });
   });
 }

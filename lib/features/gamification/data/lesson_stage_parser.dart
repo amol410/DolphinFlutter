@@ -140,6 +140,18 @@ class SprechenStageData {
   });
 }
 
+class ParsedLessonStage {
+  final String canonicalType;
+  final Map<String, dynamic> rawStage;
+  final Object data;
+
+  const ParsedLessonStage({
+    required this.canonicalType,
+    required this.rawStage,
+    required this.data,
+  });
+}
+
 /// Robust JSON parser for interactive lesson stages (word_match, listen_tap, etc.)
 /// Resilient against server schema variations, high network latency, or partial keys.
 class LessonStageParser {
@@ -393,6 +405,102 @@ class LessonStageParser {
       audioUrl: audio,
       karaokeData: stage['karaokeData'],
     );
+  }
+
+  /// Parses an ordered list of raw server stages into strongly-typed [ParsedLessonStage] instances.
+  /// Supports repeating any challenge type any number of times in any sequence.
+  static List<ParsedLessonStage> parseStages(List<dynamic> stages) {
+    final parsedList = <ParsedLessonStage>[];
+    for (final raw in stages) {
+      if (raw is! Map) continue;
+      final map = Map<String, dynamic>.from(raw);
+      final type = map['type']?.toString();
+      if (type == null || type.isEmpty) continue;
+
+      if (type == 'match_pairs' || type == 'word_match') {
+        final parsed = parseWordMatch(map);
+        if (parsed != null) {
+          parsedList.add(ParsedLessonStage(
+            canonicalType: 'word_match',
+            rawStage: map,
+            data: parsed,
+          ));
+        }
+      } else if (type == 'listen_tap') {
+        final parsed = parseListenTap(map);
+        if (parsed != null) {
+          parsedList.add(ParsedLessonStage(
+            canonicalType: 'listen_tap',
+            rawStage: map,
+            data: parsed,
+          ));
+        }
+      } else if (type == 'picture_select' || type == 'picture_cards') {
+        final parsed = parsePictureSelect(map);
+        if (parsed != null) {
+          parsedList.add(ParsedLessonStage(
+            canonicalType: 'picture_select',
+            rawStage: map,
+            data: parsed,
+          ));
+        }
+      } else if (type == 'sentence_builder') {
+        final parsed = parseSentenceBuilder(map);
+        if (parsed != null) {
+          parsedList.add(ParsedLessonStage(
+            canonicalType: 'sentence_builder',
+            rawStage: map,
+            data: parsed,
+          ));
+        }
+      } else if (type == 'cloze_test' || type == 'cloze') {
+        final parsed = parseCloze(map);
+        if (parsed != null) {
+          parsedList.add(ParsedLessonStage(
+            canonicalType: 'cloze_test',
+            rawStage: map,
+            data: parsed,
+          ));
+        }
+      } else if (type == 'type_word' || type == 'type_input') {
+        final parsed = parseTypeWord(map);
+        if (parsed != null) {
+          parsedList.add(ParsedLessonStage(
+            canonicalType: 'type_word',
+            rawStage: map,
+            data: parsed,
+          ));
+        }
+      } else if (type == 'dialogue_bubble' || type == 'dialogue') {
+        final parsed = parseDialogue(map);
+        if (parsed != null) {
+          parsedList.add(ParsedLessonStage(
+            canonicalType: 'dialogue_bubble',
+            rawStage: map,
+            data: parsed,
+          ));
+        }
+      } else if (type == 'listen_select' || type == 'listen_comprehension') {
+        final parsed = parseListenSelect(map);
+        if (parsed != null) {
+          parsedList.add(ParsedLessonStage(
+            canonicalType: 'listen_select',
+            rawStage: map,
+            data: parsed,
+          ));
+        }
+      } else if (type == 'sprechen') {
+        final parsed = parseSprechen(map);
+        if (parsed != null) {
+          parsedList.add(ParsedLessonStage(
+            canonicalType: 'sprechen',
+            rawStage: map,
+            data: parsed,
+          ));
+        }
+      }
+    }
+    return parsedList;
   }
 
   /// Detects valid stage types present in the server payload.

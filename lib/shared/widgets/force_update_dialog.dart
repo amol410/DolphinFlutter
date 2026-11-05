@@ -5,6 +5,7 @@ import '../../core/services/version_check_service.dart';
 import 'animated_dolphin_mascot.dart';
 
 class ForceUpdateDialog extends StatelessWidget {
+  static bool isShowing = false;
   final VersionCheckResult result;
 
   const ForceUpdateDialog({
@@ -13,12 +14,18 @@ class ForceUpdateDialog extends StatelessWidget {
   });
 
   static Future<void> show(BuildContext context, VersionCheckResult result) async {
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      useRootNavigator: true,
-      builder: (_) => ForceUpdateDialog(result: result),
-    );
+    if (isShowing) return;
+    isShowing = true;
+    try {
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        useRootNavigator: true,
+        builder: (_) => ForceUpdateDialog(result: result),
+      );
+    } finally {
+      isShowing = false;
+    }
   }
 
   Future<void> _openPlayStore() async {

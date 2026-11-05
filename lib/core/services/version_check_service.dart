@@ -67,7 +67,12 @@ class VersionCheckService {
           final message = (data['message'] ?? 'A newer version of DolphinCoder is available on Google Play. Please update to continue.').toString();
 
           // Force update if installed build number is strictly lower than min_required_version
-          final isOutdated = AppConstants.currentBuildNumber < minRequiredVersion;
+          // or if installed semantic version is strictly lower than min_version_name
+          bool isOutdated = AppConstants.currentBuildNumber < minRequiredVersion;
+          final minVersionName = data['min_version_name']?.toString();
+          if (!isOutdated && minVersionName != null && minVersionName.isNotEmpty) {
+            isOutdated = _isVersionLower(AppConstants.appVersion, minVersionName);
+          }
 
           return VersionCheckResult(
             forceUpdateRequired: isOutdated,
@@ -83,5 +88,20 @@ class VersionCheckService {
     }
 
     return VersionCheckResult.defaultClean;
+  }
+
+  /// Compares semantic versions (e.g. "1.4.2" vs "1.4.3")
+  static bool _isVersionLower(String current, String required) {
+    try {
+      final currentParts = current.split('.').map((e) => int.tryParse(e) ?? 0).toList();
+      final requiredParts = required.split('.').map((e) => int.tryParse(e) ?? 0).toList();
+      for (int i = 0; i < 3; i++) {
+        final c = i < currentParts.length ? currentParts[i] : 0;
+        final r = i < requiredParts.length ? requiredParts[i] : 0;
+        if (c < r) return true;
+        if (c > r) return false;
+      }
+    } catch (_) {}
+    return false;
   }
 }

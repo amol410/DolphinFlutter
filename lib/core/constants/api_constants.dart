@@ -1,8 +1,11 @@
 class ApiConstants {
   ApiConstants._();
 
-  static const String defaultBaseUrl = 'https://dolphincoder.com/api';
-  static const String productionBaseUrl = 'https://api.dolphincoder.com/api';
+  static const String productionBaseUrl = 'https://dolphincoder.com/api';
+  static const String testingBaseUrl = 'https://testing.dolphincoder.com/api';
+  static const String defaultBaseUrl = productionBaseUrl;
+
+  static bool get isTesting => defaultBaseUrl.contains('testing');
 
   // Auth
   static const String login = '/auth/login';

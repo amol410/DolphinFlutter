@@ -47,7 +47,12 @@ class PrefetchService {
 
         // Check Tier-2 cache first
         final cached = await _cache.getCachedLessonDetails(lessonId);
-        if (cached != null) {
+        final isStale = _cache.isCacheStale(
+          serverUpdatedAt: node.updatedAt,
+          cachedUpdatedAt: cached?['updatedAt']?.toString(),
+        );
+
+        if (cached != null && !isStale) {
           _scanAndPrefetchAudio(cached);
           continue;
         }

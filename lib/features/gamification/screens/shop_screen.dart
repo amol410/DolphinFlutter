@@ -113,7 +113,7 @@ class ShopScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 10),
 
-            // Ad Reward 1: Free +2 Oxygen Bubbles (Max 6 ads/day)
+            // Ad Reward 1: Free +3 Oxygen Bubbles (Max 6 ads/day)
             Builder(
               builder: (context) {
                 final canWatchOxygenAd = AdService().canWatchRewardedAdToday;
@@ -121,10 +121,10 @@ class ShopScreen extends ConsumerWidget {
                 return _buildRewardedShopItem(
                   context,
                   icon: '🎬',
-                  badge: '+2 BUBBLES',
-                  title: 'Watch Ad: +2 Oxygen Bubbles',
+                  badge: '+3 BUBBLES',
+                  title: 'Watch Ad: +3 Oxygen Bubbles',
                   subtitle: canWatchOxygenAd
-                      ? 'Restore +2 bubbles for free without spending pearls ($oxygen/5 currently • $adsRemaining/6 ads left today)'
+                      ? 'Restore +3 bubbles for free without spending pearls ($oxygen/5 currently • $adsRemaining/6 ads left today)'
                       : 'Daily ad limit reached (6/6). Refill with pearls or wait for passive regen ($oxygen/5 currently)',
                   buttonText: oxygen >= 5
                       ? 'FULL'
@@ -137,12 +137,16 @@ class ShopScreen extends ConsumerWidget {
                       userId: ref.read(authProvider).user?.id ?? '',
                       rewardType: 'oxygen',
                       onUserEarnedReward: () async {
-                        await Future.delayed(const Duration(seconds: 2));
-                        await ref.read(gamificationStatusProvider.notifier).refresh();
+                        final success = await ref
+                            .read(gamificationStatusProvider.notifier)
+                            .claimAdReward(rewardType: 'oxygen');
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Ad completed. Oxygen will be added after AdMob verification.'),
+                            SnackBar(
+                              content: Text(success
+                                  ? '🎉 +3 Oxygen bubbles added! 🫧'
+                                  : 'Oxygen will update shortly.'),
+                              backgroundColor: success ? const Color(0xFF059669) : null,
                               behavior: SnackBarBehavior.floating,
                             ),
                           );
@@ -183,12 +187,16 @@ class ShopScreen extends ConsumerWidget {
                       userId: ref.read(authProvider).user?.id ?? '',
                       rewardType: 'pearls',
                       onUserEarnedReward: () async {
-                        await Future.delayed(const Duration(seconds: 2));
-                        await ref.read(gamificationStatusProvider.notifier).refresh();
+                        final success = await ref
+                            .read(gamificationStatusProvider.notifier)
+                            .claimAdReward(rewardType: 'pearls');
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Ad completed. Pearls will be added after AdMob verification.'),
+                            SnackBar(
+                              content: Text(success
+                                  ? '🎉 +25 Pearls added! 💎'
+                                  : 'Pearls will update shortly.'),
+                              backgroundColor: success ? const Color(0xFF059669) : null,
                               behavior: SnackBarBehavior.floating,
                             ),
                           );
@@ -234,8 +242,8 @@ class ShopScreen extends ConsumerWidget {
               icon: '🫧',
               title: 'Refill Oxygen Bubbles',
               subtitle: 'Restore full 5 oxygen bubbles instantly ($oxygen/5 currently)',
-              cost: 250,
-              canAfford: pearls >= 250 && oxygen < 5,
+              cost: 50,
+              canAfford: pearls >= 50 && oxygen < 5,
               buttonText: oxygen >= 5 ? 'FULL' : 'REFILL',
               onBuy: () async {
                 final ok = await ref.read(gamificationStatusProvider.notifier).refillOxygen();

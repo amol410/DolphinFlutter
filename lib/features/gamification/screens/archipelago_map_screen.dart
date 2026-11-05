@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shimmer/shimmer.dart';
+import '../../../core/constants/api_constants.dart';
 import '../../../shared/widgets/ocean_status_bar.dart';
 import '../../../shared/widgets/animated_dolphin_mascot.dart';
 import '../../../shared/widgets/out_of_oxygen_dialog.dart';
@@ -201,6 +202,29 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
                 onFlagTap: () => showCourseSelectionSheet(context),
               ),
             ),
+
+            if (ApiConstants.isTesting)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
+                color: const Color(0xFFFEF3C7),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.science, size: 14, color: Color(0xFFB45309)),
+                    const SizedBox(width: 6),
+                    Text(
+                      'TESTING ENVIRONMENT • testing.dolphincoder.com',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFFB45309),
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
             // 2. Dynamic Sticky Section & Unit Banner (Changes Color & Unit on Scroll)
             pathAsync.maybeWhen(
