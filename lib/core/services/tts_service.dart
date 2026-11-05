@@ -278,10 +278,74 @@ class TtsService {
         debugPrint('⚠️ [TtsService] Word AudioPlayer mode setup: $e');
       }
 
+      _flutterTts.setErrorHandler((dynamic msg) {
+        debugPrint('⚠️ [TtsService] FlutterTts native error: $msg');
+      });
+
       _isInitialized = true;
       debugPrint('⚡ [TtsService] Engine initialized for $locale with male narrator voice (Pitch 0.88, Rate 0.48, Low-Latency Audio Ready)');
     } catch (e) {
       debugPrint('⚠️ [TtsService] Init error: $e');
+    }
+  }
+
+  /// Verifies if the native TTS engine is currently bound and responsive on Android.
+  Future<bool> isEngineBound({bool forceCheck = false}) async {
+    if (kIsWeb) return true;
+    if (!Platform.isAndroid && !forceCheck) return true;
+    try {
+      final res = await _flutterTts.isLanguageAvailable(activeLocale).timeout(
+        const Duration(milliseconds: 600),
+        onTimeout: () => false,
+      );
+      return res == true || res == 1;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Forces re-binding to the native TTS engine service.
+  /// Replaces any dead/disconnected TextToSpeech instance on Android (e.g. after ads, calls, or low-memory).
+  Future<bool> reconnect({bool forceEngineReset = false}) async {
+    if (kIsWeb) return true;
+    try {
+      debugPrint('🔄 [TtsService] Re-binding native TTS engine...');
+      _isInitialized = false;
+      _initFuture = null;
+      _currentAppliedLocale = null;
+      _currentAppliedVoiceLocale = null;
+
+      if (Platform.isAndroid || forceEngineReset) {
+        try {
+          String? engine = await _flutterTts.getDefaultEngine.timeout(
+            const Duration(milliseconds: 1000),
+            onTimeout: () => null,
+          );
+          if (engine == null || engine.isEmpty) {
+            final dynamic engines = await _flutterTts.getEngines.timeout(
+              const Duration(milliseconds: 1000),
+              onTimeout: () => null,
+            );
+            if (engines is List && engines.isNotEmpty) {
+              engine = engines.first.toString();
+            }
+          }
+          engine ??= 'com.google.android.tts';
+          await _flutterTts.setEngine(engine).timeout(
+            const Duration(milliseconds: 2500),
+            onTimeout: () => null,
+          );
+          debugPrint('🔄 [TtsService] Re-bound to engine: $engine');
+        } catch (e) {
+          debugPrint('⚠️ [TtsService] setEngine note during reconnect: $e');
+        }
+      }
+
+      await init();
+      return true;
+    } catch (e) {
+      debugPrint('⚠️ [TtsService] reconnect error: $e');
+      return false;
     }
   }
 
@@ -476,8 +540,17 @@ class TtsService {
   }
 
   /// Pre-warms the native speech engine during idle windows with current course language.
-  Future<void> warmUp() async {
+  /// If [force] is true, checks engine health and reconnects if disconnected.
+  Future<void> warmUp({bool force = false, bool forceCheck = false}) async {
     try {
+      if (force && (Platform.isAndroid || forceCheck)) {
+        final bound = await isEngineBound(forceCheck: forceCheck);
+        if (!bound) {
+          debugPrint('⚠️ [TtsService] TTS engine disconnected detected during warmUp, reconnecting...');
+          await reconnect(forceEngineReset: forceCheck);
+          return;
+        }
+      }
       if (!_isInitialized) {
         await init();
         return;
@@ -696,6 +769,14 @@ class TtsService {
       await _flutterTts.setSpeechRate(0.48);
       await _flutterTts.setVolume(1.0);
 
+      if (Platform.isAndroid) {
+        final bound = await isEngineBound();
+        if (!bound) {
+          debugPrint('⚠️ [TtsService] TTS engine unbound during speakWord fallback, reconnecting...');
+          await reconnect();
+        }
+      }
+
       _flutterTts.speak(speakable);
 
       // 4. Background synthesis for future instant taps
@@ -718,7 +799,7 @@ class TtsService {
   /// Speak a full sentence and optionally await its completion.
   /// Supports variable playback [rate] (e.g. 0.75 for Turtle mode -> sets TTS speech rate to 0.32;
   /// 1.0 for normal speed -> restores default TTS speech rate of 0.48).
-  Future<void> speakSentence(String text, {double rate = 1.0}) async {
+  Future<void> speakSentence(String text, {double rate = 1.0, bool forceCheck = false}) async {
     final cleaned = text.trim();
     if (cleaned.isEmpty) return;
 
@@ -748,9 +829,44 @@ class TtsService {
         await _wordAudioPlayer.stop();
       } catch (_) {}
 
-      await _flutterTts.speak(cleaned);
+      // Fast check on Android: if engine was severed (e.g. ad video killed background service), re-bind
+      if (Platform.isAndroid || forceCheck) {
+        final bound = await isEngineBound(forceCheck: forceCheck);
+        if (!bound) {
+          debugPrint('⚠️ [TtsService] TTS engine disconnected before sentence speak, reconnecting...');
+          await reconnect(forceEngineReset: forceCheck);
+        }
+      }
+
+      final dynamic res = await _flutterTts.speak(cleaned).timeout(
+        const Duration(milliseconds: 1200),
+        onTimeout: () => null,
+      );
+
+      // If speak failed, hung on a suspended call, or returned error on Android, auto-rebind & retry once
+      if (res != 1 && (Platform.isAndroid || forceCheck)) {
+        debugPrint('⚠️ [TtsService] speak failed or timed out ($res), auto-reconnecting & retrying once...');
+        final reconnected = await reconnect(forceEngineReset: forceCheck);
+        if (reconnected) {
+          await _flutterTts.speak(cleaned).timeout(
+            const Duration(milliseconds: 1200),
+            onTimeout: () => null,
+          );
+        }
+      }
     } catch (e) {
-      debugPrint('⚠️ [TtsService] speakSentence failed: $e');
+      debugPrint('⚠️ [TtsService] speakSentence failed: $e, attempting recovery...');
+      if (Platform.isAndroid || forceCheck) {
+        try {
+          final reconnected = await reconnect(forceEngineReset: forceCheck);
+          if (reconnected) {
+            await _flutterTts.speak(cleaned).timeout(
+              const Duration(milliseconds: 1200),
+              onTimeout: () => null,
+            );
+          }
+        } catch (_) {}
+      }
     }
   }
 

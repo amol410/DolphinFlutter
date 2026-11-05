@@ -212,5 +212,168 @@ void main() {
         }
       });
     });
+
+    group('Self-Healing & Reconnection Tests', () {
+      final List<String> recordedMethodCalls = [];
+      late MethodChannel ttsChannel;
+
+      setUp(() {
+        recordedMethodCalls.clear();
+        ttsChannel = const MethodChannel('flutter_tts');
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(ttsChannel, (MethodCall call) async {
+          recordedMethodCalls.add(call.method);
+          if (call.method == 'getDefaultEngine') {
+            return 'com.google.android.tts';
+          }
+          if (call.method == 'getEngines') {
+            return ['com.google.android.tts'];
+          }
+          if (call.method == 'isLanguageAvailable') {
+            return 1;
+          }
+          if (call.method == 'speak') {
+            return 1;
+          }
+          return 1;
+        });
+      });
+
+      test('isEngineBound returns true when engine responds positively', () async {
+        final bound = await tts.isEngineBound(forceCheck: true);
+        expect(bound, isTrue);
+        expect(recordedMethodCalls, contains('isLanguageAvailable'));
+      });
+
+      test('isEngineBound returns false when channel returns 0 or throws', () async {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(ttsChannel, (MethodCall call) async {
+          if (call.method == 'isLanguageAvailable') {
+            return 0; // LANG_NOT_SUPPORTED or unbound
+          }
+          return 1;
+        });
+
+        final bound = await tts.isEngineBound(forceCheck: true);
+        expect(bound, isFalse);
+
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(ttsChannel, (MethodCall call) async {
+          if (call.method == 'isLanguageAvailable') {
+            throw PlatformException(code: 'ERROR', message: 'not bound');
+          }
+          return 1;
+        });
+
+        final boundOnError = await tts.isEngineBound(forceCheck: true);
+        expect(boundOnError, isFalse);
+      });
+
+      test('reconnect re-binds engine, queries default engine, and re-invokes setEngine', () async {
+        final success = await tts.reconnect(forceEngineReset: true);
+        expect(success, isTrue);
+        expect(recordedMethodCalls, contains('getDefaultEngine'));
+        expect(recordedMethodCalls, contains('setEngine'));
+        expect(recordedMethodCalls, contains('setLanguage'));
+      });
+
+      test('reconnect falls back to default package if getDefaultEngine and getEngines are null', () async {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(ttsChannel, (MethodCall call) async {
+          recordedMethodCalls.add(call.method);
+          if (call.method == 'getDefaultEngine') return null;
+          if (call.method == 'getEngines') return [];
+          return 1;
+        });
+
+        final success = await tts.reconnect(forceEngineReset: true);
+        expect(success, isTrue);
+        expect(recordedMethodCalls, contains('setEngine'));
+      });
+
+      test('warmUp with force: true detects unbound engine and executes auto-reconnect', () async {
+        bool languageChecked = false;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(ttsChannel, (MethodCall call) async {
+          recordedMethodCalls.add(call.method);
+          if (call.method == 'isLanguageAvailable' && !languageChecked) {
+            languageChecked = true;
+            return 0; // Simulate severed connection on initial check
+          }
+          if (call.method == 'getDefaultEngine') return 'com.google.android.tts';
+          return 1;
+        });
+
+        await tts.warmUp(force: true, forceCheck: true);
+        expect(recordedMethodCalls, contains('isLanguageAvailable'));
+        expect(recordedMethodCalls, contains('setEngine'));
+      });
+
+      test('speakSentence speaks normally when engine is healthy', () async {
+        await tts.speakSentence('dein Auto ist klein', forceCheck: true);
+        expect(recordedMethodCalls, contains('speak'));
+      });
+
+      test('speakSentence detects disconnected engine proactively and rebinds before speak', () async {
+        bool firstCheck = true;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(ttsChannel, (MethodCall call) async {
+          recordedMethodCalls.add(call.method);
+          if (call.method == 'isLanguageAvailable' && firstCheck) {
+            firstCheck = false;
+            return 0; // Severed engine
+          }
+          if (call.method == 'getDefaultEngine') return 'com.google.android.tts';
+          return 1;
+        });
+
+        await tts.speakSentence('dein Auto ist klein', forceCheck: true);
+        expect(recordedMethodCalls, contains('isLanguageAvailable'));
+        expect(recordedMethodCalls, contains('setEngine'));
+        expect(recordedMethodCalls, contains('speak'));
+      });
+
+      test('speakSentence auto-retries when the first speak call fails', () async {
+        int speakCount = 0;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(ttsChannel, (MethodCall call) async {
+          recordedMethodCalls.add(call.method);
+          if (call.method == 'speak') {
+            speakCount++;
+            if (speakCount == 1) {
+              return 0; // First speak fails (e.g. not bound)
+            }
+            return 1; // Retry succeeds
+          }
+          if (call.method == 'getDefaultEngine') return 'com.google.android.tts';
+          return 1;
+        });
+
+        await tts.speakSentence('dein Auto ist klein', forceCheck: true);
+        expect(speakCount, equals(2));
+        expect(recordedMethodCalls, contains('setEngine'));
+      });
+
+      test('speakSentence catches PlatformException, triggers reconnect and retries', () async {
+        int speakCount = 0;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(ttsChannel, (MethodCall call) async {
+          recordedMethodCalls.add(call.method);
+          if (call.method == 'speak') {
+            speakCount++;
+            if (speakCount == 1) {
+              throw PlatformException(code: 'TTS_ERROR', message: 'not bound to TTS engine');
+            }
+            return 1; // Retry succeeds
+          }
+          if (call.method == 'getDefaultEngine') return 'com.google.android.tts';
+          return 1;
+        });
+
+        await tts.speakSentence('dein Auto ist klein', forceCheck: true);
+        expect(speakCount, equals(2));
+        expect(recordedMethodCalls, contains('setEngine'));
+      });
+    });
   });
 }
