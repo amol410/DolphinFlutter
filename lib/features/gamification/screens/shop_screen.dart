@@ -242,8 +242,8 @@ class ShopScreen extends ConsumerWidget {
               icon: '🫧',
               title: 'Refill Oxygen Bubbles',
               subtitle: 'Restore full 5 oxygen bubbles instantly ($oxygen/5 currently)',
-              cost: 250,
-              canAfford: pearls >= 250 && oxygen < 5,
+              cost: 50,
+              canAfford: pearls >= 50 && oxygen < 5,
               buttonText: oxygen >= 5 ? 'FULL' : 'REFILL',
               onBuy: () async {
                 final ok = await ref.read(gamificationStatusProvider.notifier).refillOxygen();
