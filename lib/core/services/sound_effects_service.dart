@@ -21,6 +21,7 @@ class SoundEffectsService {
   AudioPlayer? _correctPlayer;
   AudioPlayer? _wrongPlayer;
   AudioPlayer? _fanfarePlayer;
+  AudioPlayer? _fallbackPlayer;
 
   bool _initialized = false;
   Future<void>? _initFuture;
@@ -51,8 +52,9 @@ class SoundEffectsService {
       _correctPlayer = AudioPlayer(playerId: 'dc_sfx_correct');
       _wrongPlayer = AudioPlayer(playerId: 'dc_sfx_wrong');
       _fanfarePlayer = AudioPlayer(playerId: 'dc_sfx_fanfare');
+      _fallbackPlayer = AudioPlayer(playerId: 'dc_sfx_fallback');
 
-      final players = [_popPlayer!, _correctPlayer!, _wrongPlayer!, _fanfarePlayer!];
+      final players = [_popPlayer!, _correctPlayer!, _wrongPlayer!, _fanfarePlayer!, _fallbackPlayer!];
 
       for (final p in players) {
         await p.setPlayerMode(PlayerMode.lowLatency);
@@ -90,6 +92,32 @@ class SoundEffectsService {
     }
   }
 
+  /// Plays in-memory synthesized PCM audio using the dedicated reusable fallback player.
+  /// If invoked prior to full service initialization, creates a one-shot player that is guaranteed
+  /// to be disposed immediately upon playback completion to prevent hardware audio track leaks.
+  Future<void> _playBytesFallback(Uint8List bytes) async {
+    try {
+      if (_fallbackPlayer != null) {
+        await _fallbackPlayer!.stop();
+        await _fallbackPlayer!.play(BytesSource(bytes), volume: 1.0, mode: PlayerMode.lowLatency).timeout(const Duration(milliseconds: 300));
+      } else {
+        final p = AudioPlayer();
+        try {
+          await p.play(BytesSource(bytes), volume: 1.0, mode: PlayerMode.lowLatency).timeout(const Duration(milliseconds: 300));
+        } finally {
+          p.onPlayerComplete.first.timeout(
+            const Duration(milliseconds: 500),
+            onTimeout: () => null,
+          ).whenComplete(() {
+            try {
+              p.dispose();
+            } catch (_) {}
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
   /// Triggers a tactile Crisp Water Bubble pop and light haptic feedback.
   Future<void> playPop() async {
     _ensureInitialized();
@@ -102,14 +130,17 @@ class SoundEffectsService {
         await _popPlayer!.stop();
         await _popPlayer!.play(AssetSource(_popAsset), volume: 1.0, mode: PlayerMode.lowLatency).timeout(const Duration(milliseconds: 300));
       } else if (_popFallbackWav != null) {
-        final p = AudioPlayer();
-        await p.play(BytesSource(_popFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
+        await _playBytesFallback(_popFallbackWav!);
       }
     } catch (e) {
-      if (_popFallbackWav != null && _popPlayer != null) {
+      if (_popFallbackWav != null) {
         try {
-          await _popPlayer!.stop();
-          await _popPlayer!.play(BytesSource(_popFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
+          if (_popPlayer != null) {
+            await _popPlayer!.stop();
+            await _popPlayer!.play(BytesSource(_popFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
+          } else {
+            await _playBytesFallback(_popFallbackWav!);
+          }
         } catch (_) {}
       }
     }
@@ -127,14 +158,17 @@ class SoundEffectsService {
         await _correctPlayer!.stop();
         await _correctPlayer!.play(AssetSource(_correctAsset), volume: 1.0, mode: PlayerMode.lowLatency).timeout(const Duration(milliseconds: 300));
       } else if (_correctFallbackWav != null) {
-        final p = AudioPlayer();
-        await p.play(BytesSource(_correctFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
+        await _playBytesFallback(_correctFallbackWav!);
       }
     } catch (e) {
-      if (_correctFallbackWav != null && _correctPlayer != null) {
+      if (_correctFallbackWav != null) {
         try {
-          await _correctPlayer!.stop();
-          await _correctPlayer!.play(BytesSource(_correctFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
+          if (_correctPlayer != null) {
+            await _correctPlayer!.stop();
+            await _correctPlayer!.play(BytesSource(_correctFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
+          } else {
+            await _playBytesFallback(_correctFallbackWav!);
+          }
         } catch (_) {}
       }
     }
@@ -152,14 +186,17 @@ class SoundEffectsService {
         await _wrongPlayer!.stop();
         await _wrongPlayer!.play(AssetSource(_wrongAsset), volume: 1.0, mode: PlayerMode.lowLatency).timeout(const Duration(milliseconds: 300));
       } else if (_wrongFallbackWav != null) {
-        final p = AudioPlayer();
-        await p.play(BytesSource(_wrongFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
+        await _playBytesFallback(_wrongFallbackWav!);
       }
     } catch (e) {
-      if (_wrongFallbackWav != null && _wrongPlayer != null) {
+      if (_wrongFallbackWav != null) {
         try {
-          await _wrongPlayer!.stop();
-          await _wrongPlayer!.play(BytesSource(_wrongFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
+          if (_wrongPlayer != null) {
+            await _wrongPlayer!.stop();
+            await _wrongPlayer!.play(BytesSource(_wrongFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
+          } else {
+            await _playBytesFallback(_wrongFallbackWav!);
+          }
         } catch (_) {}
       }
     }
@@ -177,14 +214,17 @@ class SoundEffectsService {
         await _fanfarePlayer!.stop();
         await _fanfarePlayer!.play(AssetSource(_fanfareAsset), volume: 1.0, mode: PlayerMode.lowLatency).timeout(const Duration(milliseconds: 300));
       } else if (_fanfareFallbackWav != null) {
-        final p = AudioPlayer();
-        await p.play(BytesSource(_fanfareFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
+        await _playBytesFallback(_fanfareFallbackWav!);
       }
     } catch (e) {
-      if (_fanfareFallbackWav != null && _fanfarePlayer != null) {
+      if (_fanfareFallbackWav != null) {
         try {
-          await _fanfarePlayer!.stop();
-          await _fanfarePlayer!.play(BytesSource(_fanfareFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
+          if (_fanfarePlayer != null) {
+            await _fanfarePlayer!.stop();
+            await _fanfarePlayer!.play(BytesSource(_fanfareFallbackWav!), volume: 1.0).timeout(const Duration(milliseconds: 300));
+          } else {
+            await _playBytesFallback(_fanfareFallbackWav!);
+          }
         } catch (_) {}
       }
     }
@@ -375,10 +415,12 @@ class SoundEffectsService {
     _correctPlayer?.dispose();
     _wrongPlayer?.dispose();
     _fanfarePlayer?.dispose();
+    _fallbackPlayer?.dispose();
     _popPlayer = null;
     _correctPlayer = null;
     _wrongPlayer = null;
     _fanfarePlayer = null;
+    _fallbackPlayer = null;
     _initialized = false;
     _initFuture = null;
   }
