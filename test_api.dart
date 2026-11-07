@@ -1,16 +1,24 @@
+import 'dart:io';
 import 'package:dio/dio.dart';
 
 void main() async {
   try {
     final dio = Dio(BaseOptions(
-      baseUrl: 'https://dolphincoder.com/api',
+      baseUrl: Platform.environment['API_BASE_URL'] ?? 'https://dolphincoder.com/api',
       headers: {'Content-Type': 'application/json'},
     ));
+    
+    final email = Platform.environment['ADMIN_EMAIL'] ?? 'admin@speedupexam.com';
+    final password = Platform.environment['ADMIN_PASSWORD'] ?? '';
+    if (password.isEmpty) {
+      print('ADMIN_PASSWORD environment variable not set. Usage: ADMIN_PASSWORD=... dart test_api.dart');
+      return;
+    }
     
     print('Sending login request...');
     final loginRes = await dio.post(
       '/auth/login',
-      data: {'email': 'admin@speedupexam.com', 'password': 'Admin@SpeedUp2024!'},
+      data: {'email': email, 'password': password},
     );
     final token = loginRes.data['token'];
     print('Got token!');
