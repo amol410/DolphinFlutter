@@ -15,7 +15,9 @@ class TtsService {
   TtsService._internal();
 
   /// Cache version - increment to invalidate old synthesized audio files on device.
-  static const int _cacheVersion = 3;
+  // Bumped to 4: invalidates pre-fix cache entries whose locale did not record
+  // which voice rendered them (the source of mixed male/female playback).
+  static const int _cacheVersion = 4;
 
   /// High-priority male voice identifiers for Android (Google TTS), iOS, macOS, Windows.
   static const List<String> _preferredMaleVoiceIdentifiers = [
@@ -43,6 +45,53 @@ class TtsService {
   String get currentLanguageCode => _currentLanguageCode;
 
   String get activeLocale => _currentLanguageCode == 'en' ? 'en-US' : 'de-DE';
+
+  /// Locale used for the learner's native-language (translation) audio.
+  /// English courses pair with a Hindi/Marathi native track, so their native
+  /// text must be spoken by a matching voice instead of the English one.
+  String _nativeLocale = 'hi-IN';
+
+  /// Resolves the locale that should actually render [text].
+  ///
+  /// The ruling script decides: a string is native-script audio only when the
+  /// majority of its letters are Devanagari. This guarantees that **English text
+  /// is always spoken by the English voice**, even when a native word is quoted
+  /// inside it (e.g. "water (पानी)").
+  ///
+  /// Previously all text went to the single `en-US` voice, and Devanagari was
+  /// resolved by the platform's script-fallback, which picked a different voice
+  /// per word — the words randomly alternated between male and female.
+  String _localeForText(String text) {
+    if (_isPredominantlyDevanagari(text)) return _nativeLocale;
+    return activeLocale;
+  }
+
+  /// True when Devanagari letters outnumber Latin letters in [text].
+  static bool _isPredominantlyDevanagari(String text) {
+    var devanagari = 0;
+    var latin = 0;
+    for (final rune in text.runes) {
+      final isDevanagariLetter = rune >= 0x0900 && rune <= 0x097F && !_isDevanagariMark(rune);
+      if (isDevanagariLetter) {
+        devanagari++;
+      } else if ((rune >= 0x41 && rune <= 0x5A) || (rune >= 0x61 && rune <= 0x7A)) {
+        latin++;
+      }
+    }
+    return devanagari > latin;
+  }
+
+  /// Combining vowel signs and marks carry no script weight on their own.
+  static bool _isDevanagariMark(int rune) =>
+      (rune >= 0x093E && rune <= 0x094F) || (rune >= 0x0951 && rune <= 0x0957);
+
+  @visibleForTesting
+  String localeForTextForTesting(String text) => _localeForText(text);
+
+  /// Keeps the native voice aligned with the active course.
+  void _syncNativeLocale() {
+    _nativeLocale = _currentLanguageCode == 'en' ? 'hi-IN' : 'en-US';
+  }
 
   // Guard against redundant native re-configuration
   String? _currentAppliedLocale;
@@ -139,10 +188,12 @@ class TtsService {
   }
 
   /// Clean input word of surrounding punctuation.
+  /// Includes Devanagari marks (danda `।`, double danda `॥`) so the same Hindi
+  /// word cannot produce two different cache keys (and two different voices).
   String _normalizeWord(String word) {
     return word
         .trim()
-        .replaceAll(RegExp(r'''^[\s,.:;!?¡¿"״„“”']+|[\s,.:;!?¡¿"״„“”']+$'''), '')
+        .replaceAll(RegExp(r'''^[\s,.:;!?¡¿"״„“”'।॥]+|[\s,.:;!?¡¿"״„“”'।॥]+$'''), '')
         .trim();
   }
 
@@ -199,6 +250,7 @@ class TtsService {
 
     final bool languageChanged = _currentLanguageCode != newLangCode;
     _currentLanguageCode = newLangCode;
+    _syncNativeLocale();
 
     if (!_isInitialized) {
       await init();
@@ -459,6 +511,46 @@ class TtsService {
       // non-female English voice (matching target locale first, then any English).
       // NEVER fallback to a female voice!
       return bestVoice ?? (firstNonFemaleMatchingLocaleVoice ?? firstNonFemaleVoice);
+    } else if (targetLocale.toLowerCase().startsWith('hi') ||
+        targetLocale.toLowerCase().startsWith('mr')) {
+      // Hindi / Marathi native voice: same male-narrator policy as English so the
+      // learner hears one consistent speaker across both sides of a card.
+      Map<String, String>? preferredMale;
+      Map<String, String>? fallback;
+
+      for (final voice in rawVoices) {
+        if (voice is! Map) continue;
+        final name = (voice['name'] ?? '').toString().toLowerCase();
+        final locale = (voice['locale'] ?? '').toString().toLowerCase();
+        final features = (voice['features'] ?? '').toString().toLowerCase();
+        final gender = (voice['gender'] ?? '').toString().toLowerCase();
+
+        final matchesLocale = targetLocale.toLowerCase().startsWith('mr')
+            ? (locale.contains('mr'))
+            : (locale.contains('hi'));
+        if (!matchesLocale) continue;
+
+        final voiceMap = {
+          "name": voice['name'].toString(),
+          "locale": voice['locale'].toString(),
+        };
+
+        final isFemale = name.contains('female') ||
+            features.contains('female') ||
+            gender.contains('female') ||
+            name.contains('-hia') || // Google hi-IN female voices
+            name.contains('-hic') ||
+            name.contains('-hib');
+
+        if (!isFemale) {
+          preferredMale ??= voiceMap;
+        }
+        fallback ??= voiceMap;
+      }
+
+      // Prefer a male voice; otherwise use whatever the device provides (the
+      // pitch adjustment below keeps its timbre consistent with English).
+      return preferredMale ?? fallback;
     } else {
       // German voice matching
       Map<String, String>? selectedVoice;
@@ -506,10 +598,14 @@ class TtsService {
     }
 
     final isEnglish = targetLocale.toLowerCase().startsWith('en');
+    final isNativeScript = targetLocale.toLowerCase().startsWith('hi') ||
+        targetLocale.toLowerCase().startsWith('mr');
 
-    // Ensure pitch (0.88 for English narrator), speech rate, and volume are set
+    // Ensure pitch (0.88 for English narrator), speech rate, and volume are set.
+    // Hindi/Marathi use the same male-leaning pitch so both sides of a card
+    // sound like the same speaker.
     try {
-      await _flutterTts.setPitch(isEnglish ? 0.88 : 1.0);
+      await _flutterTts.setPitch((isEnglish || isNativeScript) ? 0.88 : 1.0);
       await _flutterTts.setSpeechRate(0.48);
       await _flutterTts.setVolume(1.0);
     } catch (_) {}
@@ -531,7 +627,10 @@ class TtsService {
         debugPrint('🎙️ [TtsService] Selected native voice: ${selectedVoice['name']} (${selectedVoice['locale']}) for $targetLocale');
       } else {
         await _flutterTts.setLanguage(targetLocale);
-        _currentAppliedVoiceLocale = targetLocale;
+        // Do NOT mark this locale as voice-pinned: no specific voice was chosen,
+        // so the platform default is in effect. Leaving the guard unset allows a
+        // later call to retry pinning instead of locking in the default voice
+        // (which is what made some words sound male and others female).
         debugPrint('ℹ️ [TtsService] Fallback to system default for $targetLocale');
       }
     } catch (e) {
@@ -727,8 +826,19 @@ class TtsService {
         await init();
       }
 
-      final locale = activeLocale;
+      // Script-aware locale: Hindi/Marathi text uses the native voice, English
+      // text uses the English voice. This keeps one consistent speaker per
+      // language instead of letting the platform pick a random fallback voice.
+      final locale = _localeForText(speakable);
       final key = _getCacheKey(speakable, locale);
+
+      // Pin the correct voice BEFORE touching any cache, so a file recorded by a
+      // different voice is never replayed (pre-existing mixed-gender artifacts).
+      if (_currentAppliedLocale != locale) {
+        await _flutterTts.setLanguage(locale);
+        await _applyBestVoiceForLocale(locale);
+        _currentAppliedLocale = locale;
+      }
 
       // 1. Check in-memory map or disk cache
       String? cachedPath = _wordAudioFileMap[key];
@@ -807,7 +917,7 @@ class TtsService {
       if (!_isInitialized) {
         await init();
       }
-      final locale = activeLocale;
+      final locale = _localeForText(cleaned);
       if (_currentAppliedLocale != locale) {
         await _flutterTts.setLanguage(locale);
         await _applyBestVoiceForLocale(locale);
@@ -815,7 +925,9 @@ class TtsService {
       }
 
       final isEnglish = locale.toLowerCase().startsWith('en');
-      await _flutterTts.setPitch(isEnglish ? 0.88 : 1.0);
+      final isNativeScript = locale.toLowerCase().startsWith('hi') ||
+          locale.toLowerCase().startsWith('mr');
+      await _flutterTts.setPitch((isEnglish || isNativeScript) ? 0.88 : 1.0);
 
       // Normal speech rate is 0.48. If rate < 0.9 (Turtle mode), slow down to 0.32.
       // Otherwise scale proportionately or use normal 0.48.
