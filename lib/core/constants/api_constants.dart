@@ -3,7 +3,7 @@ class ApiConstants {
 
   static const String productionBaseUrl = 'https://dolphincoder.com/api';
   static const String testingBaseUrl = 'https://testing.dolphincoder.com/api';
-  static const String defaultBaseUrl = testingBaseUrl;
+  static const String defaultBaseUrl = productionBaseUrl;
 
   static bool get isTesting => defaultBaseUrl.contains('testing');
 
