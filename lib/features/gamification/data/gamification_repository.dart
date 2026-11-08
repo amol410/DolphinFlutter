@@ -11,6 +11,35 @@ class GamificationRepository {
   final CacheService _cache = CacheService();
   final PrefetchService _prefetch = PrefetchService();
 
+  /// Resolves the course trio used for a path request/cache key.
+  ///
+  /// Callers that already know the active course must pass it explicitly. When
+  /// they do not, we consult the persisted status/user course rather than
+  /// inventing German, which previously caused an English course to be
+  /// replaced by the German curriculum.
+  Future<({String target, String native, String level})> _resolveCourse({
+    String? targetLanguage,
+    String? nativeLanguage,
+    String? level,
+  }) async {
+    var target = targetLanguage;
+    var native = nativeLanguage;
+    var lvl = level;
+
+    if (target == null || native == null || lvl == null) {
+      final cached = await _cache.getCachedStatus();
+      target ??= cached?.targetLanguage;
+      native ??= cached?.nativeLanguage;
+      lvl ??= cached?.currentLevel;
+    }
+
+    target ??= 'de';
+    native ??= (target == 'en' ? 'mr' : 'en');
+    lvl ??= 'A1';
+
+    return (target: target, native: native, level: lvl);
+  }
+
   Future<GamificationStatusModel> getStatus() async {
     // 1. Check local Tier-2 cache
     final cached = await _cache.getCachedStatus();
@@ -52,9 +81,14 @@ class GamificationRepository {
     int? startUnit,
     int? endUnit,
   }) async {
-    final tLang = targetLanguage ?? 'de';
-    final nLang = nativeLanguage ?? (tLang == 'en' ? 'mr' : 'en');
-    final lvl = level ?? 'A1';
+    final course = await _resolveCourse(
+      targetLanguage: targetLanguage,
+      nativeLanguage: nativeLanguage,
+      level: level,
+    );
+    final tLang = course.target;
+    final nLang = course.native;
+    final lvl = course.level;
 
     // 1. Check Tier-2 cache for instant offline-first display
     final cachedNodes = await _cache.getCachedPathNodes(
@@ -66,9 +100,11 @@ class GamificationRepository {
     try {
       final dio = await DioClient.getInstance();
       final queryParams = <String, dynamic>{};
-      if (targetLanguage != null) queryParams['targetLanguage'] = targetLanguage;
-      if (nativeLanguage != null) queryParams['nativeLanguage'] = nativeLanguage;
-      if (level != null) queryParams['level'] = level;
+      // Always send the resolved course so the backend cannot substitute a
+      // different stored course and return nodes for the wrong language.
+      queryParams['targetLanguage'] = tLang;
+      queryParams['nativeLanguage'] = nLang;
+      queryParams['level'] = lvl;
       if (section != null) queryParams['section'] = section;
       if (unit != null) queryParams['unit'] = unit;
       if (startUnit != null) queryParams['startUnit'] = startUnit;

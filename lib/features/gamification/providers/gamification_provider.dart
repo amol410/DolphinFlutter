@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/services/cache_service.dart';
@@ -33,6 +35,12 @@ class GamificationStatusNotifier extends StateNotifier<AsyncValue<GamificationSt
         pearls: values['pearls'] as int?,
         oxygen: values['oxygen'] as int?,
         streakCount: values['streakCount'] as int?,
+        // Carry the active course through: dropping these here wrote a
+        // language-less status blob to the cache, which then reverted the
+        // learner to the default German course on the next read.
+        targetLanguage: values['targetLanguage'] as String?,
+        nativeLanguage: values['nativeLanguage'] as String?,
+        currentLevel: values['currentLevel'] as String?,
       );
       state = AsyncValue.data(updated);
       CacheService().saveStatus(updated);
@@ -139,10 +147,23 @@ class GamificationStatusNotifier extends StateNotifier<AsyncValue<GamificationSt
         nativeLanguage: nativeLanguage,
         level: level,
       );
-      if (ok) {
-        await refresh();
-      }
-      return ok;
+      if (!ok) return false;
+
+      // Apply the chosen course to in-memory state and the cache immediately.
+      // Previously this waited on a separate refresh(), so any failed or raced
+      // status fetch left the learner on the old (German) course.
+      state = AsyncValue.data(
+        (state.value ?? const GamificationStatusModel()).copyWith(
+          targetLanguage: targetLanguage,
+          nativeLanguage: nativeLanguage,
+          currentLevel: level,
+        ),
+      );
+      CacheService().saveStatus(state.value!);
+
+      // Reconcile with the server in the background without blocking the switch.
+      unawaited(refresh());
+      return true;
     } catch (_) {
       return false;
     }

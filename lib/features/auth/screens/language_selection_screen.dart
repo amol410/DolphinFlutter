@@ -77,28 +77,51 @@ class _LanguageSelectionScreenState extends ConsumerState<LanguageSelectionScree
       final statusNotifier = ref.read(gamificationStatusProvider.notifier);
       final pathNotifier = ref.read(pathNodesProvider.notifier);
 
-      // 1. Immediately persist user's chosen language to SharedPreferences
+      final target = _selectedTargetLanguage!;
+      final native = _selectedNativeLanguage!;
+
+      // Preserve the learner's existing level instead of demoting them to A1.
+      // Only a genuinely new course track starts at A1.
+      final currentStatus = ref.read(gamificationStatusProvider).value;
+      final isSameCourse = currentStatus?.targetLanguage == target &&
+          currentStatus?.nativeLanguage == native;
+      final level = (isSameCourse ? currentStatus?.currentLevel : null) ?? 'A1';
+
+      // 1. Update the backend track FIRST. If this fails we must not persist a
+      // course locally that the server does not know about, otherwise the next
+      // status fetch silently reverts the learner to the old course.
+      final switched = await statusNotifier.switchCourse(
+        targetLanguage: target,
+        nativeLanguage: native,
+        level: level,
+      );
+
+      if (!switched) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not switch course. Please check your connection and try again.'),
+            backgroundColor: Color(0xFFEF4444),
+          ),
+        );
+        return;
+      }
+
+      // 2. Persist the confirmed course locally so it survives restarts.
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('active_target_lang', _selectedTargetLanguage!);
-      await prefs.setString('active_native_lang', _selectedNativeLanguage!);
-      await prefs.setString('active_level', 'A1');
+      await prefs.setString('active_target_lang', target);
+      await prefs.setString('active_native_lang', native);
+      await prefs.setString('active_level', level);
       await prefs.setBool('has_selected_language_course', true);
 
-      // 2. Configure voice persona
-      unawaited(TtsService().setLanguage(_selectedTargetLanguage!).catchError((_) {}));
-
-      // 3. Sequentially update backend user course track first
-      await statusNotifier.switchCourse(
-        targetLanguage: _selectedTargetLanguage!,
-        nativeLanguage: _selectedNativeLanguage!,
-        level: 'A1',
-      );
+      // 3. Configure voice persona
+      unawaited(TtsService().setLanguage(target).catchError((_) {}));
 
       // 4. Load path for this specific language pair
       await pathNotifier.loadPath(
-        targetLanguage: _selectedTargetLanguage!,
-        nativeLanguage: _selectedNativeLanguage!,
-        level: 'A1',
+        targetLanguage: target,
+        nativeLanguage: native,
+        level: level,
       );
 
       if (!mounted) return;

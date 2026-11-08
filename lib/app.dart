@@ -43,9 +43,21 @@ class _DolphinCoderAppState extends ConsumerState<DolphinCoderApp> with WidgetsB
   void _syncCurriculumOnResume() {
     try {
       final token = DioClient.cachedToken;
-      if (token != null && token.isNotEmpty) {
-        ref.read(pathNodesProvider.notifier).loadPath(silent: true);
-      }
+      if (token == null || token.isEmpty) return;
+
+      // Never call loadPath() with no language: that path used to fall back to
+      // German and silently replace the learner's active course with 'de'.
+      // Only the last known, non-null course may be re-synced; when none is
+      // known yet the status provider is already fetching it.
+      final status = ref.read(gamificationStatusProvider).asData?.value;
+      if (status == null) return;
+
+      ref.read(pathNodesProvider.notifier).loadPath(
+            targetLanguage: status.targetLanguage,
+            nativeLanguage: status.nativeLanguage,
+            level: status.currentLevel,
+            silent: true,
+          );
     } catch (_) {}
   }
 

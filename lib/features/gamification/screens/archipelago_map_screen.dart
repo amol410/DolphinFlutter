@@ -754,12 +754,20 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
   }
 
   void _launchLesson(BuildContext context, PathNodeModel node) {
+    // Capture the active course *before* pushing the lesson. Reading it again in
+    // the completion callback could observe a null/reloading status and reload
+    // the path for the wrong (default German) course.
+    final launchStatus = ref.read(gamificationStatusProvider).asData?.value;
+
     context.push('/lesson/${node.index}', extra: node).then((_) async {
-      final currentStatus = ref.read(gamificationStatusProvider).value;
+      final currentStatus =
+          ref.read(gamificationStatusProvider).asData?.value ?? launchStatus;
+      if (currentStatus == null) return;
+
       await ref.read(pathNodesProvider.notifier).loadPath(
-        targetLanguage: currentStatus?.targetLanguage,
-        nativeLanguage: currentStatus?.nativeLanguage,
-        level: currentStatus?.currentLevel,
+        targetLanguage: currentStatus.targetLanguage,
+        nativeLanguage: currentStatus.nativeLanguage,
+        level: currentStatus.currentLevel,
         silent: true,
       );
       final currentNodes = ref.read(pathNodesProvider).asData?.value;
