@@ -13,6 +13,11 @@ class GamificationStatusModel {
   final int streakFreezeCount;
   final bool isDoubleXpActive;
   final String? doubleXpExpiresAt;
+  final bool placementCompleted;
+  final String? placementLevel;
+  final int placementSkipToNode;
+  final List<String> unlockedLevels;
+  final bool isAcceleratedFallback;
 
   const GamificationStatusModel({
     this.streakCount = 1,
@@ -29,9 +34,22 @@ class GamificationStatusModel {
     this.streakFreezeCount = 0,
     this.isDoubleXpActive = false,
     this.doubleXpExpiresAt,
+    this.placementCompleted = false,
+    this.placementLevel,
+    this.placementSkipToNode = 0,
+    this.unlockedLevels = const ['A1'],
+    this.isAcceleratedFallback = false,
   });
 
   factory GamificationStatusModel.fromJson(Map<String, dynamic> json) {
+    final rawUnlocked = json['unlockedLevels'];
+    final unlocked = <String>['A1'];
+    if (rawUnlocked is List) {
+      for (final item in rawUnlocked) {
+        final s = item?.toString().trim().toUpperCase() ?? '';
+        if (s.isNotEmpty && !unlocked.contains(s)) unlocked.add(s);
+      }
+    }
     return GamificationStatusModel(
       streakCount: json['streakCount'] ?? 1,
       longestStreak: json['longestStreak'] ?? 1,
@@ -47,6 +65,11 @@ class GamificationStatusModel {
       streakFreezeCount: json['streakFreezeCount'] ?? 0,
       isDoubleXpActive: json['isDoubleXpActive'] == true,
       doubleXpExpiresAt: json['doubleXpExpiresAt']?.toString(),
+      placementCompleted: json['placementCompleted'] == true,
+      placementLevel: json['placementLevel']?.toString(),
+      placementSkipToNode: (json['placementSkipToNode'] as num?)?.toInt() ?? 0,
+      unlockedLevels: unlocked,
+      isAcceleratedFallback: json['isAcceleratedFallback'] == true,
     );
   }
 
@@ -66,6 +89,11 @@ class GamificationStatusModel {
       'streakFreezeCount': streakFreezeCount,
       'isDoubleXpActive': isDoubleXpActive,
       'doubleXpExpiresAt': doubleXpExpiresAt,
+      'placementCompleted': placementCompleted,
+      'placementLevel': placementLevel,
+      'placementSkipToNode': placementSkipToNode,
+      'unlockedLevels': unlockedLevels,
+      'isAcceleratedFallback': isAcceleratedFallback,
     };
   }
 
@@ -84,6 +112,11 @@ class GamificationStatusModel {
     int? streakFreezeCount,
     bool? isDoubleXpActive,
     String? doubleXpExpiresAt,
+    bool? placementCompleted,
+    String? placementLevel,
+    int? placementSkipToNode,
+    List<String>? unlockedLevels,
+    bool? isAcceleratedFallback,
   }) {
     return GamificationStatusModel(
       streakCount: streakCount ?? this.streakCount,
@@ -100,6 +133,11 @@ class GamificationStatusModel {
       streakFreezeCount: streakFreezeCount ?? this.streakFreezeCount,
       isDoubleXpActive: isDoubleXpActive ?? this.isDoubleXpActive,
       doubleXpExpiresAt: doubleXpExpiresAt ?? this.doubleXpExpiresAt,
+      placementCompleted: placementCompleted ?? this.placementCompleted,
+      placementLevel: placementLevel ?? this.placementLevel,
+      placementSkipToNode: placementSkipToNode ?? this.placementSkipToNode,
+      unlockedLevels: unlockedLevels ?? this.unlockedLevels,
+      isAcceleratedFallback: isAcceleratedFallback ?? this.isAcceleratedFallback,
     );
   }
 }

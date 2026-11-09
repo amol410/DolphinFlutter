@@ -20,9 +20,10 @@ class LanguageSelectionScreen extends ConsumerStatefulWidget {
 }
 
 class _LanguageSelectionScreenState extends ConsumerState<LanguageSelectionScreen> {
-  int _currentStep = 0; // 0 = Target Language, 1 = Native Language
+  int _currentStep = 0; // 0 = Target Language, 1 = Native Language, 2 = Starting Point (Scratch vs Placement)
   String? _selectedTargetLanguage;
   String? _selectedNativeLanguage;
+  String _startingMode = 'scratch'; // 'scratch' | 'placement'
   bool _isSubmitting = false;
 
   @override
@@ -126,6 +127,17 @@ class _LanguageSelectionScreenState extends ConsumerState<LanguageSelectionScree
 
       if (!mounted) return;
 
+      if (_startingMode == 'placement') {
+        if (widget.isModal) {
+          Navigator.of(context).pop(true);
+        }
+        context.go('/placement-quiz', extra: {
+          'targetLanguage': target,
+          'nativeLanguage': native,
+        });
+        return;
+      }
+
       if (widget.isModal) {
         Navigator.of(context).pop(true);
       } else {
@@ -157,10 +169,10 @@ class _LanguageSelectionScreenState extends ConsumerState<LanguageSelectionScree
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
-                  if (_currentStep == 1)
+                  if (_currentStep > 0)
                     IconButton(
                       icon: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 24),
-                      onPressed: () => setState(() => _currentStep = 0),
+                      onPressed: () => setState(() => _currentStep = _currentStep - 1),
                     )
                   else if (widget.isModal)
                     IconButton(
@@ -177,7 +189,9 @@ class _LanguageSelectionScreenState extends ConsumerState<LanguageSelectionScree
                         children: [
                           _buildStepDot(isActive: _currentStep == 0, isPassed: _currentStep > 0),
                           const SizedBox(width: 8),
-                          _buildStepDot(isActive: _currentStep == 1, isPassed: false),
+                          _buildStepDot(isActive: _currentStep == 1, isPassed: _currentStep > 1),
+                          const SizedBox(width: 8),
+                          _buildStepDot(isActive: _currentStep == 2, isPassed: false),
                         ],
                       ),
                     ),
@@ -192,7 +206,9 @@ class _LanguageSelectionScreenState extends ConsumerState<LanguageSelectionScree
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                child: _currentStep == 0 ? _buildStep1TargetLanguage() : _buildStep2NativeLanguage(),
+                child: _currentStep == 0
+                    ? _buildStep1TargetLanguage()
+                    : (_currentStep == 1 ? _buildStep2NativeLanguage() : _buildStep3StartingPoint()),
               ),
             ),
 
@@ -209,6 +225,10 @@ class _LanguageSelectionScreenState extends ConsumerState<LanguageSelectionScree
                           if (_currentStep == 0) {
                             if (_selectedTargetLanguage != null) {
                               _onSelectTarget(_selectedTargetLanguage!);
+                            }
+                          } else if (_currentStep == 1) {
+                            if (_selectedNativeLanguage != null) {
+                              setState(() => _currentStep = 2);
                             }
                           } else {
                             _submitCourse();
@@ -230,7 +250,9 @@ class _LanguageSelectionScreenState extends ConsumerState<LanguageSelectionScree
                           child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
                         )
                       : Text(
-                          _currentStep == 0 ? 'CONTINUE' : 'START LEARNING 🚀',
+                          _currentStep < 2
+                              ? 'CONTINUE'
+                              : (_startingMode == 'placement' ? 'START PLACEMENT TEST 🎯' : 'START FROM BASICS 🚀'),
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
@@ -404,6 +426,71 @@ class _LanguageSelectionScreenState extends ConsumerState<LanguageSelectionScree
             },
           ),
         ],
+      ],
+    );
+  }
+
+  // ── Step 3: Starting Point (Duolingo Entry Choice) ───────────────────
+  Widget _buildStep3StartingPoint() {
+    final isGerman = _selectedTargetLanguage == 'de';
+    final langName = isGerman ? 'German' : 'English';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        const SizedBox(height: 8),
+        const AnimatedDolphinMascot(
+          size: 90,
+          pose: MascotPose.celebrate,
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Choose your starting point',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 24,
+            fontWeight: FontWeight.w900,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Start from scratch or test your $langName level to skip ahead',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            color: const Color(0xFF94A3B8),
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        _buildLanguageCard(
+          flag: '🌱',
+          title: 'Learning $langName for the first time?',
+          nativeTitle: 'Start at A1 Unit 1 (Rookie)',
+          subtitle: 'Step-by-step foundational lessons from the very beginning',
+          badge: 'Beginner',
+          badgeColor: const Color(0xFF58CC02),
+          isSelected: _startingMode == 'scratch',
+          onTap: () {
+            setState(() => _startingMode = 'scratch');
+          },
+        ),
+
+        const SizedBox(height: 14),
+
+        _buildLanguageCard(
+          flag: '🧭',
+          title: 'Already know some $langName?',
+          nativeTitle: 'Take the Diagnostic Placement Test',
+          subtitle: 'Answer 12 quick questions to unlock advanced sections or CEFR levels',
+          badge: 'Fast-Track',
+          badgeColor: const Color(0xFF1CB0F6),
+          isSelected: _startingMode == 'placement',
+          onTap: () {
+            setState(() => _startingMode = 'placement');
+          },
+        ),
       ],
     );
   }

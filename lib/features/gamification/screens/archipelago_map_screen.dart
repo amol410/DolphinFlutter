@@ -10,6 +10,7 @@ import '../../../shared/widgets/out_of_oxygen_dialog.dart';
 import '../providers/gamification_provider.dart';
 import '../data/models/gamification_models.dart';
 import '../widgets/course_selection_sheet.dart';
+import 'placement_quiz_screen.dart';
 
 class ArchipelagoMapScreen extends ConsumerStatefulWidget {
   const ArchipelagoMapScreen({super.key});
@@ -307,7 +308,10 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
                               children: [
                                 // Duolingo-style Unit Transition Divider
                                 if (isFirstOfUnit && index > 0)
-                                  _buildUnitDivider(node, () => _scrollToUnit(nodes, node.unitNumber)),
+                                  _buildUnitDivider(
+                                    node,
+                                    () => _launchUnitJumpChallenge(context, node),
+                                  ),
                                 _buildPathNode(context, index: index, node: node),
                               ],
                             );
@@ -424,6 +428,10 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
 
   // Sticky Duolingo Banner with Animated Color & Section/Unit Headings
   Widget _buildDynamicUnitBanner(BuildContext context, List<PathNodeModel> nodes) {
+    final status = ref.watch(gamificationStatusProvider).value;
+    final activeCefr = status?.currentLevel ?? 'A1';
+    final placementLevel = status?.placementLevel;
+    final isFastTrack = status?.isAcceleratedFallback == true && placementLevel != null;
     final displaySectionTitle = _visibleSectionTitle.isNotEmpty
         ? _visibleSectionTitle
         : (nodes.isNotEmpty ? nodes.first.sectionTitle : 'Rookie');
@@ -460,16 +468,37 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        'SECTION $_visibleSectionNumber (${displaySectionTitle.toUpperCase()}), UNIT $_visibleSectionUnitNumber',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white.withValues(alpha: 0.85),
-                          letterSpacing: 1.1,
+                      Flexible(
+                        child: Text(
+                          '$activeCefr • SECTION $_visibleSectionNumber (${displaySectionTitle.toUpperCase()}), UNIT $_visibleSectionUnitNumber',
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white.withValues(alpha: 0.85),
+                            letterSpacing: 1.1,
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 6),
+                      if (isFastTrack) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.25),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '⚡ $placementLevel FAST-TRACK',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(width: 4),
                       Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white.withValues(alpha: 0.85), size: 18),
                     ],
                   ),
@@ -509,6 +538,30 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _launchUnitJumpChallenge(BuildContext context, PathNodeModel node) async {
+    final status = ref.read(gamificationStatusProvider).value;
+    final tLang = status?.targetLanguage ?? 'de';
+    final nLang = status?.nativeLanguage ?? (tLang == 'en' ? 'mr' : 'en');
+
+    final passed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => PlacementQuizScreen(
+          targetLanguage: tLang,
+          nativeLanguage: nLang,
+          jumpToUnit: node.unitNumber,
+          jumpUnitTitle: node.unitTitle,
+        ),
+      ),
+    );
+
+    if (passed == true && mounted) {
+      final updatedNodes = ref.read(pathNodesProvider).value ?? [];
+      if (updatedNodes.isNotEmpty) {
+        _scrollToUnit(updatedNodes, node.unitNumber);
+      }
+    }
   }
 
   // Unit Divider with optional 'JUMP HERE?' button

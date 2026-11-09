@@ -191,6 +191,7 @@ class PathNodesNotifier extends StateNotifier<AsyncValue<List<PathNodeModel>>> {
     final tLang = status?.targetLanguage ?? cachedStatus?.targetLanguage ?? 'de';
     final nLang = status?.nativeLanguage ?? cachedStatus?.nativeLanguage ?? 'en';
     final lvl = status?.currentLevel ?? cachedStatus?.currentLevel ?? 'A1';
+    final skipToNode = status?.placementSkipToNode ?? cachedStatus?.placementSkipToNode ?? 0;
 
     // Slipstream Pillar 3: 0 ms Instant Render (Stale-While-Revalidate)
     // 1. Immediately paint cached path from Tier-2 local storage without blocking
@@ -204,6 +205,9 @@ class PathNodesNotifier extends StateNotifier<AsyncValue<List<PathNodeModel>>> {
       state = AsyncValue.data(cachedNodes);
       final maxU = cachedNodes.map((n) => n.unitNumber).fold(1, (prev, u) => u > prev ? u : prev);
       _loadedMaxUnit = maxU < 4 ? 4 : maxU;
+    }
+    if (skipToNode > 0 && _loadedMaxUnit < 40) {
+      _loadedMaxUnit = 40;
     }
 
     // 2. Background sync with Hostinger API seamlessly (silent = true if cached data is painted)
