@@ -444,7 +444,9 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
     final status = ref.watch(gamificationStatusProvider).value;
     final activeCefr = status?.currentLevel ?? 'A1';
     final placementLevel = status?.placementLevel;
-    final isFastTrack = status?.isAcceleratedFallback == true && placementLevel != null;
+    final isFastTrack = status?.isAcceleratedFallback == true &&
+        (status?.placementSkipToNode ?? 0) > 0 &&
+        placementLevel != null;
     final displaySectionTitle = _visibleSectionTitle.isNotEmpty
         ? _visibleSectionTitle
         : (nodes.isNotEmpty ? nodes.first.sectionTitle : 'Rookie');

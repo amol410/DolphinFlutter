@@ -542,6 +542,36 @@ class GamificationRepository {
     return null;
   }
 
+  Future<Map<String, dynamic>> getPlacementLesson({
+    required String targetLanguage,
+    required String nativeLanguage,
+    String level = 'A1',
+  }) async {
+    try {
+      final dio = await DioClient.getInstance();
+      final response = await dio.get(
+        ApiConstants.gamificationPlacementLesson,
+        queryParameters: {
+          'targetLanguage': targetLanguage,
+          'nativeLanguage': nativeLanguage,
+          'level': level,
+        },
+      );
+      if (response.data is Map<String, dynamic>) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      if (data is Map<String, dynamic>) {
+        return Map<String, dynamic>.from(data);
+      }
+      debugPrint('⚠️ [GamificationRepository] getPlacementLesson Dio error: $e');
+    } catch (e) {
+      debugPrint('⚠️ [GamificationRepository] getPlacementLesson error: $e');
+    }
+    return {'success': false, 'message': 'Unable to load Section 2 placement lesson.'};
+  }
+
   Future<List<Map<String, dynamic>>> getPlacementQuestions({
     required String targetLanguage,
     required String nativeLanguage,
@@ -579,6 +609,9 @@ class GamificationRepository {
     required int totalQuestions,
     required String targetLanguage,
     required String nativeLanguage,
+    int? mistakesCount,
+    String? placementMode,
+    dynamic lessonId,
   }) async {
     try {
       final dio = await DioClient.getInstance();
@@ -590,6 +623,9 @@ class GamificationRepository {
           'totalQuestions': totalQuestions,
           'targetLanguage': targetLanguage,
           'nativeLanguage': nativeLanguage,
+          if (mistakesCount != null) 'mistakesCount': mistakesCount,
+          if (placementMode != null) 'placementMode': placementMode,
+          if (lessonId != null) 'lessonId': lessonId,
         },
       );
       if (response.data is Map<String, dynamic>) {

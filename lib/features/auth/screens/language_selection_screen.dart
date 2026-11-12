@@ -131,7 +131,7 @@ class _LanguageSelectionScreenState extends ConsumerState<LanguageSelectionScree
         if (widget.isModal) {
           Navigator.of(context).pop(true);
         }
-        context.go('/placement-quiz', extra: {
+        context.go('/placement-lesson', extra: {
           'targetLanguage': target,
           'nativeLanguage': native,
         });
@@ -482,8 +482,8 @@ class _LanguageSelectionScreenState extends ConsumerState<LanguageSelectionScree
         _buildLanguageCard(
           flag: '🧭',
           title: 'Already know some $langName?',
-          nativeTitle: 'Take the Diagnostic Placement Test',
-          subtitle: 'Answer 12 quick questions to unlock advanced sections or CEFR levels',
+          nativeTitle: 'Section 2 Quick Check',
+          subtitle: 'Solve Section 2, Unit 4, Lesson 4 to start in Section 2',
           badge: 'Fast-Track',
           badgeColor: const Color(0xFF1CB0F6),
           isSelected: _startingMode == 'placement',

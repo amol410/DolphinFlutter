@@ -41,6 +41,10 @@ class GamificationStatusNotifier extends StateNotifier<AsyncValue<GamificationSt
         targetLanguage: values['targetLanguage'] as String?,
         nativeLanguage: values['nativeLanguage'] as String?,
         currentLevel: values['currentLevel'] as String?,
+        placementCompleted: values['placementCompleted'] as bool?,
+        placementLevel: values['placementLevel'] as String?,
+        placementSkipToNode: values['placementSkipToNode'] as int?,
+        isAcceleratedFallback: values['isAcceleratedFallback'] as bool?,
       );
       state = AsyncValue.data(updated);
       CacheService().saveStatus(updated);
@@ -221,12 +225,14 @@ class PathNodesNotifier extends StateNotifier<AsyncValue<List<PathNodeModel>>> {
 
     // 2. Background sync with Hostinger API seamlessly (silent = true if cached data is painted)
     if (!mounted) return;
+    // If learner has been fast-tracked via placement or mid-course jump, fetch full path
+    // so Section 2 / jump target nodes are always hydrated regardless of unit numbering scheme.
     await loadPath(
       targetLanguage: tLang,
       nativeLanguage: nLang,
       level: lvl,
-      startUnit: 1,
-      endUnit: _loadedMaxUnit < 4 ? 4 : _loadedMaxUnit,
+      startUnit: skipToNode > 0 ? null : 1,
+      endUnit: skipToNode > 0 ? null : (_loadedMaxUnit < 4 ? 4 : _loadedMaxUnit),
       silent: cachedNodes != null && cachedNodes.isNotEmpty,
     );
   }
@@ -266,6 +272,12 @@ class PathNodesNotifier extends StateNotifier<AsyncValue<List<PathNodeModel>>> {
         final merged = mergedMap.values.toList()..sort((a, b) => a.index.compareTo(b.index));
         state = AsyncValue.data(merged);
       } else {
+        if (nodes.isNotEmpty) {
+          final distinctUnits = nodes.map((n) => '${n.sectionNumber}_${n.unitNumber}').toSet().length;
+          if (distinctUnits > _loadedMaxUnit) {
+            _loadedMaxUnit = distinctUnits;
+          }
+        }
         state = AsyncValue.data(nodes);
       }
     } catch (e, st) {

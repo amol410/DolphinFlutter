@@ -33,11 +33,17 @@ import '../../auth/providers/auth_provider.dart';
 class LessonSessionScreen extends ConsumerStatefulWidget {
   final int nodeIndex;
   final PathNodeModel? node;
+  final bool isPlacementGate;
+  final String? placementTargetLanguage;
+  final String? placementNativeLanguage;
 
   const LessonSessionScreen({
     super.key,
     required this.nodeIndex,
     this.node,
+    this.isPlacementGate = false,
+    this.placementTargetLanguage,
+    this.placementNativeLanguage,
   });
 
   @override
@@ -99,6 +105,16 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   bool _isPlayingAudio = false;
   String _preparedAudioUrl = '';
   bool _isLoadingLessonDetails = false;
+
+  // ── Placement Gate Mode State (Section 2, Unit 4, Lesson 4) ──────
+  dynamic _placementLessonId;
+  String _placementLessonTitle = 'Section 2 Gate';
+  int _placementMinScorePct = 70;
+  int _placementMaxMistakes = 3;
+  bool _isEvaluatingPlacement = false;
+  bool _placementUnavailable = false;
+  String? _placementUnavailableMessage;
+  Map<String, dynamic>? _placementEvaluationResult;
 
   // ── Stage 0: Word Match Data ──────────────────────────────────────
   List<String> _germanWords = ['Guten Tag', 'Danke', 'Bitte', 'Tschüss'];
@@ -503,13 +519,17 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       }
     }
 
-    final currentStatus = ref.read(gamificationStatusProvider).value;
-    final currentTarget = currentStatus?.targetLanguage ?? 'de';
-    TtsService().setLanguage(currentTarget);
+    TtsService().setLanguage(_targetLang);
 
     final stages = activeNode?.stages;
     _listenAudioUrl = '';
     _sprechenAudioUrl = '';
+
+    if (widget.isPlacementGate) {
+      _isLoadingLessonDetails = true;
+      _fetchPlacementGateLesson();
+      return;
+    }
 
     if (stages == null || stages.isEmpty) {
       if (activeNode?.id != null) {
@@ -579,6 +599,55 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     }
   }
 
+  Future<void> _fetchPlacementGateLesson() async {
+    try {
+      final res = await ref.read(gamificationRepositoryProvider).getPlacementLesson(
+        targetLanguage: _targetLang,
+        nativeLanguage: _nativeLang,
+      );
+      if (!mounted) return;
+
+      final lesson = res['lesson'];
+      final stages = (lesson is Map) ? lesson['stages'] : null;
+      if (res['success'] == true &&
+          lesson is Map &&
+          stages is List &&
+          stages.isNotEmpty) {
+        final passRules = res['passRules'];
+        _placementLessonId = lesson['id'];
+        _placementLessonTitle = lesson['title']?.toString() ?? 'Section 2 Gate';
+        if (passRules is Map) {
+          _placementMinScorePct = (passRules['minScorePct'] as num?)?.toInt() ?? 70;
+          _placementMaxMistakes = (passRules['maxMistakes'] as num?)?.toInt() ?? 3;
+        }
+        _applyStages(stages);
+        if (mounted) {
+          setState(() {
+            _isLoadingLessonDetails = false;
+          });
+          _startFirstStage();
+        }
+        return;
+      }
+
+      setState(() {
+        _isLoadingLessonDetails = false;
+        _placementUnavailable = true;
+        _placementUnavailableMessage = res['message']?.toString() ??
+            'Section 2 placement lesson is not published for this course yet.';
+      });
+    } catch (e) {
+      debugPrint('⚠️ [_fetchPlacementGateLesson] Error fetching placement gate lesson: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingLessonDetails = false;
+          _placementUnavailable = true;
+          _placementUnavailableMessage = 'Unable to load the Section 2 placement check right now.';
+        });
+      }
+    }
+  }
+
   void _applyFallbackStages() {
     _activeStageTypes = [
       'word_match',
@@ -594,7 +663,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       _initialTotalStages = _activeStageTypes.length;
     }
 
-    final currentTarget = ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
+    final currentTarget = _targetLang;
     final isEnglish = currentTarget == 'en';
 
     if (isEnglish) {
@@ -1470,8 +1539,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
         return;
       }
 
-      final currentTarget =
-          ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
+      final currentTarget = _targetLang;
       final isEnglish = currentTarget == 'en';
       String targetLocaleId = isEnglish ? 'en_GB' : 'de-DE';
       try {
@@ -1617,7 +1685,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     if (!mounted) return;
 
     final targetText = _sprechenPrompt.isNotEmpty ? _sprechenPrompt : 'Guten Tag! Wie geht es dir?';
-    final currentTarget = ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
+    final currentTarget = _targetLang;
     final threshold = _sprechenMinAccuracy > 0 ? _sprechenMinAccuracy : 75;
 
     final evalResult = PronunciationEvaluator.evaluate(
@@ -1640,7 +1708,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     _triggerPrewarmForNext();
 
     final isEn = currentTarget == 'en';
-    final nLang = ref.read(gamificationStatusProvider).value?.nativeLanguage ?? (isEn ? 'hi' : 'en');
+    final nLang = _nativeLang;
 
     if (isPassed) {
       SoundEffectsService.instance.playCorrect();
@@ -1709,6 +1777,11 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
         _parsedStages.add(_parsedStages[_currentStage]);
       }
       debugPrint('🔁 [Mistakes Review] Re-enqueued $currentType at end of stages. Total stages: ${_activeStageTypes.length}');
+    }
+
+    // Placement gate evaluates readiness without draining global hearts or triggering paywalls.
+    if (widget.isPlacementGate) {
+      return;
     }
 
     // 2. Connect Hearts/Oxygen Deduction (Objective 2)
@@ -1974,6 +2047,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       _triggerPrewarmForStage(_currentStage + 1);
     } else {
       SoundEffectsService.instance.playFanfare();
+      if (widget.isPlacementGate) {
+        _submitPlacementGateEvaluation();
+      }
     }
     TtsService().warmUp();
 
@@ -2028,6 +2104,48 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
     );
     _completionAttemptId = result['attemptId']?.toString() ?? _completionAttemptId;
     return result;
+  }
+
+  Future<void> _submitPlacementGateEvaluation() async {
+    if (_isEvaluatingPlacement || _placementEvaluationResult != null) return;
+    if (mounted) {
+      setState(() => _isEvaluatingPlacement = true);
+    }
+
+    final repo = ref.read(gamificationRepositoryProvider);
+    final totalAttempts = (_initialTotalStages + _mistakesCount).clamp(1, 999);
+    final res = await repo.evaluatePlacement(
+      scorePct: _calculatedAccuracy,
+      correctCount: _initialTotalStages,
+      totalQuestions: totalAttempts,
+      mistakesCount: _mistakesCount,
+      placementMode: 'section2_gate',
+      lessonId: _placementLessonId,
+      targetLanguage: _targetLang,
+      nativeLanguage: _nativeLang,
+    );
+    if (!mounted) return;
+
+    if (res['success'] == true) {
+      final serverStatus = res['status'];
+      if (serverStatus is Map<String, dynamic>) {
+        ref.read(gamificationStatusProvider.notifier).applyServerStatus(serverStatus);
+      }
+      final effectiveLevel = res['placement']?['effectiveLevel']?.toString() ?? 'A1';
+      await ref.read(gamificationStatusProvider.notifier).refresh();
+      // Load full path (without small endUnit cap) so Section 2 Unit 1 appears immediately.
+      await ref.read(pathNodesProvider.notifier).loadPath(
+        targetLanguage: _targetLang,
+        nativeLanguage: _nativeLang,
+        level: effectiveLevel,
+      );
+      if (!mounted) return;
+    }
+
+    setState(() {
+      _isEvaluatingPlacement = false;
+      _placementEvaluationResult = res;
+    });
   }
 
   Future<void> _finishLesson() async {
@@ -2091,7 +2209,7 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
               ),
               const SizedBox(height: 20),
               Text(
-                'Preparing Lesson...',
+                widget.isPlacementGate ? 'Loading Section 2 Placement...' : 'Preparing Lesson...',
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
@@ -2100,7 +2218,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
               ),
               const SizedBox(height: 6),
               Text(
-                'Loading interactive challenges',
+                widget.isPlacementGate
+                    ? 'Fetching Section 2, Unit 4, Lesson 4'
+                    : 'Loading interactive challenges',
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 13,
                   color: const Color(0xFF64748B),
@@ -2112,72 +2232,185 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       );
     }
 
+    if (_placementUnavailable) {
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) context.go('/home');
+        },
+        child: Scaffold(
+          backgroundColor: const Color(0xFFF8FAFC),
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.close_rounded, color: Color(0xFF64748B), size: 26),
+              onPressed: () => context.go('/home'),
+            ),
+          ),
+          body: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const AnimatedDolphinMascot(size: 160, pose: MascotPose.thinking),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Starting at Unit 1',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      color: const Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    _placementUnavailableMessage ??
+                        'Section 2 placement check is not yet published for this course. You can start right from Unit 1!',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.outfit(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  TactileGameButton(
+                    text: 'CONTINUE TO MAP',
+                    variant: GameButtonVariant.success,
+                    height: 56,
+                    fontSize: 16,
+                    onPressed: () => context.go('/home'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     final progress = _totalStages > 0
         ? (_currentStage / _totalStages).clamp(0.0, 1.0)
         : 1.0;
+    final remainingPlacementTries = (_placementMaxMistakes - _mistakesCount).clamp(0, _placementMaxMistakes);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      appBar: !_isCelebrationStage
-          ? AppBar(
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              leading: IconButton(
-                icon: const Icon(Icons.close_rounded, color: Color(0xFF64748B), size: 26),
-                onPressed: () => context.go('/home'),
-              ),
-              title: ClipRRect(
-                borderRadius: BorderRadius.circular(9999),
-                child: SizedBox(
-                  height: 12,
-                  child: LinearProgressIndicator(
-                    value: progress == 0 ? 0.08 : progress,
-                    backgroundColor: const Color(0xFFE2E8F0),
-                    valueColor: const AlwaysStoppedAnimation(Color(0xFF10B981)),
+    return PopScope(
+      canPop: !widget.isPlacementGate,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && widget.isPlacementGate) {
+          context.go('/home');
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
+        appBar: !_isCelebrationStage
+            ? AppBar(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                leading: IconButton(
+                  icon: const Icon(Icons.close_rounded, color: Color(0xFF64748B), size: 26),
+                  onPressed: () => context.go('/home'),
+                ),
+                title: ClipRRect(
+                  borderRadius: BorderRadius.circular(9999),
+                  child: SizedBox(
+                    height: 12,
+                    child: LinearProgressIndicator(
+                      value: progress == 0 ? 0.08 : progress,
+                      backgroundColor: const Color(0xFFE2E8F0),
+                      valueColor: const AlwaysStoppedAnimation(Color(0xFF10B981)),
+                    ),
                   ),
                 ),
-              ),
-              actions: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.favorite_rounded, color: Color(0xFFFF4B4B), size: 20),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${ref.watch(gamificationStatusProvider).value?.oxygen ?? 5}',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 14,
-                        color: const Color(0xFFFF4B4B),
+                actions: [
+                  if (widget.isPlacementGate)
+                    Container(
+                      margin: const EdgeInsets.only(right: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: remainingPlacementTries == 0
+                            ? const Color(0xFFFEE2E2)
+                            : const Color(0xFFE0F2FE),
+                        borderRadius: BorderRadius.circular(999),
                       ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.shield_rounded,
+                            color: remainingPlacementTries == 0
+                                ? const Color(0xFFDC2626)
+                                : const Color(0xFF0284C7),
+                            size: 16,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'SEC 2 • $remainingPlacementTries/$_placementMaxMistakes',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 12,
+                              color: remainingPlacementTries == 0
+                                  ? const Color(0xFFDC2626)
+                                  : const Color(0xFF0284C7),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.favorite_rounded, color: Color(0xFFFF4B4B), size: 20),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${ref.watch(gamificationStatusProvider).value?.oxygen ?? 5}',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                            color: const Color(0xFFFF4B4B),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                      ],
                     ),
-                    const SizedBox(width: 16),
-                  ],
-                ),
-              ],
-            )
-          : null,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              child: _buildCurrentStageView(),
-            ),
-            if (_showConfetti)
-              const Positioned.fill(
-                child: IgnorePointer(
-                  child: _CelebratoryConfettiRain(),
-                ),
+                ],
+              )
+            : null,
+        body: SafeArea(
+          child: Stack(
+            children: [
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: _buildCurrentStageView(),
               ),
-          ],
+              if (_showConfetti)
+                const Positioned.fill(
+                  child: IgnorePointer(
+                    child: _CelebratoryConfettiRain(),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  String get _targetLang => ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de';
-  String get _nativeLang => ref.read(gamificationStatusProvider).value?.nativeLanguage ?? (_targetLang == 'en' ? 'hi' : 'en');
+  String get _targetLang => widget.isPlacementGate
+      ? (widget.placementTargetLanguage ??
+          ref.read(gamificationStatusProvider).value?.targetLanguage ??
+          'de')
+      : (ref.read(gamificationStatusProvider).value?.targetLanguage ?? 'de');
+  String get _nativeLang => widget.isPlacementGate
+      ? (widget.placementNativeLanguage ??
+          ref.read(gamificationStatusProvider).value?.nativeLanguage ??
+          (_targetLang == 'en' ? 'hi' : 'en'))
+      : (ref.read(gamificationStatusProvider).value?.nativeLanguage ??
+          (_targetLang == 'en' ? 'hi' : 'en'));
   bool get _isTargetEnglish => _targetLang == 'en';
 
   String _getStageTitle(String stageType) {
@@ -5422,6 +5655,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   // STAGE 4: Dopamine Celebration & Rewards
   // ══════════════════════════════════════════════════════════════════
   Widget _buildCelebrationStage() {
+    if (widget.isPlacementGate) {
+      return _buildPlacementGateResultStage();
+    }
     final xp = _earnedXp;
     final accuracy = _calculatedAccuracy;
     final lessonTitle = (widget.node?.title != null && widget.node!.title.isNotEmpty)
@@ -5542,6 +5778,174 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
             height: 56,
             fontSize: 16,
             onPressed: _finishLesson,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlacementGateResultStage() {
+    if (_isEvaluatingPlacement || _placementEvaluationResult == null) {
+      return Center(
+        key: const ValueKey('placement-evaluating'),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const AnimatedDolphinMascot(size: 160, pose: MascotPose.thinking),
+              const SizedBox(height: 24),
+              const CircularProgressIndicator(color: Color(0xFF0284C7)),
+              const SizedBox(height: 18),
+              Text(
+                'Finalizing your placement...',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_placementEvaluationResult?['success'] != true) {
+      return Padding(
+        key: const ValueKey('placement-retry'),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const AnimatedDolphinMascot(size: 160, pose: MascotPose.thinking),
+            const SizedBox(height: 24),
+            Text(
+              'Could Not Verify Result',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 24,
+                fontWeight: FontWeight.w900,
+                color: const Color(0xFF0F172A),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              _placementEvaluationResult?['message']?.toString() ??
+                  'Check your internet connection and retry saving your placement.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(height: 28),
+            TactileGameButton(
+              text: 'RETRY VERIFICATION',
+              variant: GameButtonVariant.primary,
+              height: 54,
+              onPressed: () {
+                setState(() => _placementEvaluationResult = null);
+                _submitPlacementGateEvaluation();
+              },
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: () => context.go('/home'),
+              child: Text(
+                'Continue to Map',
+                style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF64748B),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final placement = _placementEvaluationResult?['placement'] as Map?;
+    final passed = _placementEvaluationResult?['passed'] == true ||
+        placement?['passed'] == true;
+    final sectionTitle = placement?['targetSectionTitle']?.toString() ?? 'Explorer';
+    final targetUnit = (placement?['targetUnitNumber'] as num?)?.toInt() ?? 1;
+    final accuracy = _calculatedAccuracy;
+
+    return Padding(
+      key: const ValueKey('placement-result'),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      child: Column(
+        children: [
+          const Spacer(),
+          AnimatedDolphinMascot(
+            size: 185,
+            pose: passed ? MascotPose.celebrate : MascotPose.thinking,
+          ),
+          const SizedBox(height: 24),
+          Text(
+            passed ? 'SECTION 2 UNLOCKED!' : 'STARTING AT SECTION 1',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 26,
+              fontWeight: FontWeight.w900,
+              color: passed ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+              letterSpacing: 0.4,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            passed
+                ? 'Awesome work on "$_placementLessonTitle"! We placed you at Section 2 ($sectionTitle, Unit $targetUnit).'
+                : 'Good try! Passing requires $_placementMinScorePct%+ accuracy with ≤$_placementMaxMistakes mistakes. Starting from Unit 1 will build your foundation fast.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.outfit(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF64748B),
+            ),
+          ),
+          const SizedBox(height: 32),
+          Row(
+            children: [
+              Expanded(
+                child: _buildMetricCard(
+                  label: 'ACCURACY',
+                  value: '$accuracy%',
+                  color: const Color(0xFF10B981),
+                  icon: Icons.track_changes_rounded,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildMetricCard(
+                  label: 'MISTAKES',
+                  value: '$_mistakesCount/$_placementMaxMistakes',
+                  color: _mistakesCount <= _placementMaxMistakes
+                      ? const Color(0xFF0284C7)
+                      : const Color(0xFFEF4444),
+                  icon: Icons.shield_rounded,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildMetricCard(
+                  label: 'DESTINATION',
+                  value: passed ? 'Sec 2' : 'Sec 1',
+                  color: const Color(0xFFF59E0B),
+                  icon: Icons.explore_rounded,
+                ),
+              ),
+            ],
+          ),
+          const Spacer(),
+          TactileGameButton(
+            text: passed ? 'START IN SECTION 2' : 'START AT UNIT 1',
+            variant: GameButtonVariant.success,
+            height: 56,
+            fontSize: 16,
+            onPressed: () => context.go('/home'),
           ),
         ],
       ),

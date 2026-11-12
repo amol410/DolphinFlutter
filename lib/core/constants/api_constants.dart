@@ -43,6 +43,7 @@ class ApiConstants {
   static const String gamificationClaimAdReward = '/gamification/claim-ad-reward';
   static const String gamificationEmergencyRefill = '/gamification/emergency-refill';
   static const String gamificationPlacementQuestions = '/gamification/placement/questions';
+  static const String gamificationPlacementLesson = '/gamification/placement/lesson';
   static const String gamificationPlacementEvaluate = '/gamification/placement/evaluate';
   static const String gamificationJumpSection = '/gamification/jump-section';
 

@@ -87,6 +87,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
+        path: '/placement-lesson',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          final target = extra?['targetLanguage']?.toString() ?? state.uri.queryParameters['targetLanguage'] ?? 'de';
+          final native = extra?['nativeLanguage']?.toString() ?? state.uri.queryParameters['nativeLanguage'] ?? 'en';
+          return LessonSessionScreen(
+            nodeIndex: 0,
+            isPlacementGate: true,
+            placementTargetLanguage: target,
+            placementNativeLanguage: native,
+          );
+        },
+      ),
+      GoRoute(
         path: '/lesson/:index',
         builder: (context, state) {
           final idx = int.tryParse(state.pathParameters['index'] ?? '0') ?? 0;
