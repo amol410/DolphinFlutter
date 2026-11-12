@@ -522,5 +522,98 @@ class GamificationRepository {
 
     return null;
   }
+
+  Future<List<Map<String, dynamic>>> getPlacementQuestions({
+    required String targetLanguage,
+    required String nativeLanguage,
+    String mode = 'placement',
+    int? targetUnitNumber,
+  }) async {
+    try {
+      final dio = await DioClient.getInstance();
+      final response = await dio.get(
+        ApiConstants.gamificationPlacementQuestions,
+        queryParameters: {
+          'targetLanguage': targetLanguage,
+          'nativeLanguage': nativeLanguage,
+          'mode': mode,
+          if (targetUnitNumber != null) 'targetUnitNumber': targetUnitNumber,
+        },
+      );
+      if (response.data is Map<String, dynamic> &&
+          response.data['success'] == true &&
+          response.data['questions'] is List) {
+        return (response.data['questions'] as List)
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('⚠️ [GamificationRepository] getPlacementQuestions network error: $e');
+    }
+    return [];
+  }
+
+  Future<Map<String, dynamic>> evaluatePlacement({
+    required int scorePct,
+    required int correctCount,
+    required int totalQuestions,
+    required String targetLanguage,
+    required String nativeLanguage,
+  }) async {
+    try {
+      final dio = await DioClient.getInstance();
+      final response = await dio.post(
+        ApiConstants.gamificationPlacementEvaluate,
+        data: {
+          'scorePct': scorePct,
+          'correctCount': correctCount,
+          'totalQuestions': totalQuestions,
+          'targetLanguage': targetLanguage,
+          'nativeLanguage': nativeLanguage,
+        },
+      );
+      if (response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+        if (data['status'] is Map<String, dynamic>) {
+          await _cache.saveStatus(GamificationStatusModel.fromJson(data['status']));
+        }
+        return data;
+      }
+    } catch (e) {
+      debugPrint('⚠️ [GamificationRepository] evaluatePlacement error: $e');
+    }
+    return {'success': false, 'message': 'Failed to evaluate placement test'};
+  }
+
+  Future<Map<String, dynamic>> jumpSection({
+    required int targetUnitNumber,
+    required int scorePct,
+    required int mistakesCount,
+    String? targetLanguage,
+    String? nativeLanguage,
+    String? level,
+  }) async {
+    try {
+      final dio = await DioClient.getInstance();
+      final response = await dio.post(
+        ApiConstants.gamificationJumpSection,
+        data: {
+          'targetUnitNumber': targetUnitNumber,
+          'scorePct': scorePct,
+          'mistakesCount': mistakesCount,
+          if (targetLanguage != null) 'targetLanguage': targetLanguage,
+          if (nativeLanguage != null) 'nativeLanguage': nativeLanguage,
+          if (level != null) 'level': level,
+        },
+      );
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('⚠️ [GamificationRepository] jumpSection error: $e');
+    }
+    return {'success': false, 'passed': false, 'message': 'Failed to complete section jump'};
+  }
 }
 

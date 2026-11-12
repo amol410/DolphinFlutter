@@ -140,6 +140,22 @@ class SprechenStageData {
   });
 }
 
+class KaraokeStageData {
+  final String storyText;
+  final String translationText;
+  final String audioUrl;
+  final dynamic karaokeData;
+  final List<Map<String, dynamic>> words;
+
+  const KaraokeStageData({
+    required this.storyText,
+    required this.translationText,
+    required this.audioUrl,
+    this.karaokeData,
+    this.words = const [],
+  });
+}
+
 class ParsedLessonStage {
   final String canonicalType;
   final Map<String, dynamic> rawStage;
@@ -407,6 +423,31 @@ class LessonStageParser {
     );
   }
 
+  /// Parses `karaoke` stage from raw server JSON so Karaoke can be placed in any lesson.
+  static KaraokeStageData? parseKaraoke(Map<String, dynamic> stage) {
+    final storyText = (stage['storyText'] ?? stage['prompt'] ?? stage['sentence'] ?? stage['targetSentence'] ?? '').toString().trim();
+    final translationText = (stage['translationText'] ?? stage['translation'] ?? '').toString().trim();
+    final audio = (stage['audioUrl'] ?? '').toString().trim();
+    final kd = stage['karaokeData'];
+    final rawWords = stage['words'] is List
+        ? stage['words'] as List
+        : (kd is Map && kd['words'] is List ? kd['words'] as List : const []);
+    final words = rawWords
+        .whereType<Map>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
+
+    if (storyText.isEmpty && kd == null && audio.isEmpty && words.isEmpty) return null;
+
+    return KaraokeStageData(
+      storyText: storyText,
+      translationText: translationText,
+      audioUrl: audio,
+      karaokeData: kd,
+      words: words,
+    );
+  }
+
   /// Parses an ordered list of raw server stages into strongly-typed [ParsedLessonStage] instances.
   /// Supports repeating any challenge type any number of times in any sequence.
   static List<ParsedLessonStage> parseStages(List<dynamic> stages) {
@@ -499,6 +540,15 @@ class LessonStageParser {
             data: parsed,
           ));
         }
+      } else if (type == 'karaoke') {
+        final parsed = parseKaraoke(map);
+        if (parsed != null) {
+          parsedList.add(ParsedLessonStage(
+            canonicalType: 'karaoke',
+            rawStage: map,
+            data: parsed,
+          ));
+        }
       }
     }
     return parsedList;
@@ -532,6 +582,8 @@ class LessonStageParser {
         if (parseListenSelect(map) != null) types.add('listen_select');
       } else if (type == 'sprechen') {
         if (parseSprechen(map) != null) types.add('sprechen');
+      } else if (type == 'karaoke') {
+        if (parseKaraoke(map) != null) types.add('karaoke');
       } else {
         types.add(type);
       }

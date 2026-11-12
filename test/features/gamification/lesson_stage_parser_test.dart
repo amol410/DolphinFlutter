@@ -195,6 +195,26 @@ void main() {
       expect(valid.minAccuracy, 80);
     });
 
+    test('parseKaraoke validates storyText or words and allows karaoke in any lesson', () {
+      expect(LessonStageParser.parseKaraoke({'storyText': '   ', 'words': []}), isNull);
+
+      final valid = LessonStageParser.parseKaraoke({
+        'type': 'karaoke',
+        'storyText': 'Hallo aus Berlin!',
+        'translationText': 'Hello from Berlin!',
+        'audioUrl': '/uploads/audio/story.mp3',
+        'words': [
+          {'text': 'Hallo', 'start': 0.0, 'end': 0.5},
+          {'text': 'aus', 'start': 0.5, 'end': 0.8},
+          {'text': 'Berlin!', 'start': 0.8, 'end': 1.4},
+        ],
+      });
+      expect(valid, isNotNull);
+      expect(valid!.storyText, 'Hallo aus Berlin!');
+      expect(valid.translationText, 'Hello from Berlin!');
+      expect(valid.words.length, 3);
+    });
+
     test('parseStages preserves multiple repeated instances of any challenge type independently', () {
       final rawStages = [
         {

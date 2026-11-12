@@ -11,6 +11,7 @@ import '../../features/auth/screens/verify_email_screen.dart';
 import '../../features/auth/screens/language_selection_screen.dart';
 import '../../features/gamification/screens/archipelago_map_screen.dart';
 import '../../features/gamification/screens/lesson_session_screen.dart';
+import '../../features/gamification/screens/placement_quiz_screen.dart';
 import '../../features/gamification/data/models/gamification_models.dart';
 import '../../features/gamification/screens/leagues_screen.dart';
 import '../../features/gamification/screens/quests_screen.dart';
@@ -71,6 +72,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(path: '/language-select', builder: (_, __) => const LanguageSelectionScreen()),
+      GoRoute(
+        path: '/placement-quiz',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          final target = extra?['targetLanguage']?.toString() ?? state.uri.queryParameters['targetLanguage'] ?? 'de';
+          final native = extra?['nativeLanguage']?.toString() ?? state.uri.queryParameters['nativeLanguage'] ?? 'en';
+          final jumpToUnit = extra?['jumpToUnit'] as int?;
+          return PlacementQuizScreen(
+            targetLanguage: target,
+            nativeLanguage: native,
+            jumpToUnit: jumpToUnit,
+          );
+        },
+      ),
       GoRoute(
         path: '/lesson/:index',
         builder: (context, state) {
