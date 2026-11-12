@@ -548,28 +548,28 @@ class _LanguageSelectionScreenState extends ConsumerState<LanguageSelectionScree
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Text(
-                        title,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                        ),
-                      ),
-                      if (nativeTitle != title) ...[
-                        const SizedBox(width: 6),
-                        Text(
-                          '($nativeTitle)',
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF94A3B8),
+                  Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: title,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
                           ),
                         ),
+                        if (nativeTitle != title)
+                          TextSpan(
+                            text: '  ($nativeTitle)',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF94A3B8),
+                            ),
+                          ),
                       ],
-                    ],
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
