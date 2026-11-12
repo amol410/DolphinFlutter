@@ -34,11 +34,14 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
   bool _isLoadingAd = false;
   bool _isSpendingPearls = false;
   bool _showInsufficientPearlsWarning = false;
+  bool _adsUnavailable = false;
+  bool _isEmergencyRefilling = false;
 
   void _watchAdToRefill() {
     setState(() {
       _isLoadingAd = true;
       _showInsufficientPearlsWarning = false;
+      _adsUnavailable = false;
     });
 
     AdService().showRewardedAd(
@@ -73,7 +76,10 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
       },
       onAdFailed: (error) {
         if (!mounted) return;
-        setState(() => _isLoadingAd = false);
+        setState(() {
+          _isLoadingAd = false;
+          if (error == AdService.noAdsAvailableMessage) _adsUnavailable = true;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(error),
@@ -84,6 +90,39 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
       onAdDismissed: (_) {
         if (mounted) setState(() => _isLoadingAd = false);
       },
+    );
+  }
+
+  Future<void> _emergencyRefill() async {
+    setState(() => _isEmergencyRefilling = true);
+    final res = await ref.read(gamificationStatusProvider.notifier).emergencyRefill();
+    if (!mounted) return;
+    setState(() => _isEmergencyRefilling = false);
+
+    final messenger = ScaffoldMessenger.of(context);
+    if (res != null && res['success'] == true) {
+      Navigator.of(context).pop();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Emergency refill: +1 Oxygen bubble 🫧 Keep going!'),
+          backgroundColor: Color(0xFF059669),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      widget.onRefilled?.call();
+      return;
+    }
+
+    final retryAfter = res?['retryAfterSec'];
+    final String text;
+    if (retryAfter is num) {
+      final mins = (retryAfter / 60).ceil();
+      text = 'Emergency refill already used. Available again in ~$mins min. Oxygen also regenerates 1 bubble every 30 min.';
+    } else {
+      text = 'Could not use emergency refill. Please check your connection and try again.';
+    }
+    messenger.showSnackBar(
+      SnackBar(content: Text(text), behavior: SnackBarBehavior.floating),
     );
   }
 
@@ -258,6 +297,20 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
                 },
               ),
               const SizedBox(height: 10),
+
+              // LAST RESORT: no ad could be loaded -> capped free +1 oxygen (server: 0 oxygen, 4h cooldown)
+              if (_adsUnavailable && oxygen == 0) ...[
+                TactileGameButton(
+                  text: 'EMERGENCY REFILL: +1 🫧 (FREE, ONCE PER 4H)',
+                  icon: Icons.health_and_safety_rounded,
+                  variant: GameButtonVariant.primary,
+                  height: 46,
+                  fontSize: 13,
+                  isLoading: _isEmergencyRefilling,
+                  onPressed: _isEmergencyRefilling ? null : _emergencyRefill,
+                ),
+                const SizedBox(height: 10),
+              ],
 
               // In-sheet themed warning banner if insufficient pearls (Suggestion A)
               if (_showInsufficientPearlsWarning) ...[

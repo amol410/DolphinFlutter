@@ -463,6 +463,25 @@ class GamificationRepository {
     return null;
   }
 
+  /// Last-resort +1 oxygen when no ads can be loaded. Server enforces 0-oxygen and a cooldown.
+  /// Returns the response body; on a 429 cooldown it contains `retryAfterSec`.
+  Future<Map<String, dynamic>?> emergencyRefill() async {
+    try {
+      final dio = await DioClient.getInstance();
+      final response = await dio.post(ApiConstants.gamificationEmergencyRefill);
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      if (data is Map<String, dynamic>) return data;
+      debugPrint('⚠️ [GamificationRepository] emergencyRefill error: $e');
+    } catch (e) {
+      debugPrint('⚠️ [GamificationRepository] emergencyRefill error: $e');
+    }
+    return null;
+  }
+
   Future<bool> switchCourse({
     required String targetLanguage,
     required String nativeLanguage,
