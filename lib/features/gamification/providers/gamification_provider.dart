@@ -69,6 +69,15 @@ class GamificationStatusNotifier extends StateNotifier<AsyncValue<GamificationSt
     });
   }
 
+  /// Returns the server response ({success, message, retryAfterSec?}) or null if unreachable.
+  Future<Map<String, dynamic>?> emergencyRefill() async {
+    final res = await _repo.emergencyRefill();
+    if (res != null && res['success'] == true) {
+      await refresh();
+    }
+    return res;
+  }
+
   Future<bool> refillOxygen() async {
     try {
       final success = await _repo.refillOxygen();

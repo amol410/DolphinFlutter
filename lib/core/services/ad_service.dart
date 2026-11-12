@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -23,6 +24,18 @@ class AdService {
   int _numConsecutiveInterstitialLoadAttempts = 0;
 
   static const int _maxFailedLoadAttempts = 3;
+
+  /// Reported via onAdFailed when neither a rewarded nor an interstitial ad could be loaded.
+  static const String noAdsAvailableMessage =
+      'No ads are available right now. Please try again in a moment.';
+
+  // A load request that never calls back must not block retries forever.
+  static const Duration _loadTimeout = Duration(seconds: 30);
+  DateTime? _rewardedLoadStartedAt;
+  DateTime? _interstitialLoadStartedAt;
+
+  bool _isLoadStale(DateTime? startedAt) =>
+      startedAt == null || DateTime.now().difference(startedAt) > _loadTimeout;
 
   // Duolingo-style Lesson Frequency Counter
   static const String _kLessonCounterKey = 'lessons_completed_since_last_ad';
@@ -133,8 +146,10 @@ class AdService {
   /// Preload a rewarded ad into memory
   void loadRewardedAd() {
     if (!adsEnabled) return;
-    if (_rewardedAd != null || _isRewardedLoading) return;
+    if (_rewardedAd != null) return;
+    if (_isRewardedLoading && !_isLoadStale(_rewardedLoadStartedAt)) return;
     _isRewardedLoading = true;
+    _rewardedLoadStartedAt = DateTime.now();
 
     RewardedAd.load(
       adUnitId: rewardedAdUnitId,
@@ -189,8 +204,16 @@ class AdService {
     }
 
     if (_rewardedAd == null) {
-      loadRewardedAd();
-      onAdFailed?.call('Ad is preparing, please try again in a few seconds.');
+      // No rewarded ad cached: wait briefly for one, otherwise fall back to an
+      // interstitial so the learner is never stuck on "Ad is preparing...".
+      _rewardedWithInterstitialFallback(
+        userId: userId,
+        rewardType: rewardType,
+        attemptId: attemptId,
+        onUserEarnedReward: onUserEarnedReward,
+        onAdDismissed: onAdDismissed,
+        onAdFailed: onAdFailed,
+      );
       return;
     }
 
@@ -231,6 +254,71 @@ class AdService {
     );
   }
 
+  /// Fallback chain used when no rewarded ad is cached:
+  ///   1. retry loading both ad types and wait a few seconds for either,
+  ///   2. rewarded ad arrived  -> show it as normal,
+  ///   3. only interstitial    -> show it and grant the reward when it closes,
+  ///   4. nothing loaded       -> report failure so the UI can offer another option.
+  Future<void> _rewardedWithInterstitialFallback({
+    required String userId,
+    required String rewardType,
+    String? attemptId,
+    required Function() onUserEarnedReward,
+    Function(String message)? onAdDismissed,
+    Function(String error)? onAdFailed,
+  }) async {
+    // Earlier failures may have exhausted the automatic retries; a user tap resets them.
+    _numConsecutiveLoadAttempts = 0;
+    _numConsecutiveInterstitialLoadAttempts = 0;
+    loadRewardedAd();
+    unawaited(loadInterstitialAd());
+
+    final deadline = DateTime.now().add(const Duration(seconds: 6));
+    while (_rewardedAd == null &&
+        _interstitialAd == null &&
+        DateTime.now().isBefore(deadline)) {
+      await Future.delayed(const Duration(milliseconds: 250));
+    }
+
+    if (_rewardedAd != null) {
+      showRewardedAd(
+        userId: userId,
+        rewardType: rewardType,
+        attemptId: attemptId,
+        onUserEarnedReward: onUserEarnedReward,
+        onAdDismissed: onAdDismissed,
+        onAdFailed: onAdFailed,
+      );
+      return;
+    }
+
+    final interstitial = _interstitialAd;
+    if (interstitial == null) {
+      onAdFailed?.call(noAdsAvailableMessage);
+      return;
+    }
+
+    debugPrint('AdService: rewarded ad unavailable, using interstitial fallback for $rewardType');
+    interstitial.fullScreenContentCallback = FullScreenContentCallback(
+      onAdDismissedFullScreenContent: (ad) async {
+        ad.dispose();
+        _interstitialAd = null;
+        loadInterstitialAd();
+        await incrementRewardedAdCount();
+        onUserEarnedReward();
+        onAdDismissed?.call('Ad closed');
+      },
+      onAdFailedToShowFullScreenContent: (ad, error) {
+        ad.dispose();
+        _interstitialAd = null;
+        loadInterstitialAd();
+        onAdFailed?.call('Failed to display ad: ${error.message}');
+      },
+    );
+    interstitial.setImmersiveMode(true);
+    interstitial.show();
+  }
+
   // ==========================================
   // Interstitial Ad Management
   // ==========================================
@@ -241,8 +329,10 @@ class AdService {
   /// Preload an interstitial ad into memory
   Future<void> loadInterstitialAd() async {
     if (!adsEnabled) return;
-    if (_interstitialAd != null || _isInterstitialAdLoading) return;
+    if (_interstitialAd != null) return;
+    if (_isInterstitialAdLoading && !_isLoadStale(_interstitialLoadStartedAt)) return;
     _isInterstitialAdLoading = true;
+    _interstitialLoadStartedAt = DateTime.now();
 
     try {
       await InterstitialAd.load(
