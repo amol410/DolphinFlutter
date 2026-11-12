@@ -67,7 +67,8 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
       final estimatedIndex = (offset / 130.0).floor().clamp(0, nodes.length - 1);
       final currentNode = nodes[estimatedIndex];
 
-      if (currentNode.unitNumber != _visibleUnitNumber) {
+      if (currentNode.unitNumber != _visibleUnitNumber ||
+          currentNode.sectionNumber != _visibleSectionNumber) {
         setState(() {
           _visibleUnitNumber = currentNode.unitNumber;
           _visibleUnitTitle = currentNode.unitTitle;
@@ -101,7 +102,10 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
 
     double estimatedOffset = 0.0;
     for (int i = 0; i < activeIndex && i < nodes.length; i++) {
-      final isFirstOfUnit = i == 0 || (i > 0 && nodes[i - 1].unitNumber != nodes[i].unitNumber);
+      final isFirstOfUnit = i == 0 ||
+          (i > 0 &&
+              (nodes[i - 1].unitNumber != nodes[i].unitNumber ||
+                  nodes[i - 1].sectionNumber != nodes[i].sectionNumber));
       if (isFirstOfUnit && i > 0) {
         estimatedOffset += 85.0; // Duolingo unit transition divider
       }
@@ -112,8 +116,12 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
     _performScrollTo(targetOffset, animate: animate);
   }
 
-  void _scrollToUnit(List<PathNodeModel> nodes, int targetUnit) {
-    int unitIndex = nodes.indexWhere((n) => n.unitNumber == targetUnit);
+  void _scrollToUnit(List<PathNodeModel> nodes, int targetUnit, {int? targetSection}) {
+    int unitIndex = nodes.indexWhere(
+      (n) =>
+          n.unitNumber == targetUnit &&
+          (targetSection == null || n.sectionNumber == targetSection),
+    );
     if (unitIndex == -1) return;
 
     final viewportHeight = _scrollController.position.hasViewportDimension
@@ -122,7 +130,10 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
 
     double estimatedOffset = 0.0;
     for (int i = 0; i < unitIndex && i < nodes.length; i++) {
-      final isFirstOfUnit = i == 0 || (i > 0 && nodes[i - 1].unitNumber != nodes[i].unitNumber);
+      final isFirstOfUnit = i == 0 ||
+          (i > 0 &&
+              (nodes[i - 1].unitNumber != nodes[i].unitNumber ||
+                  nodes[i - 1].sectionNumber != nodes[i].sectionNumber));
       if (isFirstOfUnit && i > 0) {
         estimatedOffset += 85.0;
       }
@@ -302,7 +313,9 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
                           itemCount: nodes.length,
                           itemBuilder: (context, index) {
                             final node = nodes[index];
-                            final isFirstOfUnit = index == 0 || nodes[index - 1].unitNumber != node.unitNumber;
+                            final isFirstOfUnit = index == 0 ||
+                                nodes[index - 1].unitNumber != node.unitNumber ||
+                                nodes[index - 1].sectionNumber != node.sectionNumber;
 
                             return Column(
                               children: [
@@ -559,7 +572,7 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
     if (passed == true && mounted) {
       final updatedNodes = ref.read(pathNodesProvider).value ?? [];
       if (updatedNodes.isNotEmpty) {
-        _scrollToUnit(updatedNodes, node.unitNumber);
+        _scrollToUnit(updatedNodes, node.unitNumber, targetSection: node.sectionNumber);
       }
     }
   }
@@ -841,7 +854,7 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
         ? 'English ${status?.currentLevel ?? "A1"}'
         : (status?.targetLanguage == 'de' ? 'German ${status?.currentLevel ?? "A1"}' : 'Course');
 
-    final totalUnits = nodes.map((n) => n.unitNumber).toSet().length;
+    final totalUnits = nodes.map((n) => '${n.sectionNumber}_${n.unitNumber}').toSet().length;
     final totalSections = nodes.map((n) => n.sectionNumber).toSet().length;
     final subtitleInfo = nodes.isNotEmpty
         ? '$totalSections ${totalSections == 1 ? "Section" : "Sections"} • $totalUnits ${totalUnits == 1 ? "Unit" : "Units"} • ${nodes.length} Lessons'
@@ -876,13 +889,13 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
         : 'Section 3: Traveler';
 
     final sec1Subtitle = sec1Node != null
-        ? 'Units $sec1Unit+ • First Steps & Foundations'
+        ? 'Units 1 – 12 • First Steps & Foundations'
         : 'First Steps & Foundations';
     final sec2Subtitle = sec2Unit != null
-        ? 'Units $sec2Unit+ • Daily Life & Travel'
+        ? 'Units 1 – 12 • Daily Life & Travel'
         : 'Coming soon for this course track';
     final sec3Subtitle = sec3Unit != null
-        ? 'Units $sec3Unit+ • Fluency & Exam Prep'
+        ? 'Units 1 – 12 • Fluency & Exam Prep'
         : 'Coming soon for this course track';
 
     showModalBottomSheet(
@@ -932,7 +945,7 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
               isCurrent: _visibleSectionNumber == 1,
               onTap: () {
                 Navigator.pop(ctx);
-                _scrollToUnit(nodes, sec1Unit);
+                _scrollToUnit(nodes, sec1Unit, targetSection: 1);
               },
             ),
             const SizedBox(height: 12),
@@ -945,7 +958,7 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
               onTap: () {
                 Navigator.pop(ctx);
                 if (sec2Unit != null) {
-                  _scrollToUnit(nodes, sec2Unit);
+                  _scrollToUnit(nodes, sec2Unit, targetSection: 2);
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -966,7 +979,7 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
               onTap: () {
                 Navigator.pop(ctx);
                 if (sec3Unit != null) {
-                  _scrollToUnit(nodes, sec3Unit);
+                  _scrollToUnit(nodes, sec3Unit, targetSection: 3);
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -1083,7 +1096,7 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
                 const Icon(Icons.menu_book_rounded, color: Color(0xFF1CB0F6), size: 26),
                 const SizedBox(width: 10),
                 Text(
-                  'Unit $_visibleUnitNumber Guidebook',
+                  'Section $_visibleSectionNumber • Unit $_visibleSectionUnitNumber Guidebook',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 20,
                     fontWeight: FontWeight.w900,
