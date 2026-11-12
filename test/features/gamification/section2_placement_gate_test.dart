@@ -38,10 +38,14 @@ class _FakePlacementRepository extends GamificationRepository {
   _FakePlacementRepository({
     required this.placementLessonResponse,
     this.pathNodesToReturn = const [],
+    this.statusTargetLanguage = 'en',
+    this.statusNativeLanguage = 'hi',
   });
 
   final Map<String, dynamic> placementLessonResponse;
   final List<PathNodeModel> pathNodesToReturn;
+  final String statusTargetLanguage;
+  final String statusNativeLanguage;
 
   int deductOxygenCalls = 0;
   int completeNodeCalls = 0;
@@ -51,9 +55,9 @@ class _FakePlacementRepository extends GamificationRepository {
 
   @override
   Future<GamificationStatusModel> getStatus() async {
-    return const GamificationStatusModel(
-      targetLanguage: 'en',
-      nativeLanguage: 'hi',
+    return GamificationStatusModel(
+      targetLanguage: statusTargetLanguage,
+      nativeLanguage: statusNativeLanguage,
       currentLevel: 'A1',
       oxygen: 5,
       pearls: 100,
@@ -513,6 +517,83 @@ void main() {
         expect(targetRouteExtraLang, 'de');
         expect(find.text('GATE_LESSON_ROUTE'), findsOneWidget);
         expect(find.text('LEGACY_QUIZ_ROUTE'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'Regular LessonSessionScreen filters out karaoke stage and tapping CAN\'T SPEAK RIGHT NOW finishes without Audio-Karaoke Rhythmus',
+      (tester) async {
+        tester.view.physicalSize = const Size(800, 915);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final fakeRepo = _FakePlacementRepository(
+          placementLessonResponse: const {'success': false},
+          statusTargetLanguage: 'de',
+          statusNativeLanguage: 'en',
+        );
+
+        const lessonNode = PathNodeModel(
+          index: 0,
+          id: 10458,
+          title: 'Basics & Greetings',
+          subtitle: 'Unit 1 • Lesson 1',
+          type: 'lesson',
+          status: 'available',
+          stages: [
+            {
+              'type': 'sprechen',
+              'prompt': 'Ja und nein.',
+              'translation': 'Yes and no.',
+              'minAccuracy': 75,
+              'audioUrl': '',
+            },
+            {
+              'type': 'karaoke',
+              'storyText': 'Hallo! Ja und nein. Hallo und ja. Hallo und nein.',
+              'translationText': 'Hello! Yes and no.',
+              'audioUrl': '',
+            },
+          ],
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              gamificationRepositoryProvider.overrideWithValue(fakeRepo),
+            ],
+            child: const MaterialApp(
+              home: LessonSessionScreen(
+                nodeIndex: 0,
+                node: lessonNode,
+              ),
+            ),
+          ),
+        );
+
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        // Speaking stage must keep the skip option visible and never include karaoke.
+        expect(find.text("CAN'T SPEAK RIGHT NOW"), findsOneWidget);
+        expect(find.text('Audio-Karaoke Rhythmus'), findsNothing);
+        expect(find.text('Audio Karaoke Rhythm'), findsNothing);
+
+        final skipBtn = find.text("CAN'T SPEAK RIGHT NOW");
+        await tester.ensureVisible(skipBtn);
+        await tester.tap(skipBtn);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+
+        // Advancing from sprechen must finish the lesson directly instead of showing karaoke.
+        expect(find.text('Audio-Karaoke Rhythmus'), findsNothing);
+        expect(find.text('Audio Karaoke Rhythm'), findsNothing);
+        expect(find.text('LESSON COMPLETE!'), findsOneWidget);
+        expect(find.text('CONTINUE TO MAP'), findsOneWidget);
+
+        // Flush pending audio/speech timers cleanly inside FakeAsync.
+        await tester.pump(const Duration(seconds: 31));
       },
     );
   });

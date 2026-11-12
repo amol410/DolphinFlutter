@@ -221,13 +221,6 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   String? _selectedPictureOptionId;
   bool? _pictureCorrect;
 
-  // ── Stage: Karaoke (Synced Story & Audio Rhythm) ─────────────────
-  String _karaokeStoryText = 'Guten Tag! Ich heiße Anna und komme aus Berlin.';
-  String _karaokeTranslationText = 'Good day! My name is Anna and I come from Berlin.';
-  String _karaokeAudioUrl = '';
-  List<KaraokeWord> _karaokeWords = [];
-  bool _karaokeListened = false;
-
   @override
   void initState() {
     super.initState();
@@ -790,44 +783,6 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       _pictureTargetWord = data.targetWord;
       _pictureTranslation = data.translation;
       _pictureOptions = List<PictureOptionData>.from(data.options);
-    } else if (type == 'karaoke' && data is KaraokeStageData) {
-      if (data.storyText.isNotEmpty) _karaokeStoryText = data.storyText;
-      if (data.translationText.isNotEmpty) _karaokeTranslationText = data.translationText;
-      _karaokeAudioUrl = data.audioUrl;
-      _karaokeWords = [];
-      final kd = data.karaokeData;
-      if (kd is Map && kd['words'] is List) {
-        _karaokeWords = (kd['words'] as List)
-            .whereType<Map>()
-            .map((w) => KaraokeWord.fromJson(Map<String, dynamic>.from(w)))
-            .toList();
-      } else if (kd is List) {
-        _karaokeWords = kd
-            .whereType<Map>()
-            .map((w) => KaraokeWord.fromJson(Map<String, dynamic>.from(w)))
-            .toList();
-      } else if (kd is Map && kd['sentences'] is List && (kd['sentences'] as List).isNotEmpty) {
-        final firstS = kd['sentences'][0];
-        if (firstS is Map && firstS['words'] is List) {
-          _karaokeWords = (firstS['words'] as List)
-              .whereType<Map>()
-              .map((w) => KaraokeWord.fromJson(Map<String, dynamic>.from(w)))
-              .toList();
-        }
-      }
-      if (_karaokeWords.isEmpty && _karaokeStoryText.isNotEmpty) {
-        final words = _karaokeStoryText.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-        _karaokeWords = words
-            .asMap()
-            .entries
-            .map((e) => KaraokeWord(
-                  word: e.value,
-                  clean: e.value.replaceAll(RegExp(r"[.,/#!$%^&*;:{}=\-_`~()?'«»„“”’]"), '').trim(),
-                  start: e.key * 0.5,
-                  end: (e.key * 0.5) + 0.45,
-                ))
-            .toList();
-      }
     } else if (type == 'sprechen' && data is SprechenStageData) {
       _sprechenPrompt = data.prompt;
       if (data.translation.isNotEmpty) _sprechenTranslation = data.translation;
@@ -879,7 +834,9 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
   }
 
   void _applyStages(List<dynamic> stages) {
-    final parsedList = LessonStageParser.parseStages(stages);
+    final parsedList = LessonStageParser.parseStages(stages)
+        .where((s) => s.canonicalType != 'karaoke')
+        .toList();
     _parsedStages = parsedList;
 
     if (parsedList.isNotEmpty) {
@@ -1988,9 +1945,6 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
         _selectedPictureOptionId = null;
         _pictureCorrect = null;
         break;
-      case 'karaoke':
-        _karaokeListened = false;
-        break;
       case 'sprechen':
         _spokenText = '';
         _speechAccuracy = 0;
@@ -2974,9 +2928,6 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       case 'picture_select':
       case 'picture_cards':
         stageWidget = _buildPictureSelectStage();
-        break;
-      case 'karaoke':
-        stageWidget = _buildKaraokeStage();
         break;
       case 'sprechen':
         if (ref.watch(speechPreferencesProvider).isCurrentlyMuted) {
@@ -4945,224 +4896,6 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
             buttonText: 'CONTINUE →',
             onContinue: _nextStage,
           ),
-      ],
-    );
-  }
-
-  // ══════════════════════════════════════════════════════════════════
-  // STAGE: Karaoke Story & Synced Audio Rhythm (Universal Lesson Stage)
-  // ══════════════════════════════════════════════════════════════════
-  Future<void> _playKaraokeAudio({double speed = 1.0}) async {
-    final rawUrl = _karaokeAudioUrl.trim();
-    final url = _resolveAudioUrl(rawUrl);
-
-    if (mounted) {
-      setState(() {
-        _karaokeListened = true;
-      });
-    }
-
-    if (url.isNotEmpty) {
-      try {
-        final cachedFile = await CacheService().getCachedAudioFile(url);
-        if (!mounted) return;
-        await _audioPlayer.stop();
-        await _audioPlayer.setPlaybackRate(speed);
-        if (cachedFile != null) {
-          await _audioPlayer.play(DeviceFileSource(cachedFile.path));
-        } else {
-          await _audioPlayer.play(UrlSource(url)).timeout(const Duration(seconds: 4));
-          PrefetchService().prefetchAudioUrl(url);
-        }
-        if (mounted) setState(() => _isPlayingAudio = true);
-        return;
-      } catch (e) {
-        debugPrint('⚠️ [_playKaraokeAudio] Studio audio failed: $e, falling back to TTS');
-      }
-    }
-
-    if (_karaokeStoryText.isNotEmpty) {
-      if (mounted) setState(() => _isPlayingAudio = true);
-      await TtsService().speakSentence(_karaokeStoryText, rate: speed);
-      if (mounted) setState(() => _isPlayingAudio = false);
-    }
-  }
-
-  Widget _buildKaraokeStage() {
-    final wordsToDisplay = _karaokeWords.isNotEmpty
-        ? _karaokeWords.map((w) => w.word).toList()
-        : _karaokeStoryText.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-
-    return Column(
-      key: const ValueKey('karaoke'),
-      children: [
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _isTargetEnglish ? 'Audio Karaoke Rhythm' : 'Audio-Karaoke Rhythmus',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    color: const Color(0xFF1E293B),
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Tap any word to hear its pronunciation, or listen to the full track.',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13,
-                    color: const Color(0xFF64748B),
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // Mascot + Playback Controls
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    AnimatedDolphinMascot(
-                      size: 100,
-                      pose: MascotPose.headphones,
-                      isListening: _isPlayingAudio,
-                    ),
-                    const SizedBox(width: 16),
-                    GestureDetector(
-                      onTap: () => _playKaraokeAudio(speed: 1.0),
-                      child: Container(
-                        width: 58,
-                        height: 58,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF8B5CF6),
-                          borderRadius: BorderRadius.circular(18),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0xFF6D28D9),
-                              blurRadius: 0,
-                              offset: Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          _isPlayingAudio ? Icons.graphic_eq_rounded : Icons.play_arrow_rounded,
-                          color: Colors.white,
-                          size: 32,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    GestureDetector(
-                      onTap: () => _playKaraokeAudio(speed: 0.75),
-                      child: Container(
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: const Color(0xFFF1F5F9),
-                          border: Border.all(color: const Color(0xFFCBD5E1), width: 1.5),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0xFFCBD5E1),
-                              blurRadius: 0,
-                              offset: Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                        child: const Center(
-                          child: Text('🐢', style: TextStyle(fontSize: 24)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                // Interactive Word-by-Word Card
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFFDDD6FE), width: 2),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0xFFEDE9FE),
-                        blurRadius: 0,
-                        offset: Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 10,
-                        children: wordsToDisplay.map((word) {
-                          return GestureDetector(
-                            onTap: () {
-                              SoundEffectsService.instance.playPop();
-                              TtsService().speakWord(word);
-                              if (!_karaokeListened && mounted) {
-                                setState(() => _karaokeListened = true);
-                              }
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF5F3FF),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: const Color(0xFFC4B5FD), width: 1.5),
-                              ),
-                              child: Text(
-                                word,
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w800,
-                                  color: const Color(0xFF5B21B6),
-                                ),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                      if (_karaokeTranslationText.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        const Divider(color: Color(0xFFE2E8F0)),
-                        const SizedBox(height: 8),
-                        Text(
-                          _karaokeTranslationText,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF64748B),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(20),
-          child: TactileGameButton(
-            text: _karaokeListened ? 'CONTINUE →' : 'LISTEN & CONTINUE →',
-            variant: GameButtonVariant.success,
-            height: 52,
-            onPressed: () {
-              SoundEffectsService.instance.playCorrect();
-              _nextStage();
-            },
-          ),
-        ),
       ],
     );
   }
