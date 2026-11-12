@@ -117,27 +117,28 @@ class _FakePlacementRepository extends GamificationRepository {
       'placementMode': placementMode,
       'lessonId': lessonId,
     };
+    final gatePassed = (mistakesCount ?? 0) <= 3;
     return {
       'success': true,
-      'passed': true,
+      'passed': gatePassed,
       'placement': {
-        'placementMode': 'section2_gate',
-        'passed': true,
-        'assignedLevel': 'SEC 2',
+        'placementMode': placementMode ?? 'section2_gate',
+        'passed': gatePassed,
+        'assignedLevel': gatePassed ? 'SEC 2' : 'A1',
         'effectiveLevel': 'A1',
-        'targetSectionNumber': 2,
-        'targetSectionTitle': 'Explorer',
+        'targetSectionNumber': gatePassed ? 2 : 1,
+        'targetSectionTitle': gatePassed ? 'Explorer' : 'Rookie',
         'targetUnitNumber': 1,
-        'placementSkipToNode': 60,
+        'placementSkipToNode': gatePassed ? 60 : 0,
       },
       'status': {
         'targetLanguage': targetLanguage,
         'nativeLanguage': nativeLanguage,
         'currentLevel': 'A1',
         'placementCompleted': true,
-        'placementLevel': 'SEC 2',
-        'placementSkipToNode': 60,
-        'isAcceleratedFallback': true,
+        'placementLevel': gatePassed ? 'SEC 2' : 'A1',
+        'placementSkipToNode': gatePassed ? 60 : 0,
+        'isAcceleratedFallback': gatePassed,
       },
     };
   }
@@ -593,6 +594,379 @@ void main() {
         expect(find.text('CONTINUE TO MAP'), findsOneWidget);
 
         // Flush pending audio/speech timers cleanly inside FakeAsync.
+        await tester.pump(const Duration(seconds: 31));
+      },
+    );
+
+    testWidgets(
+      'LessonSessionScreen(isPlacementGate: true) fails Section 2 gate when exceeding 3 mistakes without deducting Oxygen',
+      (tester) async {
+        tester.view.physicalSize = const Size(800, 915);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final fakeRepo = _FakePlacementRepository(
+          placementLessonResponse: {
+            'success': true,
+            'placementMode': 'section2_gate',
+            'passRules': {'minScorePct': 70, 'maxMistakes': 3},
+            'lesson': {
+              'id': 45,
+              'title': 'Section 2 Fail Path',
+              'stages': [
+                {
+                  'type': 'cloze_test',
+                  'sentence': 'How ___ does it cost?',
+                  'translation': 'Wie viel kostet das?',
+                  'blank': 'much',
+                  'options': ['much', 'many'],
+                },
+              ],
+            },
+          },
+        );
+
+        String? lastNavigatedRoute;
+        final router = GoRouter(
+          initialLocation: '/placement-lesson',
+          routes: [
+            GoRoute(
+              path: '/placement-lesson',
+              builder: (_, __) => const LessonSessionScreen(
+                nodeIndex: 0,
+                isPlacementGate: true,
+                placementTargetLanguage: 'de',
+                placementNativeLanguage: 'en',
+              ),
+            ),
+            GoRoute(
+              path: '/home',
+              builder: (_, __) {
+                lastNavigatedRoute = '/home';
+                return const Scaffold(body: Text('HOME_MAP'));
+              },
+            ),
+          ],
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              gamificationRepositoryProvider.overrideWithValue(fakeRepo),
+            ],
+            child: MaterialApp.router(routerConfig: router),
+          ),
+        );
+
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(find.text('SEC 2 • 3/3'), findsOneWidget);
+        expect(find.byIcon(Icons.favorite_rounded), findsNothing);
+
+        // Exceed the 3-mistake ceiling (4 wrong answers) -> never deducts global Oxygen.
+        for (var attempt = 0; attempt < 4; attempt++) {
+          await tester.tap(find.text('many'));
+          await tester.pump(const Duration(milliseconds: 150));
+          await tester.tap(find.text('CHECK ANSWER'));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 300));
+
+          expect(fakeRepo.deductOxygenCalls, 0);
+          final expectedRemaining = (3 - (attempt + 1)).clamp(0, 3);
+          expect(find.text('SEC 2 • $expectedRemaining/3'), findsOneWidget);
+
+          await tester.tap(find.text('CONTINUE →'));
+          await tester.pump();
+          await tester.pump(const Duration(seconds: 3, milliseconds: 300));
+        }
+
+        // Answer correctly on final retry to trigger gate evaluation.
+        await tester.tap(find.text('much'));
+        await tester.pump(const Duration(milliseconds: 150));
+        await tester.tap(find.text('CHECK ANSWER'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        await tester.tap(find.text('CONTINUE →'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+
+        expect(fakeRepo.deductOxygenCalls, 0);
+        expect(fakeRepo.completeNodeCalls, 0);
+        expect(fakeRepo.lastEvaluatePayload?['placementMode'], 'section2_gate');
+        expect(fakeRepo.lastEvaluatePayload?['mistakesCount'], 4);
+        expect(fakeRepo.lastEvaluatePayload?['lessonId'], 45);
+
+        expect(find.text('STARTING AT SECTION 1'), findsOneWidget);
+        expect(find.text('SECTION 2 UNLOCKED!'), findsNothing);
+        expect(find.text('4/3'), findsOneWidget);
+        expect(find.text('Sec 1'), findsOneWidget);
+        expect(find.text('START AT UNIT 1'), findsOneWidget);
+
+        await tester.tap(find.text('START AT UNIT 1'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(lastNavigatedRoute, '/home');
+        expect(find.text('HOME_MAP'), findsOneWidget);
+
+        await tester.pump(const Duration(seconds: 31));
+      },
+    );
+
+    testWidgets(
+      'Regular LessonSessionScreen strips legacy karaoke stage loaded from Tier-2 disk cache',
+      (tester) async {
+        tester.view.physicalSize = const Size(800, 915);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        await CacheService().saveLessonDetails(555, {
+          'id': 555,
+          'updatedAt': '2026-11-12T00:00:00.000Z',
+          'stages': [
+            {
+              'type': 'sprechen',
+              'prompt': 'Guten Tag.',
+              'translation': 'Good day.',
+              'minAccuracy': 75,
+              'audioUrl': '',
+            },
+            {
+              'type': 'karaoke',
+              'storyText': 'Hallo! Ja und nein.',
+              'translationText': 'Hello!',
+              'audioUrl': '',
+            },
+          ],
+        });
+
+        final fakeRepo = _FakePlacementRepository(
+          placementLessonResponse: const {'success': false},
+          statusTargetLanguage: 'de',
+          statusNativeLanguage: 'en',
+        );
+        const cachedNode = PathNodeModel(
+          index: 0,
+          id: 555,
+          title: 'Cached Lesson',
+          subtitle: 'Unit 1',
+          type: 'lesson',
+          status: 'available',
+          updatedAt: '2026-11-12T00:00:00.000Z',
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              gamificationRepositoryProvider.overrideWithValue(fakeRepo),
+            ],
+            child: const MaterialApp(
+              home: LessonSessionScreen(nodeIndex: 0, node: cachedNode),
+            ),
+          ),
+        );
+
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(find.text('Guten'), findsOneWidget);
+        expect(find.text('Tag.'), findsOneWidget);
+        expect(find.text("CAN'T SPEAK RIGHT NOW"), findsOneWidget);
+        expect(find.text('Audio-Karaoke Rhythmus'), findsNothing);
+        expect(find.text('Audio Karaoke Rhythm'), findsNothing);
+
+        final skipBtn = find.text("CAN'T SPEAK RIGHT NOW");
+        await tester.ensureVisible(skipBtn);
+        await tester.tap(skipBtn);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+
+        expect(find.text('Audio-Karaoke Rhythmus'), findsNothing);
+        expect(find.text('Audio Karaoke Rhythm'), findsNothing);
+        expect(find.text('LESSON COMPLETE!'), findsOneWidget);
+        expect(find.text('CONTINUE TO MAP'), findsOneWidget);
+
+        await tester.pump(const Duration(seconds: 31));
+      },
+    );
+
+    testWidgets(
+      'Snoozed speaking persists across consecutive lessons and Resume Speaking restores CAN\'T SPEAK RIGHT NOW',
+      (tester) async {
+        tester.view.physicalSize = const Size(800, 915);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final fakeRepo = _FakePlacementRepository(
+          placementLessonResponse: const {'success': false},
+          statusTargetLanguage: 'de',
+          statusNativeLanguage: 'en',
+        );
+
+        // Lesson 1: Tap CAN'T SPEAK RIGHT NOW -> snoozes speaking & completes lesson cleanly.
+        const lesson1Node = PathNodeModel(
+          index: 0,
+          id: 701,
+          title: 'Lesson 1',
+          subtitle: 'Unit 1',
+          type: 'lesson',
+          status: 'available',
+          stages: [
+            {
+              'type': 'sprechen',
+              'prompt': 'Hallo.',
+              'translation': 'Hello.',
+              'minAccuracy': 75,
+              'audioUrl': '',
+            },
+            {
+              'type': 'karaoke',
+              'storyText': 'Hallo! Ja und nein.',
+              'translationText': 'Hello!',
+              'audioUrl': '',
+            },
+          ],
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            key: const ValueKey('scope-lesson-1'),
+            overrides: [
+              gamificationRepositoryProvider.overrideWithValue(fakeRepo),
+            ],
+            child: const MaterialApp(
+              home: LessonSessionScreen(nodeIndex: 0, node: lesson1Node),
+            ),
+          ),
+        );
+
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(find.text("CAN'T SPEAK RIGHT NOW"), findsOneWidget);
+
+        final skipBtn = find.text("CAN'T SPEAK RIGHT NOW");
+        await tester.ensureVisible(skipBtn);
+        await tester.tap(skipBtn);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+
+        expect(find.text('Audio-Karaoke Rhythmus'), findsNothing);
+        expect(find.text('LESSON COMPLETE!'), findsOneWidget);
+        final prefs = await SharedPreferences.getInstance();
+        expect(
+          (prefs.getInt('pref_speaking_muted_until_ms') ?? 0) >
+              DateTime.now().millisecondsSinceEpoch,
+          isTrue,
+        );
+        await tester.pump(const Duration(seconds: 31));
+
+        // Lesson 2: Fresh ProviderScope loads persisted snooze -> renders paused card & Continue finishes without karaoke.
+        const lesson2Node = PathNodeModel(
+          index: 1,
+          id: 702,
+          title: 'Lesson 2',
+          subtitle: 'Unit 1',
+          type: 'lesson',
+          status: 'available',
+          stages: [
+            {
+              'type': 'karaoke',
+              'storyText': 'Hallo! Ja und nein.',
+              'translationText': 'Hello!',
+              'audioUrl': '',
+            },
+            {
+              'type': 'sprechen',
+              'prompt': 'Wie geht es?',
+              'translation': 'How are you?',
+              'minAccuracy': 75,
+              'audioUrl': '',
+            },
+          ],
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            key: const ValueKey('scope-lesson-2'),
+            overrides: [
+              gamificationRepositoryProvider.overrideWithValue(fakeRepo),
+            ],
+            child: const MaterialApp(
+              home: LessonSessionScreen(nodeIndex: 1, node: lesson2Node),
+            ),
+          ),
+        );
+
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(find.text('Speaking Exercises Paused'), findsOneWidget);
+        expect(find.text('Resume Speaking'), findsOneWidget);
+        expect(find.text('Continue'), findsOneWidget);
+        expect(find.text("CAN'T SPEAK RIGHT NOW"), findsNothing);
+        expect(find.text('Audio-Karaoke Rhythmus'), findsNothing);
+
+        await tester.tap(find.text('Continue'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+
+        expect(find.text('Audio-Karaoke Rhythmus'), findsNothing);
+        expect(find.text('LESSON COMPLETE!'), findsOneWidget);
+        await tester.pump(const Duration(seconds: 31));
+
+        // Lesson 3: Fresh ProviderScope still sees snooze; Resume Speaking unmutes and restores CAN'T SPEAK RIGHT NOW.
+        const lesson3Node = PathNodeModel(
+          index: 2,
+          id: 703,
+          title: 'Lesson 3',
+          subtitle: 'Unit 1',
+          type: 'lesson',
+          status: 'available',
+          stages: [
+            {
+              'type': 'sprechen',
+              'prompt': 'Tschuess.',
+              'translation': 'Bye.',
+              'minAccuracy': 75,
+              'audioUrl': '',
+            },
+          ],
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            key: const ValueKey('scope-lesson-3'),
+            overrides: [
+              gamificationRepositoryProvider.overrideWithValue(fakeRepo),
+            ],
+            child: const MaterialApp(
+              home: LessonSessionScreen(nodeIndex: 2, node: lesson3Node),
+            ),
+          ),
+        );
+
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(find.text('Speaking Exercises Paused'), findsOneWidget);
+
+        await tester.tap(find.text('Resume Speaking'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(find.text('Speaking Exercises Paused'), findsNothing);
+        expect(find.text('Tschuess.'), findsOneWidget);
+        expect(find.text("CAN'T SPEAK RIGHT NOW"), findsOneWidget);
+
         await tester.pump(const Duration(seconds: 31));
       },
     );
