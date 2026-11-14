@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_constants.dart';
+import 'analytics_service.dart';
 
 class AdService {
   static final AdService _instance = AdService._internal();
@@ -33,6 +34,20 @@ class AdService {
   static const Duration _loadTimeout = Duration(seconds: 30);
   DateTime? _rewardedLoadStartedAt;
   DateTime? _interstitialLoadStartedAt;
+
+  /// Records why an ad failed to load (AdMob error code 3 = no fill, 2 = network, 0 = internal, ...).
+  /// Without this the failure reason only existed in the debug console.
+  void _logAdLoadFailure(String format, LoadAdError error, int attempt) {
+    AnalyticsService().logEvent(
+      name: 'ad_load_failed',
+      parameters: {
+        'ad_format': format,
+        'error_code': error.code,
+        'attempt': attempt,
+        'message': error.message.length > 90 ? error.message.substring(0, 90) : error.message,
+      },
+    );
+  }
 
   bool _isLoadStale(DateTime? startedAt) =>
       startedAt == null || DateTime.now().difference(startedAt) > _loadTimeout;
@@ -166,6 +181,7 @@ class AdService {
           _isRewardedLoading = false;
           _numConsecutiveLoadAttempts++;
           debugPrint('RewardedAd failed to load: ${error.message} (attempt $_numConsecutiveLoadAttempts)');
+          _logAdLoadFailure('rewarded', error, _numConsecutiveLoadAttempts);
           if (_numConsecutiveLoadAttempts < _maxFailedLoadAttempts) {
             Future.delayed(
               Duration(seconds: _numConsecutiveLoadAttempts * 2),
@@ -294,6 +310,10 @@ class AdService {
 
     final interstitial = _interstitialAd;
     if (interstitial == null) {
+      AnalyticsService().logEvent(
+        name: 'ad_fallback_no_ads',
+        parameters: {'reward_type': rewardType},
+      );
       onAdFailed?.call(noAdsAvailableMessage);
       return;
     }
@@ -350,6 +370,7 @@ class AdService {
             _isInterstitialAdLoading = false;
             _numConsecutiveInterstitialLoadAttempts++;
             debugPrint('InterstitialAd failed to load: ${error.message} (attempt $_numConsecutiveInterstitialLoadAttempts)');
+            _logAdLoadFailure('interstitial', error, _numConsecutiveInterstitialLoadAttempts);
             if (_numConsecutiveInterstitialLoadAttempts < _maxFailedLoadAttempts) {
               Future.delayed(
                 Duration(seconds: _numConsecutiveInterstitialLoadAttempts * 2),
