@@ -827,6 +827,19 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
     // the path for the wrong (default German) course.
     final launchStatus = ref.read(gamificationStatusProvider).asData?.value;
 
+    // Revisiting a finished lesson: tell the learner that revision earns pearls.
+    if (node.status == 'completed' && node.type != 'chest') {
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Revision time! Finish with 80%+ to earn +5 Pearls 💎 (once per lesson each day)'),
+            duration: Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    }
+
     context.push('/lesson/${node.index}', extra: node).then((_) async {
       final currentStatus =
           ref.read(gamificationStatusProvider).asData?.value ?? launchStatus;

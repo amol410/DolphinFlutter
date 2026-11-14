@@ -7,6 +7,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_constants.dart';
 import 'analytics_service.dart';
 
+/// Lets the UI cancel a rewarded-ad request that is still waiting for an ad to load.
+class AdRequestHandle {
+  bool _cancelled = false;
+  bool get isCancelled => _cancelled;
+  void cancel() => _cancelled = true;
+}
+
 class AdService {
   static final AdService _instance = AdService._internal();
   factory AdService() => _instance;
@@ -27,12 +34,22 @@ class AdService {
   static const int _maxFailedLoadAttempts = 3;
 
   /// Reported via onAdFailed when neither a rewarded nor an interstitial ad could be loaded.
+  static const String findingAdMessage =
+      'Finding an ad for you… this can take a few seconds.';
+  static const String interstitialFallbackMessage =
+      'Showing a short ad — your reward is added when it closes.';
+
   static const String noAdsAvailableMessage =
       'No ads are available right now. Please try again in a moment.';
 
   // A load request that never calls back must not block retries forever.
   static const Duration _loadTimeout = Duration(seconds: 30);
   DateTime? _rewardedLoadStartedAt;
+  DateTime? _rewardedLoadedAt;
+  DateTime? _interstitialLoadedAt;
+
+  /// Google expires cached ads after about an hour; refresh a little earlier.
+  static const Duration _adMaxAge = Duration(minutes: 50);
   DateTime? _interstitialLoadStartedAt;
 
   /// Records why an ad failed to load (AdMob error code 3 = no fill, 2 = network, 0 = internal, ...).
@@ -93,6 +110,32 @@ class AdService {
     }
     // Production interstitial ad unit ID
     return AppConstants.adMobInterstitialAdUnitId;
+  }
+
+  /// Cheap "make sure an ad is ready" call. Safe to invoke often: it replaces ads that are
+  /// close to expiring and starts loads for any missing ad. Called on app resume, after a
+  /// lesson, and when oxygen gets low.
+  void warmUp() {
+    if (!adsEnabled) return;
+    final now = DateTime.now();
+    if (_rewardedAd != null &&
+        _rewardedLoadedAt != null &&
+        now.difference(_rewardedLoadedAt!) > _adMaxAge) {
+      _rewardedAd!.dispose();
+      _rewardedAd = null;
+    }
+    if (_interstitialAd != null &&
+        _interstitialLoadedAt != null &&
+        now.difference(_interstitialLoadedAt!) > _adMaxAge) {
+      _interstitialAd!.dispose();
+      _interstitialAd = null;
+    }
+    try {
+      loadRewardedAd();
+      unawaited(loadInterstitialAd());
+    } catch (e) {
+      debugPrint('AdService warmUp error: $e');
+    }
   }
 
   /// Initialize Google Mobile Ads SDK and preload rewarded & interstitial ads
@@ -166,12 +209,14 @@ class AdService {
     _isRewardedLoading = true;
     _rewardedLoadStartedAt = DateTime.now();
 
+    // Errors thrown by the platform call itself (e.g. SDK not available) must not escape.
     RewardedAd.load(
       adUnitId: rewardedAdUnitId,
       request: const AdRequest(),
       rewardedAdLoadCallback: RewardedAdLoadCallback(
         onAdLoaded: (ad) {
           _rewardedAd = ad;
+          _rewardedLoadedAt = DateTime.now();
           _isRewardedLoading = false;
           _numConsecutiveLoadAttempts = 0;
           debugPrint('RewardedAd loaded successfully ($rewardedAdUnitId)');
@@ -190,33 +235,38 @@ class AdService {
           }
         },
       ),
-    );
+    ).catchError((Object e) {
+      _isRewardedLoading = false;
+      debugPrint('RewardedAd load exception: $e');
+    });
   }
 
   /// Show the rewarded ad to the learner
-  void showRewardedAd({
+  AdRequestHandle showRewardedAd({
     required String userId,
     required String rewardType,
     String? attemptId,
     required Function() onUserEarnedReward,
     Function(String message)? onAdDismissed,
     Function(String error)? onAdFailed,
+    Function(String status)? onAdStatus,
   }) {
+    final handle = AdRequestHandle();
     if (userId.isEmpty) {
       onAdFailed?.call('Please sign in again before claiming a reward.');
-      return;
+      return handle;
     }
 
     if (!adsEnabled) {
       debugPrint('AdService: Ads disabled for this test APK — reward granted directly.');
       onUserEarnedReward();
       onAdDismissed?.call('Ads disabled for testing');
-      return;
+      return handle;
     }
 
     if (!canWatchRewardedAdToday) {
       onAdFailed?.call('Daily ad limit reached (6/6). Come back tomorrow or refill with Pearls!');
-      return;
+      return handle;
     }
 
     if (_rewardedAd == null) {
@@ -229,8 +279,10 @@ class AdService {
         onUserEarnedReward: onUserEarnedReward,
         onAdDismissed: onAdDismissed,
         onAdFailed: onAdFailed,
+        onAdStatus: onAdStatus,
+        handle: handle,
       );
-      return;
+      return handle;
     }
 
     _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
@@ -268,6 +320,7 @@ class AdService {
         onUserEarnedReward();
       },
     );
+    return handle;
   }
 
   /// Fallback chain used when no rewarded ad is cached:
@@ -282,19 +335,26 @@ class AdService {
     required Function() onUserEarnedReward,
     Function(String message)? onAdDismissed,
     Function(String error)? onAdFailed,
+    Function(String status)? onAdStatus,
+    required AdRequestHandle handle,
   }) async {
     // Earlier failures may have exhausted the automatic retries; a user tap resets them.
     _numConsecutiveLoadAttempts = 0;
     _numConsecutiveInterstitialLoadAttempts = 0;
     loadRewardedAd();
     unawaited(loadInterstitialAd());
+    onAdStatus?.call(findingAdMessage);
 
-    final deadline = DateTime.now().add(const Duration(seconds: 6));
+    final deadline = DateTime.now().add(const Duration(seconds: 4));
     while (_rewardedAd == null &&
         _interstitialAd == null &&
+        !handle.isCancelled &&
         DateTime.now().isBefore(deadline)) {
       await Future.delayed(const Duration(milliseconds: 250));
     }
+
+    // The user pressed Cancel while waiting: stop quietly (the UI already reset itself).
+    if (handle.isCancelled) return;
 
     if (_rewardedAd != null) {
       showRewardedAd(
@@ -304,6 +364,7 @@ class AdService {
         onUserEarnedReward: onUserEarnedReward,
         onAdDismissed: onAdDismissed,
         onAdFailed: onAdFailed,
+        onAdStatus: onAdStatus,
       );
       return;
     }
@@ -319,6 +380,7 @@ class AdService {
     }
 
     debugPrint('AdService: rewarded ad unavailable, using interstitial fallback for $rewardType');
+    onAdStatus?.call(interstitialFallbackMessage);
     interstitial.fullScreenContentCallback = FullScreenContentCallback(
       onAdDismissedFullScreenContent: (ad) async {
         ad.dispose();
@@ -361,6 +423,7 @@ class AdService {
         adLoadCallback: InterstitialAdLoadCallback(
           onAdLoaded: (ad) {
             _interstitialAd = ad;
+            _interstitialLoadedAt = DateTime.now();
             _isInterstitialAdLoading = false;
             _numConsecutiveInterstitialLoadAttempts = 0;
             debugPrint('InterstitialAd loaded successfully ($interstitialAdUnitId)');

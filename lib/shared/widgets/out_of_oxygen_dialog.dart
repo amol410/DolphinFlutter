@@ -35,6 +35,8 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
   bool _isSpendingPearls = false;
   bool _showInsufficientPearlsWarning = false;
   bool _adsUnavailable = false;
+  String? _adStatus;
+  AdRequestHandle? _adHandle;
   bool _isEmergencyRefilling = false;
 
   void _watchAdToRefill() {
@@ -42,9 +44,10 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
       _isLoadingAd = true;
       _showInsufficientPearlsWarning = false;
       _adsUnavailable = false;
+      _adStatus = null;
     });
 
-    AdService().showRewardedAd(
+    _adHandle = AdService().showRewardedAd(
       userId: ref.read(authProvider).user?.id ?? '',
       rewardType: 'oxygen',
       onUserEarnedReward: () async {
@@ -53,7 +56,10 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
             .claimAdReward(rewardType: 'oxygen');
 
         if (!mounted) return;
-        setState(() => _isLoadingAd = false);
+        setState(() {
+          _isLoadingAd = false;
+          _adStatus = null;
+        });
 
         if (success || (ref.read(gamificationStatusProvider).value?.oxygen ?? 0) > 0) {
           Navigator.of(context).pop();
@@ -74,10 +80,14 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
           );
         }
       },
+      onAdStatus: (status) {
+        if (mounted) setState(() => _adStatus = status);
+      },
       onAdFailed: (error) {
         if (!mounted) return;
         setState(() {
           _isLoadingAd = false;
+          _adStatus = null;
           if (error == AdService.noAdsAvailableMessage) _adsUnavailable = true;
         });
         ScaffoldMessenger.of(context).showSnackBar(
@@ -88,7 +98,12 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
         );
       },
       onAdDismissed: (_) {
-        if (mounted) setState(() => _isLoadingAd = false);
+        if (mounted) {
+          setState(() {
+            _isLoadingAd = false;
+            _adStatus = null;
+          });
+        }
       },
     );
   }
@@ -296,6 +311,35 @@ class _OutOfOxygenSheetState extends ConsumerState<OutOfOxygenSheet> {
                   );
                 },
               ),
+              if (_isLoadingAd && _adStatus != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _adStatus!,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.outfit(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF38BDF8),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    _adHandle?.cancel();
+                    setState(() {
+                      _isLoadingAd = false;
+                      _adStatus = null;
+                    });
+                  },
+                  child: Text(
+                    'Cancel',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 10),
 
               // LAST RESORT: no ad could be loaded -> capped free +1 oxygen (server: 0 oxygen, 4h cooldown)

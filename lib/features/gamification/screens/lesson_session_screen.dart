@@ -2121,7 +2121,19 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
       );
     }
 
+    final replayBonus = (result['replayPearlsEarned'] as num?)?.toInt() ?? 0;
+    if (replayBonus > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Nice review! +$replayBonus Pearls 💎'),
+          backgroundColor: const Color(0xFF059669),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+
     await AdService().incrementLessonCount();
+    AdService().warmUp();
     if (!mounted) return;
     await AdService().showInterstitialIfEligible(
       onDone: () {
@@ -5724,6 +5736,16 @@ class _LessonSessionScreenState extends ConsumerState<LessonSessionScreen>
             behavior: SnackBarBehavior.floating,
           ),
         );
+      },
+      onAdStatus: (status) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(SnackBar(
+            content: Text(status),
+            duration: const Duration(seconds: 6),
+            behavior: SnackBarBehavior.floating,
+          ));
       },
       onAdFailed: (error) {
         if (!mounted) return;

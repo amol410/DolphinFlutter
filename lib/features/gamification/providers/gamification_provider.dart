@@ -1,3 +1,4 @@
+import '../../../core/services/ad_service.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -64,6 +65,8 @@ class GamificationStatusNotifier extends StateNotifier<AsyncValue<GamificationSt
         final newOxygen = status.oxygen - 1;
         state = AsyncValue.data(status.copyWith(oxygen: newOxygen));
         CacheService().saveStatus(status.copyWith(oxygen: newOxygen));
+        // Running low: make sure an ad is ready before the out-of-oxygen sheet appears.
+        if (newOxygen <= 1) AdService().warmUp();
       }
     });
     // Server-authoritative loss sync to ensure cross-device consistency

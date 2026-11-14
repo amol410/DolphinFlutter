@@ -6,6 +6,7 @@ import 'core/theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
 import 'core/constants/app_constants.dart';
 import 'core/network/dio_client.dart';
+import 'core/services/ad_service.dart';
 import 'core/services/version_check_service.dart';
 import 'features/gamification/providers/gamification_provider.dart';
 import 'shared/widgets/force_update_dialog.dart';
@@ -37,6 +38,7 @@ class _DolphinCoderAppState extends ConsumerState<DolphinCoderApp> with WidgetsB
     if (state == AppLifecycleState.resumed) {
       _checkForceUpdateOnResume();
       _syncCurriculumOnResume();
+      AdService().warmUp();
     }
   }
 

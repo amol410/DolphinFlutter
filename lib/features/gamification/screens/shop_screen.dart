@@ -152,6 +152,17 @@ class ShopScreen extends ConsumerWidget {
                           );
                         }
                       },
+                      onAdStatus: (status) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context)
+                            ..clearSnackBars()
+                            ..showSnackBar(SnackBar(
+                              content: Text(status),
+                              duration: const Duration(seconds: 6),
+                              behavior: SnackBarBehavior.floating,
+                            ));
+                        }
+                      },
                       onAdFailed: (error) {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -165,7 +176,7 @@ class ShopScreen extends ConsumerWidget {
               },
             ),
 
-            // Ad Reward 2: Free 25 Pearls
+            // Ad Reward 2: Free 50 Pearls
             Builder(
               builder: (context) {
                 final canWatchPearlAd = AdService().canWatchRewardedAdToday;
@@ -174,11 +185,11 @@ class ShopScreen extends ConsumerWidget {
                   context,
                   icon: '🎁',
                   badge: 'FREE PEARLS',
-                  title: 'Watch Ad: Claim +25 Pearls',
+                  title: 'Watch Ad: Claim +50 Pearls',
                   subtitle: canWatchPearlAd
                       ? 'Watch a quick 20-second video to claim free pearls for boosters ($adsRemaining/6 ads left today)'
                       : 'Daily ad limit reached (6/6). Come back tomorrow for more free pearls!',
-                  buttonText: canWatchPearlAd ? '+25 💎' : 'MAX (6/6)',
+                  buttonText: canWatchPearlAd ? '+50 💎' : 'MAX (6/6)',
                   isActionable: canWatchPearlAd,
                   buttonColor: const Color(0xFF0284C7),
                   shadowColor: const Color(0xFF0369A1),
@@ -194,12 +205,23 @@ class ShopScreen extends ConsumerWidget {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(success
-                                  ? '🎉 +25 Pearls added! 💎'
+                                  ? '🎉 +50 Pearls added! 💎'
                                   : 'Pearls will update shortly.'),
                               backgroundColor: success ? const Color(0xFF059669) : null,
                               behavior: SnackBarBehavior.floating,
                             ),
                           );
+                        }
+                      },
+                      onAdStatus: (status) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context)
+                            ..clearSnackBars()
+                            ..showSnackBar(SnackBar(
+                              content: Text(status),
+                              duration: const Duration(seconds: 6),
+                              behavior: SnackBarBehavior.floating,
+                            ));
                         }
                       },
                       onAdFailed: (error) {
