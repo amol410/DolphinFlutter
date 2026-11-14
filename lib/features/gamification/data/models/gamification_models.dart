@@ -18,6 +18,7 @@ class GamificationStatusModel {
   final int placementSkipToNode;
   final List<String> unlockedLevels;
   final bool isAcceleratedFallback;
+  final bool replayPearlsEnabled;
 
   const GamificationStatusModel({
     this.streakCount = 1,
@@ -39,6 +40,7 @@ class GamificationStatusModel {
     this.placementSkipToNode = 0,
     this.unlockedLevels = const ['A1'],
     this.isAcceleratedFallback = false,
+    this.replayPearlsEnabled = false,
   });
 
   factory GamificationStatusModel.fromJson(Map<String, dynamic> json) {
@@ -70,6 +72,7 @@ class GamificationStatusModel {
       placementSkipToNode: (json['placementSkipToNode'] as num?)?.toInt() ?? 0,
       unlockedLevels: unlocked,
       isAcceleratedFallback: json['isAcceleratedFallback'] == true,
+      replayPearlsEnabled: json['replayPearlsEnabled'] == true,
     );
   }
 
@@ -94,6 +97,7 @@ class GamificationStatusModel {
       'placementSkipToNode': placementSkipToNode,
       'unlockedLevels': unlockedLevels,
       'isAcceleratedFallback': isAcceleratedFallback,
+      'replayPearlsEnabled': replayPearlsEnabled,
     };
   }
 
@@ -117,6 +121,7 @@ class GamificationStatusModel {
     int? placementSkipToNode,
     List<String>? unlockedLevels,
     bool? isAcceleratedFallback,
+    bool? replayPearlsEnabled,
   }) {
     return GamificationStatusModel(
       streakCount: streakCount ?? this.streakCount,
@@ -138,6 +143,7 @@ class GamificationStatusModel {
       placementSkipToNode: placementSkipToNode ?? this.placementSkipToNode,
       unlockedLevels: unlockedLevels ?? this.unlockedLevels,
       isAcceleratedFallback: isAcceleratedFallback ?? this.isAcceleratedFallback,
+      replayPearlsEnabled: replayPearlsEnabled ?? this.replayPearlsEnabled,
     );
   }
 }

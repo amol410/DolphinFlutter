@@ -828,7 +828,9 @@ class _ArchipelagoMapScreenState extends ConsumerState<ArchipelagoMapScreen> {
     final launchStatus = ref.read(gamificationStatusProvider).asData?.value;
 
     // Revisiting a finished lesson: tell the learner that revision earns pearls.
-    if (node.status == 'completed' && node.type != 'chest') {
+    final replayEnabled =
+        ref.read(gamificationStatusProvider).value?.replayPearlsEnabled ?? false;
+    if (replayEnabled && node.status == 'completed' && node.type != 'chest') {
       ScaffoldMessenger.of(context)
         ..clearSnackBars()
         ..showSnackBar(
